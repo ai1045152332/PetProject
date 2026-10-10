@@ -10,7 +10,7 @@ DESKTOP="$HOME/Desktop"
 
 # ── 1. Release 编译 ──────────────────────────────────────────────
 echo "🔨 编译 Release 二进制…"
-swift build -c release
+swift build -c release --disable-sandbox
 
 BUILD_BIN="$PROJECT_DIR/.build/release/$APP_NAME"
 
@@ -59,41 +59,8 @@ for stateDir in */; do
 done
 cd "$PROJECT_DIR"
 
-# ── 4. 生成 Info.plist ──────────────────────────────────────────
-cat > "$CONTENTS/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>DesktopCat</string>
-    <key>CFBundleDisplayName</key>
-    <string>桌面小猫</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.desktopcat.app</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleExecutable</key>
-    <string>DesktopCat</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSAppNapIsDisabled</key>
-    <true/>
-    <key>NSAccessibilityUsageDescription</key>
-    <string>DesktopCat 需要辅助功能权限来监听鼠标位置，实现看向鼠标效果。</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSBackgroundOnly</key>
-    <false/>
-    <key>NSRequiresAquaSystemAppearance</key>
-    <false/>
-</dict>
-</plist>
-PLIST
+# ── 4. 复制 Info.plist ──────────────────────────────────────────
+cp "$PROJECT_DIR/DesktopCat/Info.plist" "$CONTENTS/Info.plist"
 
 # ── 5. 拷贝到桌面 ───────────────────────────────────────────────
 echo "📦 拷贝到桌面…"

@@ -79,6 +79,8 @@ final class PetViewModel: ObservableObject {
     
     /// 上次喝水提醒时间（防重复弹窗）
     private var lastWaterReminderTime: Date?
+    /// 喝水弹窗是否正在显示（未关闭则不弹下一次）
+    var isWaterAlertShowing: Bool = false
     
     /// 喝水提醒回调（供视图层展示弹窗）
     var onDrinkWaterReminder: (() -> Void)?
@@ -250,31 +252,35 @@ final class PetViewModel: ObservableObject {
     
     // MARK: - Drink Water Reminder
     
-    /// 启动每整点的喝水提醒
+    /// 启动每半小时的喝水提醒
     func startDrinkWaterReminder() {
         // 取消所有已存在的定时器，避免重复触发
         drinkWaterTimer?.invalidate()
         drinkWaterTimer = nil
         firstWaterTimer?.invalidate()
         firstWaterTimer = nil
-        
+
         let now = Date()
         let calendar = Calendar.current
-        var components = calendar.dateComponents([.year, .month, .day, .hour], from: now)
-        components.hour! += 1
-        components.minute = 0
-        components.second = 0
-        
-        let nextHour = calendar.date(from: components)!
-        let delay = nextHour.timeIntervalSince(now)
-        
-        // 首次等到下一个整点触发，之后每小时重复
+        let currentMinute = calendar.component(.minute, from: now)
+
+        // 计算到下一个"整点或半点"的延迟
+        var delay: TimeInterval
+        if currentMinute < 30 {
+            // 下一个半点
+            delay = TimeInterval((30 - currentMinute) * 60 - calendar.component(.second, from: now))
+        } else {
+            // 下一个整点
+            delay = TimeInterval((60 - currentMinute) * 60 - calendar.component(.second, from: now))
+        }
+
+        // 首次等到下一个触发点，之后每 30 分钟重复
         firstWaterTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in
                 self.triggerDrinkWaterReminder()
                 self.drinkWaterTimer?.invalidate()
-                self.drinkWaterTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+                self.drinkWaterTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
                     guard let self = self else { return }
                     Task { @MainActor in
                         self.triggerDrinkWaterReminder()
@@ -284,11 +290,10 @@ final class PetViewModel: ObservableObject {
         }
     }
     
-    /// 触发喝水提醒（5分钟内防重复弹窗）
+    /// 触发喝水提醒
     func triggerDrinkWaterReminder() {
-        if let last = lastWaterReminderTime, Date().timeIntervalSince(last) < 300 {
-            return
-        }
+        // 弹窗未关闭时不弹下一次
+        if isWaterAlertShowing { return }
         lastWaterReminderTime = Date()
         isFacingLocked = true
         facing = .right

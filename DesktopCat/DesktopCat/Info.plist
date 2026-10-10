@@ -12,9 +12,13 @@
     <key>CFBundleDisplayName</key>
     <string>桌面小猫</string>
     
-    <!-- Bundle 标识符，请替换为你的团队 ID -->
+    <!-- Bundle 标识符 -->
     <key>CFBundleIdentifier</key>
-    <string>com.yourcompany.DesktopCat</string>
+    <string>com.desktopcat.app</string>
+    
+    <!-- 最低系统版本 -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
     
     <!-- 版本号 -->
     <key>CFBundleShortVersionString</key>

@@ -221,12 +221,14 @@ class CatView: NSView {
     
     /// 显示喝水提醒弹窗（HTML 样式）
     func showDrinkWaterAlert() {
+        viewModel?.isWaterAlertShowing = true
         let htmlBody = """
         <div class="water-icon">💧</div>
         <div class="water-text">该喝水啦！</div>
         <div class="water-tips">久坐对身体不好<br>起来倒杯水，活动一下吧～</div>
         """
         HTMLAlertWindow.show(title: "小猫喝水提醒", htmlBody: htmlBody, width: 340) { [weak self] in
+            self?.viewModel?.isWaterAlertShowing = false
             self?.viewModel?.transitionTo(.idle)
         }
     }

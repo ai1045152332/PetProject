@@ -58,101 +58,28 @@ DesktopCat/
 
 ---
 
-## 编译与运行
-
-### 前置条件
-
-- macOS 13.0+ (Ventura)
-- Xcode 15.0+ 或 Command Line Tools
-- Swift 5.9+
-
-```bash
-# 检查 Swift 版本
-swift --version
-```
-
-### 方式一：命令行编译 + 打包（推荐）
-
-**Step 1 - 编译 Release 二进制**
+## 编译
 
 ```bash
 cd DesktopCat
 swift build -c release --disable-sandbox
 ```
 
-> `--disable-sandbox`：禁用 SPM 沙盒限制，避免 `sandbox-exec: Operation not permitted` 错误
-
-**Step 2 - 一键打包到桌面**
+打包到桌面：
 
 ```bash
 bash package.sh
 ```
 
-> 脚本会自动完成：编译 → 组装 .app → 复制图标和资源 → 拷贝到桌面
-
-**Step 3 - 运行**
-
-双击桌面 `桌面小猫.app` 启动。
-
-### 方式二：仅编译（不打包）
+运行：
 
 ```bash
-cd DesktopCat
-swift build -c release --disable-sandbox
-# 直接运行二进制
 .build/release/DesktopCat
 ```
 
-### 方式三：Xcode（适用于调试）
+或双击桌面 `桌面小猫.app`。
 
-1. 打开 Xcode，选择 **File > New > Project**，创建 macOS App 项目，命名为 `DesktopCat`。
-2. 将本项目的所有 `.swift` 文件拖入 Xcode 的 `DesktopCat/` 组中。
-3. 将 `Resources/Sprites/` 目录拖入 Xcode，选择 **Create folder references**。
-4. 在 `Info.plist` 中确认已添加 `NSAccessibilityUsageDescription`。
-5. **关闭沙盒**：选中 Target → Signing & Capabilities → 删除或禁用 `App Sandbox`。纯沙盒应用无法使用 `screenSaver` 窗口级别和全局鼠标监听。
-6. 按 `Cmd + R` 运行。
-
-### 常见问题
-
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| `sandbox-exec: Operation not permitted` | SPM 沙盒限制 | 使用 `--disable-sandbox` 参数 |
-| 图标显示不正确 / 没变化 | macOS 需 `.icns` 格式 | 用 `sips` + `iconutil` 将 PNG 转为 `.icns`，放入 `Resources/` |
-| 图标缓存不刷新 | Finder 缓存旧图标 | 执行 `lsregister -f -R /path/to/App.app && killall Finder` |
-| 窗口无法置顶到最上层 | App Sandbox 限制 | 关闭 App Sandbox，或使用非沙盒编译 |
-| 鼠标跟随无效果 | 缺少辅助功能权限 | `系统设置 > 隐私与安全性 >辅助功能` 中启用 DesktopCat |
-
-### 替换 App Icon
-
-将 `AppIcon.png` 放入 `DesktopCat/Resources/`，然后执行：
-
-```bash
-# 1. 创建 iconset 目录
-mkdir -p /tmp/AppIcon.iconset
-
-# 2. 生成各种尺寸
-sips -z 16 16 AppIcon.png --out /tmp/AppIcon.iconset/icon_16x16.png
-sips -z 32 32 AppIcon.png --out /tmp/AppIcon.iconset/icon_16x16@2x.png
-sips -z 32 32 AppIcon.png --out /tmp/AppIcon.iconset/icon_32x32.png
-sips -z 64 64 AppIcon.png --out /tmp/AppIcon.iconset/icon_32x32@2x.png
-sips -z 128 128 AppIcon.png --out /tmp/AppIcon.iconset/icon_128x128.png
-sips -z 256 256 AppIcon.png --out /tmp/AppIcon.iconset/icon_128x128@2x.png
-sips -z 256 256 AppIcon.png --out /tmp/AppIcon.iconset/icon_256x256.png
-sips -z 512 512 AppIcon.png --out /tmp/AppIcon.iconset/icon_256x256@2x.png
-sips -z 512 512 AppIcon.png --out /tmp/AppIcon.iconset/icon_512x512.png
-sips -z 1024 1024 AppIcon.png --out /tmp/AppIcon.iconset/icon_512x512@2x.png
-
-# 3. 生成 .icns
-iconutil -c icns /tmp/AppIcon.iconset -o DesktopCat/Resources/AppIcon.icns
-
-# 4. 清理
-rm -rf /tmp/AppIcon.iconset
-
-# 5. 重新打包
-bash package.sh
-```
-
-> `Info.plist` 中需包含 `<key>CFBundleIconFile</key><string>AppIcon</string>`（不带扩展名）
+> **注意**：需关闭 App Sandbox，否则窗口无法置顶。首次启动需授权辅助功能权限（`系统设置 > 隐私与安全性 > 辅助功能`）。
 
 ---
 

@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+# IDE
+.idea/
+.vscode/
+
+# 可执行产物（打包中间产物 + 桌面最终产物）
+DesktopCat.app/

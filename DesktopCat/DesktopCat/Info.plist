@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 应用图标 -->
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <!-- 应用名称 -->
+    <key>CFBundleName</key>
+    <string>DesktopCat</string>
+    <key>CFBundleDisplayName</key>
+    <string>桌面小猫</string>
+    
+    <!-- Bundle 标识符，请替换为你的团队 ID -->
+    <key>CFBundleIdentifier</key>
+    <string>com.yourcompany.DesktopCat</string>
+    
+    <!-- 版本号 -->
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    
+    <!-- 辅助功能权限说明（必需） -->
+    <key>NSAccessibilityUsageDescription</key>
+    <string>DesktopCat 需要辅助功能权限来监听鼠标事件，并始终悬浮在桌面最上层。</string>
+    
+    <!-- 可执行文件名 -->
+    <key>CFBundleExecutable</key>
+    <string>DesktopCat</string>
+    
+    <!-- 包类型：APPL = 应用程序 -->
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    
+    <!-- 主 Storyboard/Nib（本工程纯代码，无需设置） -->
+    <key>NSMainNibFile</key>
+    <string></string>
+    
+    <!-- 后台运行模式：防止被系统内存压力回收 -->
+    <key>LSBackgroundOnly</key>
+    <false/>
+    
+    <!-- UI 风格：支持暗黑/亮色模式自适应 -->
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
+    
+    <!-- 高分辨率支持 -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+        <!-- 禁止 App Nap，保持动画流畅 -->
+    <key>LSAppNapIsDisabled</key>
+    <true/>
+</dict>
+</plist>

@@ -19,6 +19,7 @@ struct DesktopPetForMacAppApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var floatingWindow: FloatingWindow?
     var viewModel: PetViewModel?
+    var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 直接启动小猫，不阻塞在权限检测上
@@ -48,6 +49,94 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 4. 启动全局鼠标位置监听（用于"看向鼠标"效果）
         startGlobalMouseTracking()
+        
+        // 5. 创建顶部菜单栏图标
+        setupStatusBar()
+    }
+    
+    // MARK: - 菜单栏
+    @MainActor private func setupStatusBar() {
+        let statusBar = NSStatusBar.system
+        let item = statusBar.statusItem(withLength: NSStatusItem.variableLength)
+        self.statusItem = item
+        
+        let btn = item.button!
+        
+        // 创建一个更明显的猫咪图标（大尺寸 + 高对比度）
+        let img = NSImage(size: NSSize(width: 22, height: 22), flipped: false) { rect in
+            // 背景圆形（亮橙色）
+            let bg = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+            NSColor(calibratedRed: 1.0, green: 0.6, blue: 0.0, alpha: 1.0).setFill()
+            bg.fill()
+            
+            // 左耳
+            let leftEar = NSBezierPath()
+            leftEar.move(to: NSPoint(x: 5, y: 19))
+            leftEar.line(to: NSPoint(x: 9, y: 12))
+            leftEar.line(to: NSPoint(x: 2, y: 12))
+            leftEar.close()
+            NSColor.white.setFill()
+            leftEar.fill()
+            
+            // 右耳
+            let rightEar = NSBezierPath()
+            rightEar.move(to: NSPoint(x: 17, y: 19))
+            rightEar.line(to: NSPoint(x: 13, y: 12))
+            rightEar.line(to: NSPoint(x: 20, y: 12))
+            rightEar.close()
+            rightEar.fill()
+            
+            // 左眼
+            let leftEye = NSBezierPath(ovalIn: NSRect(x: 6, y: 8, width: 3, height: 4))
+            NSColor.black.setFill()
+            leftEye.fill()
+            
+            // 右眼
+            let rightEye = NSBezierPath(ovalIn: NSRect(x: 13, y: 8, width: 3, height: 4))
+            rightEye.fill()
+            
+            // 鼻子/嘴
+            let mouth = NSBezierPath()
+            mouth.move(to: NSPoint(x: 11, y: 6))
+            mouth.line(to: NSPoint(x: 9, y: 4))
+            mouth.move(to: NSPoint(x: 11, y: 6))
+            mouth.line(to: NSPoint(x: 13, y: 4))
+            NSColor(calibratedRed: 0.8, green: 0.3, blue: 0.0, alpha: 1.0).setStroke()
+            mouth.lineWidth = 1
+            mouth.stroke()
+            
+            return true
+        }
+        
+        btn.image = img
+        
+        // 创建菜单
+        let menu = NSMenu()
+        
+        let toggleItem = NSMenuItem(title: "显示/隐藏小猫", action: #selector(toggleCat(_:)), keyEquivalent: "")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let quitItem = NSMenuItem(title: "退出", action: #selector(quit(_:)), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+        
+        item.menu = menu
+    }
+    
+    @MainActor @objc private func toggleCat(_ sender: Any?) {
+        guard let window = floatingWindow else { return }
+        if window.isVisible {
+            window.hide()
+        } else {
+            window.show()
+        }
+    }
+    
+    @MainActor @objc private func quit(_ sender: Any?) {
+        NSApp.terminate(nil)
     }
     
     private func startGlobalMouseTracking() {

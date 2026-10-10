@@ -77,6 +77,7 @@ final class FloatingWindow {
     }
     
     func hide() { window?.orderOut(nil) }
+    var isVisible: Bool { window?.isVisible ?? false }
     func close() {
         updateTimer?.invalidate()
         window?.close()

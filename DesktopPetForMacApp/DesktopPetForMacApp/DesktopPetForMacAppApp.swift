@@ -62,52 +62,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let btn = item.button!
         
-        // 创建一个更明显的猫咪图标（大尺寸 + 高对比度）
-        let img = NSImage(size: NSSize(width: 22, height: 22), flipped: false) { rect in
-            // 背景圆形（亮橙色）
-            let bg = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
-            NSColor(calibratedRed: 1.0, green: 0.6, blue: 0.0, alpha: 1.0).setFill()
-            bg.fill()
-            
-            // 左耳
-            let leftEar = NSBezierPath()
-            leftEar.move(to: NSPoint(x: 5, y: 19))
-            leftEar.line(to: NSPoint(x: 9, y: 12))
-            leftEar.line(to: NSPoint(x: 2, y: 12))
-            leftEar.close()
-            NSColor.white.setFill()
-            leftEar.fill()
-            
-            // 右耳
-            let rightEar = NSBezierPath()
-            rightEar.move(to: NSPoint(x: 17, y: 19))
-            rightEar.line(to: NSPoint(x: 13, y: 12))
-            rightEar.line(to: NSPoint(x: 20, y: 12))
-            rightEar.close()
-            rightEar.fill()
-            
-            // 左眼
-            let leftEye = NSBezierPath(ovalIn: NSRect(x: 6, y: 8, width: 3, height: 4))
-            NSColor.black.setFill()
-            leftEye.fill()
-            
-            // 右眼
-            let rightEye = NSBezierPath(ovalIn: NSRect(x: 13, y: 8, width: 3, height: 4))
-            rightEye.fill()
-            
-            // 鼻子/嘴
-            let mouth = NSBezierPath()
-            mouth.move(to: NSPoint(x: 11, y: 6))
-            mouth.line(to: NSPoint(x: 9, y: 4))
-            mouth.move(to: NSPoint(x: 11, y: 6))
-            mouth.line(to: NSPoint(x: 13, y: 4))
-            NSColor(calibratedRed: 0.8, green: 0.3, blue: 0.0, alpha: 1.0).setStroke()
-            mouth.lineWidth = 1
-            mouth.stroke()
-            
-            return true
-        }
-        
+        // 使用项目 Resources 中的白猫图标
+        let iconPath = Bundle.main.path(forResource: "MenuBarIcon", ofType: "png")
+        ?? Bundle.main.bundlePath + "/Contents/Resources/MenuBarIcon.png"
+        let img = NSImage(contentsOfFile: iconPath)
+        img?.size = NSSize(width: 22, height: 22)
+        img?.isTemplate = true  // 系统会根据菜单栏深浅色自动反色为白色
         btn.image = img
         
         // 创建菜单

@@ -47,6 +47,12 @@ if [ -f "$ICON_SRC" ]; then
     cp "$ICON_SRC" "$RESOURCES/AppIcon.icns"
 fi
 
+# 菜单栏图标
+MENU_ICON="$PROJECT_DIR/DesktopPetForMacApp/Resources/MenuBarIcon.png"
+if [ -f "$MENU_ICON" ]; then
+    cp "$MENU_ICON" "$RESOURCES/MenuBarIcon.png"
+fi
+
 # 资源文件（排除 README）
 cd "$SPRITES_SRC"
 for stateDir in */; do

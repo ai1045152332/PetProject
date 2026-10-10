@@ -1,5 +1,5 @@
 // StockHistoryManager.swift
-// DesktopCat — 股票查询历史记录（UserDefaults 持久化）
+// DesktopPetForMacApp — 股票查询历史记录（UserDefaults 持久化）
 
 import Foundation
 
@@ -11,7 +11,7 @@ struct StockHistoryItem: Codable {
 
 class StockHistoryManager {
     static let shared = StockHistoryManager()
-    private let key = "desktopcat.stock_history"
+    private let key = "desktoppetformacapp.stock_history"
     private let maxCount = 10
     
     func load() -> [StockHistoryItem] {

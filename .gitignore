@@ -20,8 +20,8 @@ Package.resolved
 .vscode/
 
 # Build artifacts
-DesktopCat.app/
-*.icns
+*.app/
+.icns
 
 # Misc
 *.log

@@ -1,4 +1,4 @@
-# DesktopCat — macOS 桌面小猫应用
+# DesktopPetForMacApp — macOS 桌面小猫应用
 
 一款基于 SwiftUI + AppKit 混合开发的 macOS 桌面虚拟宠物。小猫悬浮在桌面最上层，支持鼠标互动、精灵图动画和右键菜单。
 
@@ -10,7 +10,7 @@
 
 | 层级 | 文件 | 职责 |
 |------|------|------|
-| **应用层** | `DesktopCatApp.swift` | 应用生命周期、权限检测、全局事件监听启动 |
+| **应用层** | `DesktopPetForMacAppApp.swift` | 应用生命周期、权限检测、全局事件监听启动 |
 | **窗口层** | `FloatingWindow.swift` | 无边框透明 `NSPanel` 管理，始终置顶 |
 | **视图层** | `ContentView.swift` | SwiftUI + 原生 `NSViewRepresentable` 桥接，渲染帧动画 |
 | **状态层** | `PetViewModel.swift` | 动画状态机、行为调度、鼠标响应、菜单交互 |
@@ -29,10 +29,10 @@
 ## 项目结构
 
 ```
-DesktopCat/
+DesktopPetForMacApp/
 ├── Package.swift                          # SPM 项目配置
-├── DesktopCat/
-│   ├── DesktopCatApp.swift                # @main 入口
+├── DesktopPetForMacApp/
+│   ├── DesktopPetForMacAppApp.swift                # @main 入口
 │   ├── FloatingWindow.swift               # 悬浮窗口控制器
 │   ├── ContentView.swift                  # SwiftUI 视图 + NSView 桥接
 │   ├── PetViewModel.swift                 # 状态管理与动画调度
@@ -61,7 +61,7 @@ DesktopCat/
 ## 编译
 
 ```bash
-cd DesktopCat
+cd DesktopPetForMacApp
 swift build -c release --disable-sandbox
 ```
 
@@ -74,7 +74,7 @@ bash package.sh
 运行：
 
 ```bash
-.build/release/DesktopCat
+.build/release/DesktopPetForMacApp
 ```
 
 或双击桌面 `桌面小猫.app`。
@@ -141,7 +141,7 @@ jump_sheet.png
 
 - **用途**：监听鼠标位置以实现"看向鼠标"效果，以及确保窗口正确置顶。
 - **引导**：未授权时会弹出提示，点击「前往设置」自动跳转到系统设置面板。
-- **路径**：`系统设置 > 隐私与安全性 > 辅助功能 > DesktopCat`（勾选）
+- **路径**：`系统设置 > 隐私与安全性 > 辅助功能 > DesktopPetForMacApp`（勾选）
 
 同时务必在 **Xcode > Target > Signing & Capabilities** 中**关闭 App Sandbox**，否则窗口无法设置为 `screenSaver` 级别。
 

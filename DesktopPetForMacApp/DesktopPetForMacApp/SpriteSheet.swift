@@ -1,5 +1,5 @@
 // SpriteSheet.swift
-// DesktopCat — 精灵图帧加载器
+// DesktopPetForMacApp — 精灵图帧加载器
 // 支持两种资源布局：
 //   1. 子文件夹模式（推荐）: Resources/Sprites/{state}/0.png, 1.png, ...
 //   2. 扁平模式（SPM 兼容）: Resources/Sprites/{state}_0.png, {state}_1.png, ...
@@ -52,7 +52,7 @@ final class SpriteSheet {
         self.state = state
 
         let allDirs = Self.allPossibleDirs(for: state.rawValue)
-        NSLog("[DesktopCat] Scanning for state '%@'", state.rawValue)
+        NSLog("[DesktopPetForMacApp] Scanning for state '%@'", state.rawValue)
 
         var loadedFrames: [NSImage] = []
 
@@ -60,7 +60,7 @@ final class SpriteSheet {
         for dir in allDirs {
             if let frames = Self.loadFramesFromDirectory(dir) {
                 loadedFrames = frames
-                NSLog("[DesktopCat] ✓ Loaded %d frames from subfolder: %@", frames.count, dir.path)
+                NSLog("[DesktopPetForMacApp] ✓ Loaded %d frames from subfolder: %@", frames.count, dir.path)
                 break
             }
         }
@@ -71,20 +71,20 @@ final class SpriteSheet {
             for dir in flatDirs {
                 if let frames = Self.loadFramesByPrefix(from: dir, prefix: state.rawValue) {
                     loadedFrames = frames
-                    NSLog("[DesktopCat] ✓ Loaded %d frames by prefix '%@_' from: %@", frames.count, state.rawValue, dir.path)
+                    NSLog("[DesktopPetForMacApp] ✓ Loaded %d frames by prefix '%@_' from: %@", frames.count, state.rawValue, dir.path)
                     break
                 }
             }
         }
 
         if loadedFrames.isEmpty {
-            NSLog("[DesktopCat] ✗ No frames found for %@, using placeholder", state.rawValue)
+            NSLog("[DesktopPetForMacApp] ✗ No frames found for %@, using placeholder", state.rawValue)
             loadedFrames = [SpriteSheet.placeholderImage(color: .orange, size: NSSize(width: 128, height: 128))]
         }
 
         self.frames = loadedFrames
         self.frameCount = loadedFrames.count
-        NSLog("[DesktopCat] Final frame count for %@: %d", state.rawValue, frameCount)
+        NSLog("[DesktopPetForMacApp] Final frame count for %@: %d", state.rawValue, frameCount)
     }
 
     // MARK: - Loading Helpers
@@ -170,15 +170,15 @@ final class SpriteSheet {
             dirs.append(url.appendingPathComponent("Resources/Sprites/\(stateName)"))
             // 再上两级（开发环境：.build/debug/ → 项目根目录）
             url = url.deletingLastPathComponent().deletingLastPathComponent()
-            dirs.append(url.appendingPathComponent("DesktopCat/Resources/Sprites/\(stateName)"))
+            dirs.append(url.appendingPathComponent("DesktopPetForMacApp/Resources/Sprites/\(stateName)"))
             // 再上三级（debug/arm64-apple-macosx/ 的情况）
             url = url.deletingLastPathComponent()
-            dirs.append(url.appendingPathComponent("DesktopCat/Resources/Sprites/\(stateName)"))
+            dirs.append(url.appendingPathComponent("DesktopPetForMacApp/Resources/Sprites/\(stateName)"))
         }
 
         // 3. 工作目录（swift run 时）
         dirs.append(URL(fileURLWithPath: fm.currentDirectoryPath)
-            .appendingPathComponent("DesktopCat/Resources/Sprites/\(stateName)"))
+            .appendingPathComponent("DesktopPetForMacApp/Resources/Sprites/\(stateName)"))
 
         return Self.deduplicate(dirs)
     }
@@ -203,14 +203,14 @@ final class SpriteSheet {
             url = url.deletingLastPathComponent()
             dirs.append(url.appendingPathComponent("Resources"))
             url = url.deletingLastPathComponent().deletingLastPathComponent()
-            dirs.append(url.appendingPathComponent("DesktopCat/Resources"))
+            dirs.append(url.appendingPathComponent("DesktopPetForMacApp/Resources"))
             url = url.deletingLastPathComponent()
-            dirs.append(url.appendingPathComponent("DesktopCat/Resources"))
+            dirs.append(url.appendingPathComponent("DesktopPetForMacApp/Resources"))
         }
 
         // 3. 工作目录
         dirs.append(URL(fileURLWithPath: fm.currentDirectoryPath)
-            .appendingPathComponent("DesktopCat/Resources"))
+            .appendingPathComponent("DesktopPetForMacApp/Resources"))
 
         return Self.deduplicate(dirs)
     }

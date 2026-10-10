@@ -1,5 +1,5 @@
 // TodoManager.swift
-// DesktopCat — 本地待办事项管理（UserDefaults 持久化）
+// DesktopPetForMacApp — 本地待办事项管理（UserDefaults 持久化）
 
 import Foundation
 
@@ -10,7 +10,7 @@ struct TodoItem: Codable {
 
 class TodoManager {
     static let shared = TodoManager()
-    private let key = "desktopcat.todos"
+    private let key = "desktoppetformacapp.todos"
     
     func load() -> [TodoItem] {
         guard let data = UserDefaults.standard.data(forKey: key),

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DesktopCat 打包脚本
-# 产出 DesktopCat.app 到桌面
+# DesktopPetForMacApp 打包脚本
+# 产出 DesktopPetForMacApp.app 到桌面
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="DesktopCat"
+APP_NAME="DesktopPetForMacApp"
 DESKTOP="$HOME/Desktop"
 
 # ── 1. Release 编译 ──────────────────────────────────────────────
@@ -33,7 +33,7 @@ fi
 CONTENTS="$APP_BUNDLE/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
-SPRITES_SRC="$PROJECT_DIR/DesktopCat/Resources/Sprites"
+SPRITES_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/Sprites"
 
 mkdir -p "$MACOS" "$RESOURCES/Sprites"
 
@@ -42,7 +42,7 @@ cp "$BUILD_BIN" "$MACOS/$APP_NAME"
 chmod +x "$MACOS/$APP_NAME"
 
 # 应用图标（.icns 格式）
-ICON_SRC="$PROJECT_DIR/DesktopCat/Resources/AppIcon.icns"
+ICON_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/AppIcon.icns"
 if [ -f "$ICON_SRC" ]; then
     cp "$ICON_SRC" "$RESOURCES/AppIcon.icns"
 fi
@@ -60,7 +60,7 @@ done
 cd "$PROJECT_DIR"
 
 # ── 4. 复制 Info.plist ──────────────────────────────────────────
-cp "$PROJECT_DIR/DesktopCat/Info.plist" "$CONTENTS/Info.plist"
+cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
 
 # ── 5. 拷贝到桌面 ───────────────────────────────────────────────
 echo "📦 拷贝到桌面…"

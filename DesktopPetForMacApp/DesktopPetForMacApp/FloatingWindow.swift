@@ -691,7 +691,7 @@ class CatView: NSView {
     private func fetchWeatherForecast(forCity cityName: String) -> WeatherForecast? {
         let encoded = cityName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cityName
         let nominatimURL = "https://nominatim.openstreetmap.org/search?q=\(encoded)&format=json&limit=1"
-        guard let geoData = runCurl(nominatimURL, timeout: 8, userAgent: "DesktopCat/1.0"),
+        guard let geoData = runCurl(nominatimURL, timeout: 8, userAgent: "DesktopPetForMacApp/1.0"),
               let geoJson = try? JSONSerialization.jsonObject(with: geoData) as? [[String: Any]],
               let first = geoJson.first,
               let latStr = first["lat"] as? String,

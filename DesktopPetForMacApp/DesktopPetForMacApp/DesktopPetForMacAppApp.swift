@@ -1,12 +1,12 @@
-// DesktopCatApp.swift
-// DesktopCat — macOS 桌面小猫应用
+// DesktopPetForMacAppApp.swift
+// DesktopPetForMacApp — macOS 桌面小猫应用
 // 入口文件：初始化浮动窗口、检测权限、启动事件监听
 
 import SwiftUI
 import AppKit
 
 @main
-struct DesktopCatApp: App {
+struct DesktopPetForMacAppApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
@@ -61,7 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @MainActor private func showPermissionBanner() {
         // 非阻塞式权限提示：在控制台输出，不弹窗阻止用户使用
-        NSLog("[DesktopCat] 辅助功能权限未授权，鼠标跟随功能不可用。如需开启，请前往「系统设置 > 隐私与安全性 > 辅助功能」中启用 DesktopCat。")
+        NSLog("[DesktopPetForMacApp] 辅助功能权限未授权，鼠标跟随功能不可用。如需开启，请前往「系统设置 > 隐私与安全性 > 辅助功能」中启用 DesktopPetForMacApp。")
     }
     
 }

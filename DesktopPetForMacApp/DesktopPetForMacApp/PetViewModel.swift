@@ -1,5 +1,5 @@
 // PetViewModel.swift
-// DesktopCat — 小猫状态管理 + 动画调度
+// DesktopPetForMacApp — 小猫状态管理 + 动画调度
 // 负责：动画状态机、鼠标响应、随机待机行为、互动反馈
 
 import SwiftUI

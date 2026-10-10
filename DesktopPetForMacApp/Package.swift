@@ -1,25 +1,25 @@
 // swift-tools-version:5.9
 // Package.swift
-// DesktopCat — Swift Package Manager 项目配置
+// DesktopPetForMacApp — Swift Package Manager 项目配置
 // 使用 `swift build` 编译，或在 Xcode 中打开 Package.swift
 
 import PackageDescription
 
 let package = Package(
-    name: "DesktopCat",
+    name: "DesktopPetForMacApp",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .executable(
-            name: "DesktopCat",
-            targets: ["DesktopCat"]
+            name: "DesktopPetForMacApp",
+            targets: ["DesktopPetForMacApp"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "DesktopCat",
-            path: "DesktopCat",
+            name: "DesktopPetForMacApp",
+            path: "DesktopPetForMacApp",
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]

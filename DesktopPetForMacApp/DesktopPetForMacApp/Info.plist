@@ -8,13 +8,13 @@
 
     <!-- 应用名称 -->
     <key>CFBundleName</key>
-    <string>DesktopCat</string>
+    <string>DesktopPetForMacApp</string>
     <key>CFBundleDisplayName</key>
     <string>桌面小猫</string>
     
     <!-- Bundle 标识符 -->
     <key>CFBundleIdentifier</key>
-    <string>com.desktopcat.app</string>
+    <string>com.desktoppetformacapp.app</string>
     
     <!-- 最低系统版本 -->
     <key>LSMinimumSystemVersion</key>
@@ -28,11 +28,11 @@
     
     <!-- 辅助功能权限说明（必需） -->
     <key>NSAccessibilityUsageDescription</key>
-    <string>DesktopCat 需要辅助功能权限来监听鼠标事件，并始终悬浮在桌面最上层。</string>
+    <string>DesktopPetForMacApp 需要辅助功能权限来监听鼠标事件，并始终悬浮在桌面最上层。</string>
     
     <!-- 可执行文件名 -->
     <key>CFBundleExecutable</key>
-    <string>DesktopCat</string>
+    <string>DesktopPetForMacApp</string>
     
     <!-- 包类型：APPL = 应用程序 -->
     <key>CFBundlePackageType</key>

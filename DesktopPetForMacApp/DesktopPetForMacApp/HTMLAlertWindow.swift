@@ -611,6 +611,14 @@ class HTMLAlertWindow: NSWindow {
     }
 
     private func closeWindow() {
+        // 移除所有 WKScriptMessageHandler，防止内存泄漏
+        if let wv = webView {
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "close")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "openUrl")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "confirm")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "addTodo")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "deleteTodo")
+        }
         self.orderOut(nil)
         self.onClose?()
     }

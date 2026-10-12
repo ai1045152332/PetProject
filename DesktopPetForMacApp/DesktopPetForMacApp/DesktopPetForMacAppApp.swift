@@ -20,8 +20,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var floatingWindow: FloatingWindow?
     var viewModel: PetViewModel?
     var statusItem: NSStatusItem?
+    private var settingsPanel: SettingsPanel?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 初始化文件日志
+        FileLogger.setup()
+
         // 直接启动小猫，不阻塞在权限检测上
         // 辅助功能权限只影响"看向鼠标"效果，不影响基本显示
         setupCat()
@@ -77,6 +81,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
         
+        let settingsItem = NSMenuItem(title: "设置", action: #selector(showSettings(_:)), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         let quitItem = NSMenuItem(title: "退出", action: #selector(quit(_:)), keyEquivalent: "q")
@@ -94,18 +102,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.show()
         }
     }
+
+    @MainActor @objc private func showSettings(_ sender: Any?) {
+        if settingsPanel == nil, let vm = viewModel {
+            settingsPanel = SettingsPanel(viewModel: vm)
+        }
+        settingsPanel?.showCentered()
+    }
     
     @MainActor @objc private func quit(_ sender: Any?) {
         NSApp.terminate(nil)
     }
     
     private func startGlobalMouseTracking() {
-        // 使用 60ms 轮询获取鼠标位置，性能友好
-        Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            let mouseLocation = NSEvent.mouseLocation
-            self.viewModel?.updateMousePosition(mouseLocation)
-        }
+        // 已移除"看向鼠标"朝向跟随功能（该功能导致小猫翻转后消失）
+        // 保留方法签名以便将来恢复，当前不再启动 Timer 轮询
     }
     
     @MainActor private func showPermissionBanner() {

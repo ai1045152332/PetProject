@@ -20,11 +20,11 @@
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     
-    <!-- 版本号 -->
+    <!-- 版本号（格式：年.月.日-测试版本） -->
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>2026.10.10-test3</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2026101003</string>
     
     <!-- 辅助功能权限说明（必需） -->
     <key>NSAccessibilityUsageDescription</key>

@@ -4,8 +4,8 @@ import AppKit
 
 // MARK: - 无边框浮动窗口（支持成为 key/main window）
 class FloatingPanel: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 @MainActor
@@ -28,7 +28,7 @@ final class FloatingWindow {
             defer: false
         )
         
-        win.level = .floating
+        win.level = .popUpMenu
         win.backgroundColor = .clear
         win.isOpaque = false
         win.hasShadow = false
@@ -38,8 +38,8 @@ final class FloatingWindow {
         win.hidesOnDeactivate = false
         
         let cv = CatView(frame: NSRect(origin: .zero, size: windowSize))
-        cv.wantsLayer = true
-        cv.layer?.backgroundColor = NSColor.clear.cgColor
+        // 纯 AppKit draw(_:) 渲染，不手动配置 layer（避免 layer 渲染 bug）
+        cv.setupLayerHosting()
         cv.viewModel = viewModel
         cv.windowRef = win
         cv.autoresizingMask = [.width, .height]
@@ -68,16 +68,20 @@ final class FloatingWindow {
             }
         }
         
-        // 启动时后台预加载定位（点击天气时不用再等定位）
-        cv.prefetchLocation()
+        // 定位由 WeatherService 内部缓存，无需预加载
         
         win.makeKeyAndOrderFront(nil)
         win.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
     }
     
     func hide() { window?.orderOut(nil) }
     var isVisible: Bool { window?.isVisible ?? false }
+    func keepInFront() { window?.orderFrontRegardless() }
+    /// 恢复窗口层级（设置面板关闭后调用）
+    func restoreLevel() {
+        window?.level = .popUpMenu
+        window?.orderFront(nil)
+    }
     func close() {
         updateTimer?.invalidate()
         window?.close()
@@ -98,57 +102,48 @@ class CatView: NSView {
     weak var windowRef: NSWindow?
     private var dragOffset: NSPoint = .zero
     private var isDragging = false
-    
-    // MARK: - Location Cache（启动时预加载）
-    private var cachedLocation: (city: String, lat: Double, lon: Double)?
-    
-    override func draw(_ dirtyRect: NSRect) {
-        // draw 由 CALayer.contents 替代，不再手动绘制
-        // 仅在首次需要背景时做一次透明填充
-        NSColor.clear.setFill()
-        dirtyRect.fill()
+    private var trackingArea: NSTrackingArea?
+
+    // MARK: - 纯 AppKit 绘制（不使用 CALayer / transform / 子视图）
+    // 彻底避免 layer 相关的所有渲染问题
+    private var currentImage: NSImage?
+
+    func setupLayerHosting() {
+        // 不需要任何子视图或 layer，全部通过 draw(_:) 绘制
+        FileLogger.log("[DesktopPet] setup: pure draw(_:) rendering")
     }
-    
-    /// 直接用 layer.contents 设置图片，CATransaction 禁用隐式动画避免闪烁
+
+    // 注意：不使用 NSTrackingArea / mouseEntered / mouseExited
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        // 已移除"看向鼠标"翻转，猫固定朝右，这里原样绘制即可
+        guard let image = currentImage else { return }
+        image.draw(in: bounds)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        FileLogger.log("[DesktopPet] viewDidMoveToWindow: window=\(String(describing: window))")
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        FileLogger.log("[DesktopPet] viewWillMoveToWindow: newWindow=\(String(describing: newWindow))")
+    }
+
+    /// 保存当前帧并触发重绘
     func updateLayerImage() {
-        guard let vm = viewModel,
-              let image = vm.currentFrameImage,
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        else { return }
-        
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        
-        if vm.facing == .left {
-            // 水平翻转：创建 flipped CGImage
-            let width = cgImage.width
-            let height = cgImage.height
-            let colorSpace = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-            let bitmapInfo = cgImage.bitmapInfo
-            
-            guard let ctx = CGContext(
-                data: nil,
-                width: width, height: height,
-                bitsPerComponent: cgImage.bitsPerComponent,
-                bytesPerRow: cgImage.bytesPerRow,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo.rawValue
-            ) else {
-                layer?.contents = cgImage
-                CATransaction.commit()
-                return
-            }
-            
-            ctx.translateBy(x: CGFloat(width), y: 0)
-            ctx.scaleBy(x: -1, y: 1)
-            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
-            
-            layer?.contents = ctx.makeImage()
-        } else {
-            layer?.contents = cgImage
+        guard let vm = viewModel else {
+            FileLogger.log("[DesktopPet] updateLayerImage: viewModel is nil")
+            return
+        }
+        guard let image = vm.currentFrameImage else {
+            FileLogger.log("[DesktopPet] updateLayerImage: currentFrameImage is nil, state=\(vm.animationState.displayName)")
+            return
         }
         
-        CATransaction.commit()
+        currentImage = image
+        needsDisplay = true
     }
     
     // MARK: - Mouse Events
@@ -170,12 +165,14 @@ class CatView: NSView {
         let newY = currentOrigin.y + mouseLocation.y - dragOffset.y
         
         win.setFrameOrigin(NSPoint(x: newX, y: newY))
+        // 更新窗口位置，供朝向判断使用
+        viewModel?.windowPosition = NSPoint(x: newX, y: newY)
     }
     
     override func mouseUp(with event: NSEvent) {
         if !isDragging {
-            // 点击恢复 idle（从 jump 状态回来）
-            viewModel?.transitionTo(.idle)
+            // 点击恢复 focus（从 warn 状态回来）
+            viewModel?.transitionTo(.focus)
             
             // 双击展示 Todo 清单
             if event.clickCount == 2 {
@@ -183,18 +180,6 @@ class CatView: NSView {
             }
         }
         isDragging = false
-    }
-    
-    /// 启动时后台预加载定位
-    func prefetchLocation() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self = self else { return }
-            if let loc = self.fetchLocation() {
-                DispatchQueue.main.async {
-                    self.cachedLocation = loc
-                }
-            }
-        }
     }
     
     private var loadingLabel: NSTextField?
@@ -230,7 +215,7 @@ class CatView: NSView {
         """
         HTMLAlertWindow.show(title: "小猫喝水提醒", htmlBody: htmlBody, width: 340) { [weak self] in
             self?.viewModel?.isWaterAlertShowing = false
-            self?.viewModel?.transitionTo(.idle)
+            self?.viewModel?.transitionTo(.focus)
         }
     }
     
@@ -260,6 +245,7 @@ class CatView: NSView {
                 .replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
                 .replacingOccurrences(of: "\"", with: "&quot;")
+                .replacingOccurrences(of: "'", with: "&#x27;")
             rows.append("""
                 <tr>
                     <td><span class="news-rank">\(item.rank)</span></td>
@@ -376,17 +362,6 @@ class CatView: NSView {
         """
     }
 
-    private func weatherEmoji(for text: String) -> String {
-        if text.contains("晴") { return "☀️" }
-        if text.contains("多云") { return "⛅" }
-        if text.contains("阴") { return "☁️" }
-        if text.contains("雨") { return "🌧️" }
-        if text.contains("雪") { return "🌨️" }
-        if text.contains("雾") || text.contains("霾") { return "🌫️" }
-        if text.contains("雷") { return "⛈️" }
-        return "🌤️"
-    }
-
     /// 显示输入城市弹窗
     func showLocationWeatherInput() {
         HTMLAlertWindow.showInput(title: "输入城市查天气", placeholder: "如：北京、上海、广州", okLabel: "查询天气 🔍") { [weak self] input in
@@ -407,20 +382,6 @@ class CatView: NSView {
     }
     
     // MARK: - 股票查询
-    
-    struct StockInfo {
-        let name: String
-        let code: String
-        let currentPrice: Double
-        let prevClose: Double
-        let openPrice: Double
-        let high: Double
-        let low: Double
-        let volume: Double
-        let turnover: Double
-        let change: Double
-        let changePercent: Double
-    }
     
     func showStockInput() {
         let history = StockHistoryManager.shared.load()
@@ -461,35 +422,11 @@ class CatView: NSView {
         }
     }
     
-    private func normalizeStockCode(_ code: String) -> String? {
-        let trimmed = code.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-        
-        let prefixes = ["sh", "sz", "bj", "hk"]
-        for p in prefixes {
-            if trimmed.lowercased().hasPrefix(p) {
-                return trimmed.lowercased()
-            }
-        }
-        
-        if trimmed.count == 6, trimmed.allSatisfy({ $0.isNumber }) {
-            if trimmed.hasPrefix("6") || trimmed.hasPrefix("68") {
-                return "sh" + trimmed
-            } else if trimmed.hasPrefix("0") || trimmed.hasPrefix("3") {
-                return "sz" + trimmed
-            } else if trimmed.hasPrefix("8") || trimmed.hasPrefix("4") {
-                return "bj" + trimmed
-            }
-        }
-        
-        return nil
-    }
-    
     private func fetchAndShowStock(code: String) {
         showLoadingToast("正在查询股票...")
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
-            guard let info = self.fetchStockInfo(code: code) else {
+            guard let info = StockService.fetchStockInfo(code: code) else {
                 DispatchQueue.main.async { [weak self] in
                     self?.hideLoadingToast()
                     HTMLAlertWindow.show(title: "查询失败", htmlBody: "<div style=\"text-align:center;padding:20px 0;color:#c0c0d0;\">查询失败，请检查股票代码是否正确</div>", width: 300)
@@ -502,51 +439,6 @@ class CatView: NSView {
                 self?.showStockAlert(info)
             }
         }
-    }
-    
-    private func fetchStockInfo(code: String) -> StockInfo? {
-        guard let normalized = normalizeStockCode(code) else { return nil }
-        let url = "https://qt.gtimg.cn/q=\(normalized)"
-        guard let data = runCurl(url, timeout: 5, userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36") else { return nil }
-        
-        // 腾讯 API 返回 GBK/GB18030 编码，先尝试 GB18030，再尝试 UTF-8
-        let text: String
-        let gbEncoding = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
-        if let gbText = String(data: data, encoding: String.Encoding(rawValue: gbEncoding)) {
-            text = gbText
-        } else if let utf8Text = String(data: data, encoding: .utf8) {
-            text = utf8Text
-        } else {
-            return nil
-        }
-        
-        let prefix = "v_\(normalized)=\""
-        guard let start = text.range(of: prefix)?.upperBound else { return nil }
-        guard let end = text[start...].range(of: "\"")?.lowerBound else { return nil }
-        let content = String(text[start..<end])
-        let parts = content.components(separatedBy: "~")
-        
-        guard parts.count > 5 else { return nil }
-        
-        let name = parts[1]
-        let currentPrice = Double(parts[3]) ?? 0
-        let prevClose = Double(parts[4]) ?? 0
-        let openPrice = Double(parts[5]) ?? 0
-        let high = parts.count > 19 ? (Double(parts[19]) ?? 0) : 0
-        let low = parts.count > 20 ? (Double(parts[20]) ?? 0) : 0
-        let volume = parts.count > 6 ? (Double(parts[6]) ?? 0) : 0
-        let turnover = parts.count > 7 ? (Double(parts[7]) ?? 0) : 0
-        
-        let change = currentPrice - prevClose
-        let changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0
-        
-        return StockInfo(
-            name: name, code: normalized,
-            currentPrice: currentPrice, prevClose: prevClose,
-            openPrice: openPrice, high: high, low: low,
-            volume: volume, turnover: turnover,
-            change: change, changePercent: changePercent
-        )
     }
     
     private func showStockAlert(_ info: StockInfo) {
@@ -633,33 +525,6 @@ class CatView: NSView {
         HTMLAlertWindow.show(title: "\(info.name) \(info.code.uppercased())", htmlBody: body + "<style>\(extraCSS)</style>", width: 340, maxHeight: 520)
     }
 
-    // MARK: - 和风天气配置
-    private let qweatherHost = "kv359hcbtd.re.qweatherapi.com"
-    private let qweatherKey  = "f1f27eaa954e40aa975a0a9418a205f0"
-
-    private struct WeatherHourly {
-        let time: String
-        let temp: String
-        let text: String
-        let icon: String
-    }
-    private struct WeatherDaily {
-        let dayName: String
-        let textDay: String
-        let tempMax: String
-        let tempMin: String
-        let icon: String
-    }
-    private struct WeatherForecast {
-        let city: String
-        let nowTemp: String
-        let nowText: String
-        let todayMax: String
-        let todayMin: String
-        let hourly: [WeatherHourly]
-        let daily: [WeatherDaily]
-    }
-
     /// 双击/右键调用：获取天气并展示（支持指定城市）
     private func fetchWeatherAndShow(for cityInput: String? = nil) {
         let loadingText = cityInput == nil ? "🌤️ 查询天气中..." : "🌤️ 查询 \"\(cityInput!)\" 天气..."
@@ -669,9 +534,9 @@ class CatView: NSView {
             guard let self = self else { return }
             let forecast: WeatherForecast?
             if let input = cityInput {
-                forecast = self.fetchWeatherForecast(forCity: input)
+                forecast = WeatherService.fetchWeatherForecast(forCity: input)
             } else {
-                forecast = self.fetchWeatherForecastWithLocation()
+                forecast = WeatherService.fetchWeatherForecastWithLocation()
             }
             DispatchQueue.main.async {
                 self.hideLoadingToast()
@@ -683,142 +548,12 @@ class CatView: NSView {
             }
         }
     }
-
-    private func fetchWeatherForecastWithLocation() -> WeatherForecast? {
-        guard let loc = cachedLocation ?? fetchLocation() else { return nil }
-        return fetchWeatherForecast(city: loc.city, lat: loc.lat, lon: loc.lon)
-    }
-
-    private func fetchWeatherForecast(forCity cityName: String) -> WeatherForecast? {
-        let encoded = cityName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cityName
-        let nominatimURL = "https://nominatim.openstreetmap.org/search?q=\(encoded)&format=json&limit=1"
-        guard let geoData = runCurl(nominatimURL, timeout: 8, userAgent: "DesktopPetForMacApp/1.0"),
-              let geoJson = try? JSONSerialization.jsonObject(with: geoData) as? [[String: Any]],
-              let first = geoJson.first,
-              let latStr = first["lat"] as? String,
-              let lonStr = first["lon"] as? String,
-              let lat = Double(latStr),
-              let lon = Double(lonStr),
-              let displayName = first["display_name"] as? String else {
-            return nil
-        }
-        let shortName = displayName.split(separator: ",").first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? cityName
-        return fetchWeatherForecast(city: shortName, lat: lat, lon: lon)
-    }
-
-    private func fetchWeatherForecast(city: String, lat: Double, lon: Double) -> WeatherForecast? {
-        let loc = "\(lon),\(lat)"
-
-        // 1. 实时天气
-        let nowURL = "https://\(qweatherHost)/v7/weather/now?location=\(loc)&key=\(qweatherKey)"
-        guard let nowData = runCurl(nowURL, timeout: 5),
-              let nowJson = try? JSONSerialization.jsonObject(with: nowData) as? [String: Any],
-              let nowCode = nowJson["code"] as? String, nowCode == "200",
-              let now = nowJson["now"] as? [String: Any] else {
-            return nil
-        }
-        let nowTemp = now["temp"] as? String ?? "?"
-        let nowText = now["text"] as? String ?? "未知"
-
-        // 2. 逐小时预报
-        var hourly: [WeatherHourly] = []
-        let h24URL = "https://\(qweatherHost)/v7/weather/24h?location=\(loc)&key=\(qweatherKey)"
-        if let h24Data = runCurl(h24URL, timeout: 5),
-           let h24Json = try? JSONSerialization.jsonObject(with: h24Data) as? [String: Any],
-           let h24Code = h24Json["code"] as? String, h24Code == "200",
-           let h24List = h24Json["hourly"] as? [[String: Any]] {
-            for h in h24List.prefix(6) {
-                let fxTime = h["fxTime"] as? String ?? ""
-                let hourStr = formatHour(from: fxTime)
-                let temp = h["temp"] as? String ?? "?"
-                let text = h["text"] as? String ?? ""
-                hourly.append(WeatherHourly(time: hourStr, temp: temp, text: text, icon: weatherEmoji(for: text)))
-            }
-        }
-
-        // 3. 3天预报
-        let d3URL = "https://\(qweatherHost)/v7/weather/3d?location=\(loc)&key=\(qweatherKey)"
-        guard let d3Data = runCurl(d3URL, timeout: 5),
-              let d3Json = try? JSONSerialization.jsonObject(with: d3Data) as? [String: Any],
-              let d3Code = d3Json["code"] as? String, d3Code == "200",
-              let dailyList = d3Json["daily"] as? [[String: Any]],
-              !dailyList.isEmpty else {
-            return nil
-        }
-
-        var daily: [WeatherDaily] = []
-        let dayNames = ["今天", "明天", "后天"]
-        for (i, d) in dailyList.enumerated() {
-            let name = i < 3 ? dayNames[i] : "第\(i+1)天"
-            let textDay = d["textDay"] as? String ?? "未知"
-            daily.append(WeatherDaily(
-                dayName: name,
-                textDay: textDay,
-                tempMax: d["tempMax"] as? String ?? "?",
-                tempMin: d["tempMin"] as? String ?? "?",
-                icon: weatherEmoji(for: textDay)
-            ))
-        }
-
-        let today = dailyList.first
-        let todayMax = today?["tempMax"] as? String ?? "?"
-        let todayMin = today?["tempMin"] as? String ?? "?"
-
-        return WeatherForecast(
-            city: city,
-            nowTemp: nowTemp,
-            nowText: nowText,
-            todayMax: todayMax,
-            todayMin: todayMin,
-            hourly: hourly,
-            daily: daily
-        )
-    }
-
-    private func formatHour(from isoTime: String) -> String {
-        // isoTime: "2026-07-30T18:00+08:00"
-        let parts = isoTime.split(separator: "T")
-        guard parts.count == 2 else { return isoTime }
-        let timePart = String(parts[1])
-        let hourParts = timePart.split(separator: ":")
-        guard let hour = hourParts.first else { return isoTime }
-        return "\(hour)时"
-    }
-
-    private func runCurl(_ urlString: String, timeout: Int = 5, userAgent: String? = nil) -> Data? {
-        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        var args = ["-s", "--compressed", "--connect-timeout", "\(timeout)", "-m", "\(timeout + 2)", "-o", tempFile.path]
-        if let ua = userAgent {
-            args.append("-H")
-            args.append("User-Agent: \(ua)")
-        }
-        args.append(urlString)
-        process.arguments = args
-        try? process.run()
-        process.waitUntilExit()
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-        return try? Data(contentsOf: tempFile)
-    }
-    
-    /// 获取当前城市名和坐标（国内友好：api.ip.sb，5秒超时）
-    private func fetchLocation() -> (city: String, lat: Double, lon: Double)? {
-        guard let data = runCurl("https://api.ip.sb/geoip", timeout: 5),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let city = json["city"] as? String,
-              let lat = json["latitude"] as? Double,
-              let lon = json["longitude"] as? Double else {
-            return nil
-        }
-        return (city, lat, lon)
-    }
     
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
         menu.autoenablesItems = false
         
-        let feedItem = NSMenuItem(title: "抚摸 👋", action: #selector(feedAction(_:)), keyEquivalent: "")
+        let feedItem = NSMenuItem(title: "喂食 🍽️", action: #selector(feedAction(_:)), keyEquivalent: "")
         feedItem.target = self
         feedItem.isEnabled = true
         menu.addItem(feedItem)

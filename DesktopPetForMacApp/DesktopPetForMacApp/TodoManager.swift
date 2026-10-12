@@ -11,8 +11,11 @@ struct TodoItem: Codable {
 class TodoManager {
     static let shared = TodoManager()
     private let key = "desktoppetformacapp.todos"
+    private let lock = NSLock()
     
     func load() -> [TodoItem] {
+        lock.lock()
+        defer { lock.unlock() }
         guard let data = UserDefaults.standard.data(forKey: key),
               let items = try? JSONDecoder().decode([TodoItem].self, from: data) else {
             return []
@@ -21,6 +24,8 @@ class TodoManager {
     }
     
     func add(text: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var items = load()
         let item = TodoItem(id: UUID().uuidString, text: text)
         items.append(item)
@@ -28,6 +33,8 @@ class TodoManager {
     }
     
     func delete(id: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var items = load()
         items.removeAll { $0.id == id }
         save(items)

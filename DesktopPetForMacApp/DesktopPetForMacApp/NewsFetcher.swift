@@ -23,7 +23,7 @@ struct NewsFetcher {
     }
 
     private static func fetchFromToutiao() -> [NewsItem]? {
-        guard let data = runCurl("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", timeout: 8, userAgent: true),
+        guard let data = NetworkClient.fetchData("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", timeout: 8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let newsData = json["data"] as? [[String: Any]],
               !newsData.isEmpty else {
@@ -40,7 +40,7 @@ struct NewsFetcher {
     }
 
     private static func fetchFromBaidu() -> [NewsItem]? {
-        guard let data = runCurl("https://top.baidu.com/api/board?platform=wise&tab=realtime", timeout: 8, userAgent: true),
+        guard let data = NetworkClient.fetchData("https://top.baidu.com/api/board?platform=wise&tab=realtime", timeout: 8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let top = json["data"] as? [String: Any],
               let cards = top["cards"] as? [[String: Any]],
@@ -70,22 +70,5 @@ struct NewsFetcher {
             items.append(NewsItem(rank: index + 1, title: title, url: url))
         }
         return items
-    }
-
-    private static func runCurl(_ urlString: String, timeout: Int, userAgent: Bool) -> Data? {
-        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        var args = ["-s", "--compressed", "--connect-timeout", "\(timeout)", "-m", "\(timeout + 2)", "-o", tempFile.path]
-        if userAgent {
-            args.append("-H")
-            args.append("User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-        }
-        args.append(urlString)
-        process.arguments = args
-        try? process.run()
-        process.waitUntilExit()
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-        return try? Data(contentsOf: tempFile)
     }
 }

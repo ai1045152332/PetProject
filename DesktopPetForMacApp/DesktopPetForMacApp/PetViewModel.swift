@@ -7,11 +7,22 @@ import AppKit
 
 /// 小猫动画状态
 enum CatAnimationState: String, CaseIterable {
-    case idle   = "idle"    // 待机
-    case walk   = "walk"    // 走动
-    case jump   = "jump"    // 跳跃/开心
+    case focus  = "focus"   // 专注
+    case idel   = "idel"    // 休闲
+    case warn   = "warn"    // 提醒
     case sleep  = "sleep"   // 睡觉
-    case pet    = "pet"     // 抚摸
+    case pet    = "pet"     // 喂食
+
+    /// 中文展示名
+    var displayName: String {
+        switch self {
+        case .focus: return "专注"
+        case .idel:  return "休闲"
+        case .warn:  return "提醒"
+        case .sleep: return "睡觉"
+        case .pet:   return "喂食"
+        }
+    }
 }
 
 /// 小猫面向方向
@@ -25,7 +36,7 @@ final class PetViewModel: ObservableObject {
     // MARK: - Published State
     
     /// 当前动画状态
-    @Published private(set) var animationState: CatAnimationState = .idle
+    @Published private(set) var animationState: CatAnimationState = .focus
     
     /// 面向方向
     @Published private(set) var facing: CatFacing = .right
@@ -50,8 +61,17 @@ final class PetViewModel: ObservableObject {
     /// 精灵图加载器，按状态持有
     var spriteSheets: [CatAnimationState: SpriteSheet] = [:]
     
-    /// 当前要显示的图片帧（直接暴露给视图，避免 SwiftUI Image(nsImage:) 刷新问题）
-    @Published var currentFrameImage: NSImage? = nil
+    /// 镜像帧缓存（朝左时使用），加载精灵图后一次性生成
+    private var flippedFrames: [CatAnimationState: [NSImage]] = [:]
+    
+    /// 当前要显示的图片帧
+    /// 注意：不使用 @Published，由视图的定时器每帧读取
+    /// 已移除"看向鼠标"翻转功能，固定显示原图（朝右）
+    var currentFrameImage: NSImage? {
+        guard let sheet = spriteSheets[animationState] else { return nil }
+        let index = currentFrameIndex
+        return sheet.frame(at: index)
+    }
     
     /// 帧率：12 FPS
     private let frameRate: TimeInterval = 1.0 / 12.0
@@ -92,30 +112,77 @@ final class PetViewModel: ObservableObject {
     
     init() {
         loadSpriteSheets()
-        // 初始化首帧图片
-        if let sheet = spriteSheets[.idle] {
-            currentFrameImage = sheet.frame(at: 0)
-        }
+        // 首帧图片由 currentFrameImage 计算属性基于 currentFrameIndex=0 自动提供
+        currentFrameIndex = 0
         startFrameLoop()
         startBehaviorLoop()
         startDrinkWaterReminder()
+    }
+    
+    deinit {
+        frameTimer?.invalidate()
+        behaviorTimer?.invalidate()
+        drinkWaterTimer?.invalidate()
+        firstWaterTimer?.invalidate()
     }
     
     // MARK: - Sprite Sheet Loading
     
     /// 加载所有动画精灵图
     /// 替换资源说明：将透明背景 PNG 放入 Resources/Sprites/，命名规则如下
-    ///   idle_0.png ~ idle_N.png
-    ///   walk_0.png ~ walk_N.png
-    ///   jump_0.png ~ jump_N.png
+    ///   focus_0.png ~ focus_N.png
+    ///   idel_0.png ~ idel_N.png
+    ///   warn_0.png ~ warn_N.png
     ///   sleep_0.png ~ sleep_N.png
-    ///   eat_0.png ~ eat_N.png
+    ///   pet_0.png ~ pet_N.png
     private func loadSpriteSheets() {
         for state in CatAnimationState.allCases {
             if let sheet = SpriteSheet(state: state) {
                 spriteSheets[state] = sheet
+                // 预生成镜像帧，供朝左时使用（避免运行期翻转渲染）
+                var mirrored: [NSImage] = []
+                for i in 0..<sheet.frameCount {
+                    mirrored.append(Self.mirrorImage(sheet.frame(at: i)))
+                }
+                flippedFrames[state] = mirrored
+                FileLogger.log("[DesktopPet] loadSpriteSheets: \(state.displayName) loaded, frameCount=\(sheet.frameCount)")
+            } else {
+                FileLogger.log("[DesktopPet] loadSpriteSheets: \(state.displayName) FAILED to load sprite sheet")
             }
         }
+    }
+    
+    /// 生成水平镜像图片（一次性预渲染，避免运行期翻转绘制）
+    /// 使用 CoreGraphics 字节级镜像，最稳定可靠
+    private static func mirrorImage(_ image: NSImage) -> NSImage {
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return image }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return image
+        }
+        let w = cg.width
+        let h = cg.height
+        
+        // 创建 RGBA 上下文
+        guard let ctx = CGContext(
+            data: nil,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return image
+        }
+        
+        // 水平镜像：沿水平轴翻转坐标系后绘制
+        ctx.translateBy(x: CGFloat(w), y: 0)
+        ctx.scaleBy(x: -1, y: 1)
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        
+        guard let mirroredCG = ctx.makeImage() else { return image }
+        return NSImage(cgImage: mirroredCG, size: size)
     }
     
     // MARK: - Frame Animation Loop
@@ -134,16 +201,16 @@ final class PetViewModel: ObservableObject {
         
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
-        // 一次性动画（pet）播完自动切回 idle
-        // jump 不自动回 idle，等用户点击
-        if isPlayingOneShot && animationState != .jump && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
+        // 一次性动画（pet）播完自动切回 focus
+        // warn 不自动回 focus，等用户点击
+        if isPlayingOneShot && animationState != .warn && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
             isPlayingOneShot = false
-            transitionTo(.idle)
+            transitionTo(.focus)
             return
         }
         
         currentFrameIndex = nextIndex
-        currentFrameImage = sheet.frame(at: currentFrameIndex)
+        // currentFrameImage 由计算属性根据 currentFrameIndex + facing 自动提供
     }
     
     // MARK: - Behavior Loop (Random Idle Actions)
@@ -170,8 +237,9 @@ final class PetViewModel: ObservableObject {
             return
         }
         
-        // 每 30 分钟自动跳一下，跳完后不自动回 idle，等用户点击
-        playOneShot(.jump)
+        FileLogger.log("[DesktopPet] performRandomBehavior triggered, currentState=\(animationState.displayName)")
+        // 每 30 分钟自动提醒一下，提醒完后不自动回 focus，等用户点击
+        playOneShot(.warn)
         
         scheduleNextBehavior()
     }
@@ -184,18 +252,16 @@ final class PetViewModel: ObservableObject {
         animationState = newState
         currentFrameIndex = 0
         isPlayingOneShot = false
-        if let sheet = spriteSheets[newState] {
-            currentFrameImage = sheet.frame(at: 0)
-        }
+        // currentFrameImage 由计算属性根据当前 orientation 自动提供
+        FileLogger.log("[DesktopPet] transitionTo(\((newState.displayName)), frameCount=\(spriteSheets[newState]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil)")
     }
     
     func playOneShot(_ state: CatAnimationState) {
         isPlayingOneShot = true
         animationState = state
         currentFrameIndex = 0
-        if let sheet = spriteSheets[state] {
-            currentFrameImage = sheet.frame(at: 0)
-        }
+        // currentFrameImage 由计算属性根据当前 orientation 自动提供
+        FileLogger.log("[DesktopPet] playOneShot(\(state.displayName), frameCount=\(spriteSheets[state]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil)")
     }
     
     // MARK: - Mouse Interaction
@@ -205,18 +271,25 @@ final class PetViewModel: ObservableObject {
         guard !isFacingLocked else { return }
         
         // 计算小猫窗口中心与鼠标的角度，决定朝向
-        let catCenterX = windowPosition.x + 64 // 假设小猫宽度约 128pt
+        let catCenterX = windowPosition.x + 62 // 假设小猫宽度约 124pt
+        let newFacing: CatFacing
         if point.x < catCenterX - 20 {
-            facing = .left
+            newFacing = .left
         } else if point.x > catCenterX + 20 {
-            facing = .right
+            newFacing = .right
+        } else {
+            newFacing = facing // 中心区域保持当前朝向
+        }
+        if newFacing != facing {
+            facing = newFacing
+            FileLogger.log("[DesktopPet] facing -> \(facing.rawValue), mouseX=\(point.x), catCenterX=\(catCenterX)")
         }
     }
     
-    /// 左键点击：开心跳跃
+    /// 左键点击：提醒动画
     func handleLeftClick() {
         guard !isPlayingOneShot else { return }
-        playOneShot(.jump)
+        playOneShot(.warn)
     }
     
     /// 右键点击：弹出菜单
@@ -229,11 +302,11 @@ final class PetViewModel: ObservableObject {
     
     func feed() {
         showContextMenu = false
-        // 如果 pet 没有有效帧（只有1帧占位图），fallback 到 jump 动画
+        // 如果 pet 没有有效帧（只有1帧占位图），fallback 到 warn 动画
         if let sheet = spriteSheets[.pet], sheet.frameCount > 1 {
             playOneShot(.pet)
         } else {
-            playOneShot(.jump)
+            playOneShot(.warn)
         }
     }
     
@@ -243,7 +316,7 @@ final class PetViewModel: ObservableObject {
     }
     
     func wakeUp() {
-        transitionTo(.idle)
+        transitionTo(.focus)
     }
     
     func quit() {
@@ -297,7 +370,7 @@ final class PetViewModel: ObservableObject {
         lastWaterReminderTime = Date()
         isFacingLocked = true
         facing = .right
-        playOneShot(.jump)
+        playOneShot(.warn)
         onDrinkWaterReminder?()
     }
     

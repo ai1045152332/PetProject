@@ -13,8 +13,11 @@ class StockHistoryManager {
     static let shared = StockHistoryManager()
     private let key = "desktoppetformacapp.stock_history"
     private let maxCount = 10
+    private let lock = NSLock()
     
     func load() -> [StockHistoryItem] {
+        lock.lock()
+        defer { lock.unlock() }
         guard let data = UserDefaults.standard.data(forKey: key),
               let items = try? JSONDecoder().decode([StockHistoryItem].self, from: data) else {
             return []
@@ -23,6 +26,8 @@ class StockHistoryManager {
     }
     
     func add(code: String, name: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var items = load()
         // 去重：如果已存在，先删除旧的
         items.removeAll { $0.code == code }

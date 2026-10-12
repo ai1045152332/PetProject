@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var viewModel: PetViewModel?
     var statusItem: NSStatusItem?
     private var settingsPanel: SettingsPanel?
+    private var menuBarTimer: Timer?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 初始化文件日志
@@ -56,6 +57,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 5. 创建顶部菜单栏图标
         setupStatusBar()
+        
+        // 6. 菜单栏系统指标监控（CPU / 内存 / 温度）
+        startMenuBarMonitoring()
     }
     
     // MARK: - 菜单栏
@@ -117,6 +121,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startGlobalMouseTracking() {
         // 已移除"看向鼠标"朝向跟随功能（该功能导致小猫翻转后消失）
         // 保留方法签名以便将来恢复，当前不再启动 Timer 轮询
+    }
+    
+    // MARK: - 菜单栏系统指标（CPU / 内存 / CPU 温度）
+    
+    @MainActor private func startMenuBarMonitoring() {
+        menuBarTimer?.invalidate()
+        menuBarTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.refreshMenuBarMetrics()
+        }
+        refreshMenuBarMetrics()
+    }
+    
+    /// 按设置面板勾选项采集指标并刷新菜单栏文字
+    private func refreshMenuBarMetrics() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var parts: [String] = []
+
+            if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showCPU, default: true),
+               let cpu = SystemMonitor.cpuUsage() {
+                parts.append("CPU \(Int(cpu.rounded()))%")
+            }
+            if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showMemory, default: true),
+               let mem = SystemMonitor.memoryUsage() {
+                parts.append("内存 \(Int(mem.percent.rounded()))%")
+            }
+            if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showTemp, default: true),
+               let temp = SystemMonitor.cpuTemperature() {
+                parts.append("\(Int(temp.rounded()))°")
+            }
+
+            let text = parts.joined(separator: " ")
+            DispatchQueue.main.async {
+                self?.statusItem?.button?.title = text
+            }
+        }
     }
     
     @MainActor private func showPermissionBanner() {

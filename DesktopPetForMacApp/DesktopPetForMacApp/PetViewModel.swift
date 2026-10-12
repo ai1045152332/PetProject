@@ -11,7 +11,7 @@ enum CatAnimationState: String, CaseIterable {
     case idel   = "idel"    // 休闲
     case warn   = "warn"    // 提醒
     case sleep  = "sleep"   // 睡觉
-    case pet    = "pet"     // 喂食
+    case pet    = "pet"     // 抚摸
 
     /// 中文展示名
     var displayName: String {
@@ -20,7 +20,7 @@ enum CatAnimationState: String, CaseIterable {
         case .idel:  return "休闲"
         case .warn:  return "提醒"
         case .sleep: return "睡觉"
-        case .pet:   return "喂食"
+        case .pet:   return "抚摸"
         }
     }
 }
@@ -36,7 +36,7 @@ final class PetViewModel: ObservableObject {
     // MARK: - Published State
     
     /// 当前动画状态
-    @Published private(set) var animationState: CatAnimationState = .focus
+    @Published private(set) var animationState: CatAnimationState = .idel
     
     /// 面向方向
     @Published private(set) var facing: CatFacing = .right
@@ -104,6 +104,9 @@ final class PetViewModel: ObservableObject {
     
     /// 喝水提醒回调（供视图层展示弹窗）
     var onDrinkWaterReminder: (() -> Void)?
+    
+    /// 动画状态变化回调（供设置面板实时同步选中卡片）
+    var onStateChanged: ((CatAnimationState) -> Void)?
     
     /// 新闻查询回调（供视图层展示弹窗）
     var onShowHotNews: ((String) -> Void)?
@@ -201,11 +204,10 @@ final class PetViewModel: ObservableObject {
         
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
-        // 一次性动画（pet）播完自动切回 focus
-        // warn 不自动回 focus，等用户点击
-        if isPlayingOneShot && animationState != .warn && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
+        // 一次性动画（pet / warn 等）播完自动切回休闲状态
+        if isPlayingOneShot && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
             isPlayingOneShot = false
-            transitionTo(.focus)
+            transitionTo(.idel)
             return
         }
         
@@ -254,6 +256,7 @@ final class PetViewModel: ObservableObject {
         isPlayingOneShot = false
         // currentFrameImage 由计算属性根据当前 orientation 自动提供
         FileLogger.log("[DesktopPet] transitionTo(\((newState.displayName)), frameCount=\(spriteSheets[newState]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil)")
+        onStateChanged?(newState)
     }
     
     func playOneShot(_ state: CatAnimationState) {
@@ -262,6 +265,7 @@ final class PetViewModel: ObservableObject {
         currentFrameIndex = 0
         // currentFrameImage 由计算属性根据当前 orientation 自动提供
         FileLogger.log("[DesktopPet] playOneShot(\(state.displayName), frameCount=\(spriteSheets[state]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil)")
+        onStateChanged?(state)
     }
     
     // MARK: - Mouse Interaction
@@ -300,7 +304,7 @@ final class PetViewModel: ObservableObject {
     
     // MARK: - Menu Actions
     
-    func feed() {
+    func pet() {
         showContextMenu = false
         // 如果 pet 没有有效帧（只有1帧占位图），fallback 到 warn 动画
         if let sheet = spriteSheets[.pet], sheet.frameCount > 1 {
@@ -316,7 +320,7 @@ final class PetViewModel: ObservableObject {
     }
     
     func wakeUp() {
-        transitionTo(.focus)
+        transitionTo(.idel)
     }
     
     func quit() {

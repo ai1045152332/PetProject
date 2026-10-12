@@ -2,17 +2,18 @@
 set -euo pipefail
 
 # DesktopPetForMacApp 打包脚本
-# 产出 DesktopPetForMacApp.app 到桌面
+# 产出 petNoUse.app 到桌面
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="DesktopPetForMacApp"
+SRC_NAME="DesktopPetForMacApp"   # 编译产物/可执行文件名（保持不变，避免影响 CFBundleExecutable）
+APP_NAME="petNoUse"               # 固定产物名（不使用宠物名称，避免中文文件名转义问题）
 DESKTOP="$HOME/Desktop"
 
 # ── 1. Release 编译 ──────────────────────────────────────────────
 echo "🔨 编译 Release 二进制…"
 swift build -c release --disable-sandbox
 
-BUILD_BIN="$PROJECT_DIR/.build/release/$APP_NAME"
+BUILD_BIN="$PROJECT_DIR/.build/release/$SRC_NAME"
 
 if [ ! -f "$BUILD_BIN" ]; then
     echo "❌ 编译失败：未找到 $BUILD_BIN"
@@ -37,9 +38,9 @@ SPRITES_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/Sprites"
 
 mkdir -p "$MACOS" "$RESOURCES/Sprites"
 
-# 可执行文件
-cp "$BUILD_BIN" "$MACOS/$APP_NAME"
-chmod +x "$MACOS/$APP_NAME"
+# 可执行文件（保持 SRC_NAME，与 Info.plist CFBundleExecutable 一致）
+cp "$BUILD_BIN" "$MACOS/$SRC_NAME"
+chmod +x "$MACOS/$SRC_NAME"
 
 # 应用图标（.icns 格式）
 ICON_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/AppIcon.icns"
@@ -65,8 +66,11 @@ for stateDir in */; do
 done
 cd "$PROJECT_DIR"
 
-# ── 4. 复制 Info.plist ──────────────────────────────────────────
+# ── 4. 复制并更新 Info.plist ───────────────────────────────────
 cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
+# 应用显示名改为产物名（CFBundleName 与 CFBundleDisplayName）
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$CONTENTS/Info.plist"
 
 # ── 5. 拷贝到桌面 ───────────────────────────────────────────────
 echo "📦 拷贝到桌面…"
@@ -83,7 +87,7 @@ xattr -cr "$DEST_APP" 2>/dev/null || true
 # rm -rf "$APP_BUNDLE"
 
 echo ""
-echo "✅ 完成！请双击桌面「桌面小猫.app」启动"
+echo "✅ 完成！请双击桌面「$APP_NAME.app」启动"
 echo "   路径: $DEST_APP"
 echo ""
 echo "⚠️  首次启动请到 系统设置 > 隐私与安全性 > 辅助功能 中放行"

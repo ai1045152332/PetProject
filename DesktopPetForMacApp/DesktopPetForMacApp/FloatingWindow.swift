@@ -553,15 +553,10 @@ class CatView: NSView {
         let menu = NSMenu()
         menu.autoenablesItems = false
         
-        let feedItem = NSMenuItem(title: "喂食 🍽️", action: #selector(feedAction(_:)), keyEquivalent: "")
-        feedItem.target = self
-        feedItem.isEnabled = true
-        menu.addItem(feedItem)
-        
-        let drinkItem = NSMenuItem(title: "测试喝水 💧", action: #selector(testDrinkWaterAction(_:)), keyEquivalent: "")
-        drinkItem.target = self
-        drinkItem.isEnabled = true
-        menu.addItem(drinkItem)
+        let petItem = NSMenuItem(title: "抚摸 🐾", action: #selector(petAction(_:)), keyEquivalent: "")
+        petItem.target = self
+        petItem.isEnabled = true
+        menu.addItem(petItem)
         
         let newsItem = NSMenuItem(title: "今日热点新闻 📰", action: #selector(hotNewsAction(_:)), keyEquivalent: "")
         newsItem.target = self
@@ -600,8 +595,7 @@ class CatView: NSView {
         menu.popUp(positioning: nil, at: location, in: self)
     }
     
-    @objc private func feedAction(_ sender: NSMenuItem) { viewModel?.feed() }
-    @objc private func testDrinkWaterAction(_ sender: NSMenuItem) { viewModel?.testDrinkWater() }
+    @objc private func petAction(_ sender: NSMenuItem) { viewModel?.pet() }
     @objc private func hotNewsAction(_ sender: NSMenuItem) { viewModel?.showHotNews() }
     @objc private func weatherAction(_ sender: NSMenuItem) { fetchWeatherAndShow() }
     @objc private func locationWeatherAction(_ sender: NSMenuItem) { showLocationWeatherInput() }

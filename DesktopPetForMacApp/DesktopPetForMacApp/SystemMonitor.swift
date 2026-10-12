@@ -14,6 +14,8 @@ enum SystemMonitor {
         static let showCPU    = "menuBar.showCPU"
         static let showMemory = "menuBar.showMemory"
         static let showTemp   = "menuBar.showTemp"
+        static let showDisk   = "menuBar.showDisk"
+        static let showNet    = "menuBar.showNet"
 
         /// 读取勾选状态（未设置时按默认值）
         static func isOn(_ key: String, default defaultValue: Bool) -> Bool {
@@ -185,5 +187,71 @@ enum SystemMonitor {
                UInt32(chars[1]) << 16 |
                UInt32(chars[2]) << 8 |
                UInt32(chars[3])
+    }
+
+    // MARK: - 磁盘占用
+
+    /// 磁盘使用率（0-100）与容量（GB）
+    static func diskUsage() -> (percent: Double, usedGB: Double, totalGB: Double)? {
+        let url = URL(fileURLWithPath: "/")
+        guard let values = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]) else { return nil }
+        guard let total = values.volumeTotalCapacity,
+              let free = values.volumeAvailableCapacityForImportantUsage else { return nil }
+        let totalBytes = Double(total)
+        let freeBytes = Double(free)
+        let usedBytes = max(totalBytes - freeBytes, 0)
+        let percent = min(max(usedBytes / totalBytes * 100.0, 0), 100)
+        return (percent, usedBytes / 1_000_000_000, totalBytes / 1_000_000_000)
+    }
+
+    // MARK: - 网络实时速率
+
+    private static let netLock = NSLock()
+    private static var lastNetBytes: (rx: UInt64, tx: UInt64)?
+    private static var lastNetTime: Date = .distantPast
+    private static var cachedNetRate: (downKBps: Double, upKBps: Double)?
+    private static let netCacheInterval: TimeInterval = 1.0
+
+    /// 网络实时速率（KB/s）。基于两次采样差值计算。
+    static func networkRate() -> (downKBps: Double, upKBps: Double)? {
+        netLock.lock()
+        defer { netLock.unlock() }
+
+        if let cached = cachedNetRate, Date().timeIntervalSince(lastNetTime) < netCacheInterval {
+            return cached
+        }
+
+        var rx: UInt64 = 0
+        var tx: UInt64 = 0
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0 else { return cachedNetRate }
+        defer { freeifaddrs(ifaddrPtr) }
+
+        var ptr = ifaddrPtr
+        while let p = ptr {
+            defer { ptr = p.pointee.ifa_next }
+            let family = p.pointee.ifa_addr?.pointee.sa_family
+            // 只统计物理以太/Wi-Fi 接口（en*），排除环回/虚拟/隧道
+            guard family == UInt8(AF_LINK), let cName = p.pointee.ifa_name else { continue }
+            let name = String(cString: cName)
+            guard name.hasPrefix("en"), !name.hasPrefix("en0virtual") else { continue }
+            guard let data = p.pointee.ifa_data else { continue }
+            let netData = data.assumingMemoryBound(to: if_data.self).pointee
+            rx += UInt64(netData.ifi_ibytes)
+            tx += UInt64(netData.ifi_obytes)
+        }
+
+        let now = Date()
+        if let prev = lastNetBytes {
+            let dt = now.timeIntervalSince(lastNetTime)
+            let drx = rx >= prev.rx ? rx - prev.rx : 0
+            let dtx = tx >= prev.tx ? tx - prev.tx : 0
+            if dt > 0 {
+                cachedNetRate = (Double(drx) / dt / 1024.0, Double(dtx) / dt / 1024.0)
+            }
+        }
+        lastNetBytes = (rx, tx)
+        lastNetTime = now
+        return cachedNetRate
     }
 }

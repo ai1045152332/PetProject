@@ -31,6 +31,11 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var petNameField: NSTextField?
     private weak var petNameEditBtn: NSButton?
     private weak var petNameSaveBtn: NSButton?
+    private var intervalButtons: [(Int, NSButton)] = []
+    private weak var customIntervalField: NSTextField?
+    /// 宠物状态分区：当前状态指示标签
+    private weak var currentStateBadge: NSTextField?
+    private weak var currentIntervalLabel: NSTextField?
 
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
@@ -46,8 +51,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         )
         self.isOpaque = false
         self.backgroundColor = .clear
-        self.isFloatingPanel = true
-        self.level = .popUpMenu
+        self.isFloatingPanel = false
+        self.level = .normal
         self.isReleasedWhenClosed = false
         self.title = "设置"
         setupUI()
@@ -68,7 +73,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         bgView.blendingMode = .behindWindow
         bgView.state = .active
         bgView.wantsLayer = true
-        bgView.layer?.cornerRadius = 18
+        // 与窗口方形标题栏对齐，避免顶部圆弧缺口
+        bgView.layer?.cornerRadius = 0
         bgView.autoresizingMask = [.width, .height]
         contentView.addSubview(bgView)
 
@@ -87,8 +93,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         contentView.addSubview(navBg)
 
         // 左侧导航项：固定从上往下顺序排列（不随高度自适应）
-        // 注：菜单栏指标的勾选已迁移到菜单栏「系统信息 ▸」二级菜单，设置面板不再提供
-        let navTitles = ["🐱 宠物状态", "⚙️ 通用设置"]
+        let navTitles = ["🐱 宠物状态", "⚙️ 通用设置", "🔔 提醒设置"]
         let itemH: CGFloat = 44
         let itemGap: CGFloat = 10
         let navTopPad: CGFloat = 12
@@ -114,11 +119,14 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
         let section0 = makeContentContainer(frame: contentFrame, in: contentView)
         let section1 = makeContentContainer(frame: contentFrame, in: contentView)
+        let section2 = makeContentContainer(frame: contentFrame, in: contentView)
         section1.isHidden = true
-        contentViews = [section0, section1]
+        section2.isHidden = true
+        contentViews = [section0, section1, section2]
 
         fillStateSection(section0)
         fillGeneralSection(section1)
+        fillReminderSection(section2)
 
         applyNavStyle()
     }
@@ -144,36 +152,45 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let cw = container.bounds.width
         let ch = container.bounds.height
 
-        let titleLbl = NSTextField(labelWithString: "宠物状态")
-        titleLbl.font = .systemFont(ofSize: 16, weight: .bold)
+        // ── 头部：标题 + 宠物名称 + 当前状态徽章 ──
+        let petName = PetName.currentName()
+        let titleLbl = NSTextField(labelWithString: "🐱 \(petName)")
+        titleLbl.font = .systemFont(ofSize: 18, weight: .bold)
         titleLbl.textColor = .labelColor
-        titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
+        titleLbl.frame = NSRect(x: 16, y: ch - 44, width: cw - 32, height: 24)
         container.addSubview(titleLbl)
 
-        let descLbl = NSTextField(labelWithString: "选择小猫当前的动画状态")
-        descLbl.font = .systemFont(ofSize: 11)
-        descLbl.textColor = .tertiaryLabelColor
-        descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
-        container.addSubview(descLbl)
+        // 当前状态徽章
+        let currentState = viewModel?.animationState ?? .idel
+        let badge = NSTextField(labelWithString: "当前状态：\(currentState.displayName)")
+        badge.font = .systemFont(ofSize: 11, weight: .medium)
+        badge.textColor = .controlAccentColor
+        badge.frame = NSRect(x: 16, y: ch - 64, width: cw - 32, height: 16)
+        container.addSubview(badge)
+        currentStateBadge = badge
 
-        let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
+        let divider = NSBox(frame: NSRect(x: 16, y: ch - 76, width: cw - 32, height: 1))
         divider.boxType = .separator
         container.addSubview(divider)
 
-        let states: [(CatAnimationState, String)] = [
-            (.focus, "💼"),
-            (.idel,  "☕"),
-            (.sleep, "😴"),
-            (.pet,   "🐾")
+        // ── 状态卡片（带副标题） ──
+        let states: [(CatAnimationState, String, String)] = [
+            (.focus, "💼", "工作中，请勿打扰"),
+            (.idel,  "☕", "休闲放松中"),
+            (.sleep, "😴", "晚安，做个好梦"),
+            (.pet,   "🐾", "摸摸我，很开心")
         ]
-        let cardW: CGFloat = 96
-        let cardH: CGFloat = 104
+        let cardW: CGFloat = 108
+        let cardH: CGFloat = 120
         let totalCardsW = CGFloat(states.count) * cardW
         let gap = (cw - 32 - totalCardsW) / CGFloat(states.count + 1)
-        let cardY = ch - 66 - 18 - cardH
+        let cardY = ch - 76 - 20 - cardH
         var cardX = 16 + gap
-        for (state, emoji) in states {
-            let card = makeCardButton(frame: NSRect(x: cardX, y: cardY, width: cardW, height: cardH), state: state, emoji: emoji)
+        for (state, emoji, subtitle) in states {
+            let card = makeCardButton(
+                frame: NSRect(x: cardX, y: cardY, width: cardW, height: cardH),
+                state: state, emoji: emoji, subtitle: subtitle
+            )
             container.addSubview(card)
             stateButtons[state] = card
             cardX += cardW + gap
@@ -268,6 +285,191 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             AutoLaunchManager.setEnabled(on)
         }
         row.addSubview(sw)
+
+        // 条目 3：小猫大小
+        let sizeRowY = rowY - 48 - 10
+        let sizeRow = makeSettingRow(frame: NSRect(x: 16, y: sizeRowY, width: cw - 32, height: 56), in: container)
+
+        let sizeTitle = NSTextField(labelWithString: "小猫大小")
+        sizeTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        sizeTitle.textColor = .labelColor
+        sizeTitle.frame = NSRect(x: 14, y: 32, width: 200, height: 18)
+        sizeRow.addSubview(sizeTitle)
+
+        let currentScale = viewModel?.catScale ?? PetViewModel.defaultCatScale
+        let slider = NSSlider(frame: NSRect(x: 14, y: 6, width: sizeRow.bounds.width - 80, height: 20))
+        slider.minValue = 0.5
+        slider.maxValue = 2.0
+        slider.doubleValue = currentScale
+        slider.numberOfTickMarks = 4
+        slider.allowsTickMarkValuesOnly = false
+        slider.target = self
+        slider.action = #selector(catSizeSliderChanged(_:))
+        sizeRow.addSubview(slider)
+
+        let scaleLabel = NSTextField(labelWithString: String(format: "%.1fx", currentScale))
+        scaleLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        scaleLabel.textColor = .secondaryLabelColor
+        scaleLabel.alignment = .right
+        scaleLabel.frame = NSRect(x: sizeRow.bounds.width - 58, y: 8, width: 44, height: 18)
+        sizeRow.addSubview(scaleLabel)
+    }
+
+    // MARK: - 分区 3：提醒设置
+
+    private func fillReminderSection(_ container: NSView) {
+        let cw = container.bounds.width
+        let ch = container.bounds.height
+
+        let titleLbl = NSTextField(labelWithString: "提醒设置")
+        titleLbl.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLbl.textColor = .labelColor
+        titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
+        container.addSubview(titleLbl)
+
+        let descLbl = NSTextField(labelWithString: "设置喝水提醒的时间间隔")
+        descLbl.font = .systemFont(ofSize: 11)
+        descLbl.textColor = .tertiaryLabelColor
+        descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
+        container.addSubview(descLbl)
+
+        let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
+        divider.boxType = .separator
+        container.addSubview(divider)
+
+        // 预设时间间隔按钮
+        let presets = [15, 30, 45, 60]
+        let currentInterval = viewModel?.reminderInterval ?? PetViewModel.defaultReminderInterval
+
+        let presetLabel = NSTextField(labelWithString: "提醒间隔")
+        presetLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        presetLabel.textColor = .labelColor
+        presetLabel.frame = NSRect(x: 16, y: ch - 96, width: 100, height: 18)
+        container.addSubview(presetLabel)
+
+        // 当前生效的提醒间隔（预设高亮不直观，自定义间隔时更需显示）
+        let currentLabel = NSTextField(labelWithString: "当前：\(currentInterval) 分钟")
+        currentLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        currentLabel.textColor = .controlAccentColor
+        currentLabel.alignment = .right
+        currentLabel.frame = NSRect(x: cw - 16 - 140, y: ch - 96, width: 140, height: 18)
+        container.addSubview(currentLabel)
+        currentIntervalLabel = currentLabel
+
+        let btnW: CGFloat = 68
+        let btnH: CGFloat = 32
+        let btnGap: CGFloat = 10
+        let btnY = ch - 96 - 6
+        let totalBtnsW = CGFloat(presets.count) * btnW + CGFloat(presets.count - 1) * btnGap
+        var btnX = (cw - totalBtnsW) / 2
+
+        for minutes in presets {
+            let btn = NSButton(frame: NSRect(x: btnX, y: btnY, width: btnW, height: btnH))
+            btn.title = "\(minutes) 分钟"
+            btn.bezelStyle = .rounded
+            btn.target = self
+            btn.action = #selector(intervalButtonClicked(_:))
+            btn.tag = minutes
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 8
+            container.addSubview(btn)
+            intervalButtons.append((minutes, btn))
+            btnX += btnW + btnGap
+        }
+
+        refreshIntervalButtons(currentInterval: currentInterval)
+
+        // 自定义时间输入行
+        let customY = btnY - 58
+        let customRow = makeSettingRow(frame: NSRect(x: 16, y: customY, width: cw - 32, height: 48), in: container)
+
+        let customLabel = NSTextField(labelWithString: "自定义间隔")
+        customLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        customLabel.textColor = .labelColor
+        customLabel.frame = NSRect(x: 14, y: 24, width: 120, height: 18)
+        customRow.addSubview(customLabel)
+
+        let customDesc = NSTextField(labelWithString: "输入 1 ~ 120 之间的分钟数")
+        customDesc.font = .systemFont(ofSize: 11)
+        customDesc.textColor = .tertiaryLabelColor
+        customDesc.frame = NSRect(x: 14, y: 6, width: 180, height: 15)
+        customRow.addSubview(customDesc)
+
+        let fieldW: CGFloat = 70
+        let applyBtnW: CGFloat = 58
+        let right = customRow.bounds.width - 16
+        let field = NSTextField(frame: NSRect(x: right - applyBtnW - 8 - fieldW, y: 10, width: fieldW, height: 28))
+        field.font = .systemFont(ofSize: 13)
+        field.alignment = .center
+        field.bezelStyle = .roundedBezel
+        field.placeholderString = "分钟"
+        field.delegate = self
+        customRow.addSubview(field)
+        customIntervalField = field
+
+        let applyBtn = NSButton(title: "应用", target: self, action: #selector(applyCustomInterval(_:)))
+        applyBtn.frame = NSRect(x: right - applyBtnW, y: 10, width: applyBtnW, height: 28)
+        applyBtn.bezelStyle = .rounded
+        applyBtn.controlSize = .regular
+        applyBtn.keyEquivalent = "\r"
+        customRow.addSubview(applyBtn)
+    }
+
+    // MARK: - 提醒间隔操作
+
+    @objc private func intervalButtonClicked(_ sender: NSButton) {
+        let minutes = sender.tag
+        viewModel?.reminderInterval = minutes
+        viewModel?.restartDrinkWaterReminder()
+        refreshIntervalButtons(currentInterval: minutes)
+        customIntervalField?.stringValue = ""
+    }
+
+    @objc private func applyCustomInterval(_ sender: Any?) {
+        guard let field = customIntervalField,
+              let value = Int(field.stringValue), value >= 1, value <= 120 else { return }
+        viewModel?.reminderInterval = value
+        viewModel?.restartDrinkWaterReminder()
+        refreshIntervalButtons(currentInterval: value)
+        field.stringValue = ""
+        field.resignFirstResponder()
+    }
+
+    private func refreshIntervalButtons(currentInterval: Int) {
+        // 同步「当前提醒间隔」文案
+        currentIntervalLabel?.stringValue = "当前：\(currentInterval) 分钟"
+        for (minutes, btn) in intervalButtons {
+            let selected = (minutes == currentInterval)
+            btn.layer?.backgroundColor = selected
+                ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+                : NSColor(white: 0, alpha: 0.04).cgColor
+            btn.layer?.borderWidth = selected ? 1.5 : 0
+            btn.layer?.borderColor = selected
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.clear.cgColor
+            btn.font = selected
+                ? .systemFont(ofSize: 13, weight: .semibold)
+                : .systemFont(ofSize: 13)
+        }
+    }
+
+    // MARK: - 小猫大小滑块
+
+    @objc private func catSizeSliderChanged(_ sender: NSSlider) {
+        // 吸附到 0.1 步长
+        let raw = sender.doubleValue
+        let snapped = (raw * 10).rounded() / 10.0
+        sender.doubleValue = snapped
+
+        // 更新右侧数值标签
+        if let sizeRow = sender.superview,
+           let label = sizeRow.subviews.compactMap({ $0 as? NSTextField })
+              .first(where: { $0.alignment == .right && $0.font?.pointSize == 12 }) {
+            label.stringValue = String(format: "%.1fx", snapped)
+        }
+
+        viewModel?.catScale = snapped
+        viewModel?.onResizeWindow?(snapped)
     }
 
     /// 通用设置的行容器（统一样式）
@@ -353,42 +555,75 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
     // MARK: - 状态卡片按钮
 
-    private func makeCardButton(frame: NSRect, state: CatAnimationState, emoji: String) -> NSButton {
+    private func makeCardButton(frame: NSRect, state: CatAnimationState, emoji: String, subtitle: String) -> NSButton {
         let btn = NSButton(frame: frame)
-        btn.title = emoji
+        btn.title = ""
         btn.target = self
         btn.action = #selector(stateButtonClicked(_:))
         btn.tag = state.hashValue
-        btn.font = .systemFont(ofSize: 34)
         btn.setButtonType(.toggle)
         btn.state = (viewModel?.animationState == state) ? .on : .off
+        btn.isBordered = false
         btn.wantsLayer = true
-        btn.layer?.cornerRadius = 12
+        btn.layer?.cornerRadius = 14
         btn.layer?.masksToBounds = true
 
         applyCardStyle(btn, selected: viewModel?.animationState == state)
 
+        // Emoji（居中偏上）
+        let emojiLabel = NSTextField(labelWithString: emoji)
+        emojiLabel.font = .systemFont(ofSize: 36)
+        emojiLabel.alignment = .center
+        emojiLabel.frame = NSRect(x: 0, y: frame.height - 72, width: frame.width, height: 44)
+        emojiLabel.tag = 990
+        btn.addSubview(emojiLabel)
+
+        // 状态名（居中）
         let label = NSTextField(labelWithString: state.displayName)
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .secondaryLabelColor
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .labelColor
         label.alignment = .center
-        label.frame = NSRect(x: 0, y: 8, width: frame.width, height: 16)
+        label.frame = NSRect(x: 0, y: 28, width: frame.width, height: 16)
         label.tag = 991
         btn.addSubview(label)
+
+        // 副标题（居中偏下）
+        let subLabel = NSTextField(labelWithString: subtitle)
+        subLabel.font = .systemFont(ofSize: 10)
+        subLabel.textColor = .tertiaryLabelColor
+        subLabel.alignment = .center
+        subLabel.lineBreakMode = .byTruncatingTail
+        subLabel.frame = NSRect(x: 4, y: 10, width: frame.width - 8, height: 14)
+        subLabel.tag = 992
+        btn.addSubview(subLabel)
 
         return btn
     }
 
     private func applyCardStyle(_ btn: NSButton, selected: Bool) {
+        // 背景
+        btn.layer?.backgroundColor = selected
+            ? NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+            : NSColor(white: 0, alpha: 0.03).cgColor
+        // 边框
         btn.layer?.borderWidth = selected ? 2 : 1
         btn.layer?.borderColor = selected
             ? NSColor.controlAccentColor.cgColor
-            : NSColor.separatorColor.withAlphaComponent(0.35).cgColor
-        btn.layer?.backgroundColor = selected
-            ? NSColor.controlAccentColor.withAlphaComponent(0.14).cgColor
-            : NSColor(white: 0, alpha: 0.04).cgColor
+            : NSColor.separatorColor.withAlphaComponent(0.25).cgColor
+        // 阴影（选中时更明显）
+        btn.layer?.shadowOpacity = selected ? 0.15 : 0
+        btn.layer?.shadowRadius = selected ? 6 : 0
+        btn.layer?.shadowOffset = NSSize(width: 0, height: -2)
+        btn.layer?.shadowColor = NSColor.controlAccentColor.cgColor
+
+        // 状态名颜色
         if let label = btn.subviews.first(where: { $0.tag == 991 }) as? NSTextField {
-            label.textColor = selected ? .controlAccentColor : .secondaryLabelColor
+            label.textColor = selected ? .controlAccentColor : .labelColor
+            label.font = selected ? .systemFont(ofSize: 13, weight: .bold) : .systemFont(ofSize: 13, weight: .semibold)
+        }
+        // 副标题颜色
+        if let sub = btn.subviews.first(where: { $0.tag == 992 }) as? NSTextField {
+            sub.textColor = selected ? .controlAccentColor.withAlphaComponent(0.7) : .tertiaryLabelColor
         }
     }
 
@@ -406,6 +641,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             btn.state = (current == s) ? .on : .off
             applyCardStyle(btn, selected: current == s)
         }
+        // 更新当前状态徽章
+        currentStateBadge?.stringValue = "当前状态：\(current.displayName)"
     }
 
     /// 屏幕居中弹出

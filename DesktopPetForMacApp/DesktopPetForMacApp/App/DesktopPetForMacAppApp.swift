@@ -26,6 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 系统信息二级菜单及其条目（实时刷新）
     private var sysInfoMenu: NSMenu?
     private var sysInfoItems: [NSMenuItem] = []
+    /// 启动密码验证管理器
+    private var authManager: AuthManager?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 初始化文件日志
@@ -46,16 +48,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 开机自启配置（默认开启，启动时确保 LaunchAgent 已安装/卸载）
         AutoLaunchManager.applyOnLaunch()
 
-        // 直接启动小猫，不阻塞在权限检测上
-        // 辅助功能权限只影响"看向鼠标"效果，不影响基本显示
-        setupCat()
-        
-        // 后台检测权限，未授权时静默提示
-        AccessibilityHelper.checkPermissionAsync { [weak self] granted in
+        // 启动密码验证：验证通过后才显示小猫
+        let auth = AuthManager()
+        self.authManager = auth
+        auth.showAuthWindow { [weak self] in
             DispatchQueue.main.async {
-                if !granted {
-                    // 可选：显示一个低调的权限提示
-                    self?.showPermissionBanner()
+                self?.setupCat()
+                // 后台检测权限，未授权时静默提示
+                AccessibilityHelper.checkPermissionAsync { granted in
+                    DispatchQueue.main.async {
+                        if !granted {
+                            self?.showPermissionBanner()
+                        }
+                    }
                 }
             }
         }
@@ -80,6 +85,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 4. 启动全局鼠标位置监听（用于"看向鼠标"效果）
         startGlobalMouseTracking()
+        
+        // 4.5 连接窗口缩放回调（滑块修改 catScale 后触发）
+        vm.onResizeWindow = { [weak self] scale in
+            self?.floatingWindow?.resizeWindow(scale: scale)
+        }
         
         // 5. 创建顶部菜单栏图标
         setupStatusBar()
@@ -112,7 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // ── 最上面：系统信息（二级菜单，悬停/点击展开，实时监控）──
         // 二级菜单的每个指标条目都可点击勾选：勾选后显示在顶部菜单栏
-        let sysInfoItem = NSMenuItem(title: "系统信息 ▸", action: nil, keyEquivalent: "")
+        let sysInfoItem = NSMenuItem(title: "系统信息", action: nil, keyEquivalent: "")
         let subMenu = NSMenu()
         let cpuItem = NSMenuItem(title: "CPU", action: #selector(toggleSysInfoMetric(_:)), keyEquivalent: "")
         cpuItem.target = self
@@ -137,6 +147,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sysInfoItems = [cpuItem, memItem, diskItem, netItem]
         sysInfoItem.submenu = subMenu
         menu.addItem(sysInfoItem)
+
+        // 一键清理内存（测试版）
+        let cleanItem = NSMenuItem(title: "一键清理内存（测试版）", action: #selector(cleanMemory(_:)), keyEquivalent: "")
+        cleanItem.target = self
+        menu.addItem(cleanItem)
 
         menu.addItem(NSMenuItem.separator())
         
@@ -192,35 +207,99 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         refreshMenuBarMetrics()
     }
     
-    /// 按二级菜单勾选项采集指标并刷新菜单栏文字
+    /// 是否有任何系统信息指标被勾选（决定定时器是否采集）
+    private var anyMetricEnabled: Bool {
+        SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showCPU, default: false) ||
+        SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showMemory, default: false) ||
+        SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showDisk, default: false) ||
+        SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showNet, default: false)
+    }
+
+    /// 按二级菜单勾选项采集指标并刷新菜单栏（SF Symbol 图标 + 数值，比纯文字省空间）
     private func refreshMenuBarMetrics() {
+        // 无任何指标勾选时跳过采集，避免空转
+        guard anyMetricEnabled else {
+            DispatchQueue.main.async {
+                self.statusItem?.button?.attributedTitle = NSAttributedString(string: "")
+            }
+            return
+        }
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            var parts: [String] = []
+            var parts: [(symbol: String, text: String)] = []
 
             if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showCPU, default: false),
                let cpu = SystemMonitor.cpuUsage() {
-                parts.append("CPU \(Int(cpu.rounded()))%")
+                parts.append((symbol: "cpu", text: "\(Int(cpu.rounded()))%"))
             }
             if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showMemory, default: false),
                let mem = SystemMonitor.memoryUsage() {
-                parts.append("内存 \(Int(mem.percent.rounded()))%")
+                parts.append((symbol: "memorychip", text: "\(Int(mem.percent.rounded()))%"))
             }
             if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showDisk, default: false),
                let disk = SystemMonitor.diskUsage() {
-                parts.append("磁盘 \(Int(disk.percent.rounded()))%")
+                parts.append((symbol: "internaldrive", text: "\(Int(disk.percent.rounded()))%"))
             }
             if SystemMonitor.MenuPrefs.isOn(SystemMonitor.MenuPrefs.showNet, default: false),
                let net = SystemMonitor.networkRate() {
-                parts.append("↓\(Int(net.downKBps.rounded()))K ↑\(Int(net.upKBps.rounded()))K")
+                parts.append((symbol: "arrow.up.arrow.down", text: "\(Int(net.downKBps.rounded()))K/\(Int(net.upKBps.rounded()))K"))
             }
 
-            let text = parts.joined(separator: " ")
+            let attributed = Self.buildMetricTitle(parts)
             DispatchQueue.main.async {
-                self?.statusItem?.button?.title = text
+                self?.statusItem?.button?.attributedTitle = attributed
             }
         }
     }
+
+    /// 将「图标 + 数值」列表拼装为带 SF Symbol 的富文本
+    /// （模板图片 + labelColor，图标随菜单栏深浅色自动适配）
+    private static func buildMetricTitle(_ parts: [(symbol: String, text: String)]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+        for (i, part) in parts.enumerated() {
+            if i > 0 { result.append(NSAttributedString(string: " ")) }
+            if let img = NSImage(systemSymbolName: part.symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(symbolConfig) {
+                img.isTemplate = true
+                let att = NSTextAttachment()
+                att.image = img
+                att.bounds = NSRect(x: 0, y: -2, width: 14, height: 13)
+                result.append(NSAttributedString(attachment: att))
+            }
+            result.append(NSAttributedString(string: part.text,
+                                            attributes: [.font: NSFont.systemFont(ofSize: 12)]))
+        }
+        result.addAttribute(.foregroundColor, value: NSColor.labelColor,
+                            range: NSRange(location: 0, length: result.length))
+        return result
+    }
     
+    /// 一键清理内存（测试版）：后台执行内存回收，完成后弹窗展示效果
+    @MainActor @objc private func cleanMemory(_ sender: Any?) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = MemoryCleaner.clean()
+            DispatchQueue.main.async {
+                guard let r = result else {
+                    let alert = NSAlert()
+                    alert.messageText = "内存清理失败"
+                    alert.informativeText = "无法读取系统内存信息，请稍后重试"
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "好")
+                    NSApp.activate(ignoringOtherApps: true)
+                    alert.runModal()
+                    return
+                }
+                let alert = NSAlert()
+                alert.messageText = "内存清理完成（测试版）"
+                alert.informativeText = String(format: "清理前空闲：%.0f MB\n清理后空闲：%.0f MB\n本次回收：%.0f MB", r.before, r.after, r.freed)
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "好")
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
     @MainActor private func showPermissionBanner() {
         // 非阻塞式权限提示：在控制台输出，不弹窗阻止用户使用
         NSLog("[DesktopPetForMacApp] 辅助功能权限未授权，鼠标跟随功能不可用。如需开启，请前往「系统设置 > 隐私与安全性 > 辅助功能」中启用 DesktopPetForMacApp。")
@@ -257,6 +336,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshSysInfo() {
+        // 无任何指标勾选时跳过采集
+        guard anyMetricEnabled else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var cpuText = "CPU"
             var memText = "内存"

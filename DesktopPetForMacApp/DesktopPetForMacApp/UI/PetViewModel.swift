@@ -101,6 +101,23 @@ final class PetViewModel: ObservableObject {
     private var lastWaterReminderTime: Date?
     /// 喝水弹窗是否正在显示（未关闭则不弹下一次）
     var isWaterAlertShowing: Bool = false
+
+    // MARK: - 喝水提醒间隔配置
+
+    static let reminderIntervalKey = "settings.drinkWaterInterval"
+    static let defaultReminderInterval: Int = 30
+
+    /// 喝水提醒间隔（分钟），持久化到 UserDefaults
+    var reminderInterval: Int {
+        get {
+            let v = UserDefaults.standard.integer(forKey: Self.reminderIntervalKey)
+            return v > 0 ? v : Self.defaultReminderInterval
+        }
+        set {
+            let clamped = max(1, min(newValue, 120))
+            UserDefaults.standard.set(clamped, forKey: Self.reminderIntervalKey)
+        }
+    }
     
     /// 喝水提醒回调（供视图层展示弹窗）
     var onDrinkWaterReminder: (() -> Void)?
@@ -110,6 +127,26 @@ final class PetViewModel: ObservableObject {
     
     /// 新闻查询回调（供视图层展示弹窗）
     var onShowHotNews: ((String) -> Void)?
+
+    // MARK: - 小猫大小配置
+
+    static let catScaleKey = "settings.catScale"
+    static let defaultCatScale: Double = 1.0
+
+    /// 小猫显示缩放（0.5 ~ 2.0），持久化到 UserDefaults
+    var catScale: Double {
+        get {
+            let v = UserDefaults.standard.double(forKey: Self.catScaleKey)
+            return v >= 0.5 && v <= 2.0 ? v : Self.defaultCatScale
+        }
+        set {
+            let clamped = max(0.5, min(2.0, newValue))
+            UserDefaults.standard.set(clamped, forKey: Self.catScaleKey)
+        }
+    }
+
+    /// 窗口大小调整回调（设置面板滑块修改后触发）
+    var onResizeWindow: ((Double) -> Void)?
     
     // MARK: - Initialization
     
@@ -328,8 +365,8 @@ final class PetViewModel: ObservableObject {
     }
     
     // MARK: - Drink Water Reminder
-    
-    /// 启动每半小时的喝水提醒
+
+    /// 启动喝水提醒（间隔由 reminderInterval 配置，默认 30 分钟）
     func startDrinkWaterReminder() {
         // 取消所有已存在的定时器，避免重复触发
         drinkWaterTimer?.invalidate()
@@ -337,27 +374,32 @@ final class PetViewModel: ObservableObject {
         firstWaterTimer?.invalidate()
         firstWaterTimer = nil
 
+        let intervalMinutes = reminderInterval
+        let intervalSeconds = TimeInterval(intervalMinutes * 60)
         let now = Date()
         let calendar = Calendar.current
         let currentMinute = calendar.component(.minute, from: now)
 
-        // 计算到下一个"整点或半点"的延迟
-        var delay: TimeInterval
-        if currentMinute < 30 {
-            // 下一个半点
-            delay = TimeInterval((30 - currentMinute) * 60 - calendar.component(.second, from: now))
+        // 计算到下一个触发点的延迟（对齐到整除间隔的分钟数）
+        let remainder = currentMinute % intervalMinutes
+        let nextTriggerMinute: Int
+        if remainder == 0 && calendar.component(.second, from: now) == 0 {
+            nextTriggerMinute = currentMinute + intervalMinutes
+        } else if remainder == 0 {
+            nextTriggerMinute = currentMinute
         } else {
-            // 下一个整点
-            delay = TimeInterval((60 - currentMinute) * 60 - calendar.component(.second, from: now))
+            nextTriggerMinute = currentMinute + (intervalMinutes - remainder)
         }
+        let delay = TimeInterval((nextTriggerMinute - currentMinute) * 60 - calendar.component(.second, from: now))
+        let effectiveDelay = delay > 0 ? delay : intervalSeconds
 
-        // 首次等到下一个触发点，之后每 30 分钟重复
-        firstWaterTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        // 首次等到下一个触发点，之后按配置间隔重复
+        firstWaterTimer = Timer.scheduledTimer(withTimeInterval: effectiveDelay, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in
                 self.triggerDrinkWaterReminder()
                 self.drinkWaterTimer?.invalidate()
-                self.drinkWaterTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+                self.drinkWaterTimer = Timer.scheduledTimer(withTimeInterval: intervalSeconds, repeats: true) { [weak self] _ in
                     guard let self = self else { return }
                     Task { @MainActor in
                         self.triggerDrinkWaterReminder()
@@ -365,6 +407,12 @@ final class PetViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// 重启喝水提醒定时器（设置面板修改间隔后调用）
+    func restartDrinkWaterReminder() {
+        FileLogger.log("[DesktopPet] restartDrinkWaterReminder: interval=\(reminderInterval)min")
+        startDrinkWaterReminder()
     }
     
     /// 触发喝水提醒

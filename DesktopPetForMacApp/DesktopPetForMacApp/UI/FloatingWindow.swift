@@ -12,7 +12,7 @@ class FloatingPanel: NSWindow {
 final class FloatingWindow {
     private var window: NSWindow?
     private let viewModel: PetViewModel
-    private let windowSize = NSSize(width: 160, height: 160)
+    private let baseWindowSize = NSSize(width: 160, height: 160)
     private var catView: CatView?
     private var updateTimer: Timer?
     
@@ -21,6 +21,8 @@ final class FloatingWindow {
     }
     
     func show() {
+        let scale = viewModel.catScale
+        let windowSize = NSSize(width: baseWindowSize.width * scale, height: baseWindowSize.height * scale)
         let win = FloatingPanel(
             contentRect: NSRect(origin: initialPosition(), size: windowSize),
             styleMask: .borderless,
@@ -82,6 +84,21 @@ final class FloatingWindow {
         window?.level = .popUpMenu
         window?.orderFront(nil)
     }
+
+    /// 根据缩放比例调整窗口大小（保持底部中心位置不变）
+    func resizeWindow(scale: Double) {
+        guard let win = window else { return }
+        let newSize = NSSize(
+            width: baseWindowSize.width * scale,
+            height: baseWindowSize.height * scale
+        )
+        let oldFrame = win.frame
+        let newOrigin = NSPoint(
+            x: oldFrame.midX - newSize.width / 2,
+            y: oldFrame.minY
+        )
+        win.setFrame(NSRect(origin: newOrigin, size: newSize), display: true)
+    }
     func close() {
         updateTimer?.invalidate()
         window?.close()
@@ -91,7 +108,7 @@ final class FloatingWindow {
     private func initialPosition() -> NSPoint {
         guard let screen = NSScreen.main else { return NSPoint(x: 200, y: 200) }
         let frame = screen.visibleFrame
-        return NSPoint(x: frame.midX - windowSize.width / 2, y: frame.minY + 40)
+        return NSPoint(x: frame.midX - baseWindowSize.width / 2, y: frame.minY + 40)
     }
 }
 
@@ -107,6 +124,9 @@ class CatView: NSView {
     // MARK: - 纯 AppKit 绘制（不使用 CALayer / transform / 子视图）
     // 彻底避免 layer 相关的所有渲染问题
     private var currentImage: NSImage?
+    /// 上一次渲染的帧标识（state + frameIndex），用于跳过未变化的重绘
+    private var lastRenderedState: String = ""
+    private var lastRenderedFrameIndex: Int = -1
 
     func setupLayerHosting() {
         // 不需要任何子视图或 layer，全部通过 draw(_:) 绘制
@@ -131,12 +151,19 @@ class CatView: NSView {
         FileLogger.log("[DesktopPet] viewWillMoveToWindow: newWindow=\(String(describing: newWindow))")
     }
 
-    /// 保存当前帧并触发重绘
+    /// 保存当前帧并触发重绘（帧未变化时跳过，减少 GPU 唤醒）
     func updateLayerImage() {
         guard let vm = viewModel else {
             FileLogger.log("[DesktopPet] updateLayerImage: viewModel is nil")
             return
         }
+        // 帧未变化时跳过重绘（如 sleep 状态画面静止）
+        let stateKey = vm.animationState.rawValue
+        let frameIndex = vm.currentFrameIndex
+        guard stateKey != lastRenderedState || frameIndex != lastRenderedFrameIndex else { return }
+        lastRenderedState = stateKey
+        lastRenderedFrameIndex = frameIndex
+
         guard let image = vm.currentFrameImage else {
             FileLogger.log("[DesktopPet] updateLayerImage: currentFrameImage is nil, state=\(vm.animationState.displayName)")
             return

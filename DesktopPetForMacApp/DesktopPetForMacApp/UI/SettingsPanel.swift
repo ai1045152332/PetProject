@@ -37,6 +37,14 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var currentStateBadge: NSTextField?
     private weak var currentIntervalLabel: NSTextField?
 
+    // 权限控制（通用设置 > 权限）
+    var onAccessLevelChanged: (() -> Void)?
+    private weak var catScaleSlider: NSSlider?
+    private weak var accessStatusLabel: NSTextField?
+    private weak var accessCodeField: NSSecureTextField?
+    private weak var unlockBtn: NSButton?
+    private weak var clearAccessBtn: NSButton?
+
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
     private let inset: CGFloat = 16
@@ -286,7 +294,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
         row.addSubview(sw)
 
-        // 条目 3：小猫大小
+        // 条目 3：小猫大小（基础权限即可调整）
         let sizeRowY = rowY - 48 - 10
         let sizeRow = makeSettingRow(frame: NSRect(x: 16, y: sizeRowY, width: cw - 32, height: 56), in: container)
 
@@ -305,7 +313,10 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         slider.allowsTickMarkValuesOnly = false
         slider.target = self
         slider.action = #selector(catSizeSliderChanged(_:))
+        // 基础权限即可调整
+        slider.isEnabled = true
         sizeRow.addSubview(slider)
+        catScaleSlider = slider
 
         let scaleLabel = NSTextField(labelWithString: String(format: "%.1fx", currentScale))
         scaleLabel.font = .systemFont(ofSize: 12, weight: .medium)
@@ -313,6 +324,61 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         scaleLabel.alignment = .right
         scaleLabel.frame = NSRect(x: sizeRow.bounds.width - 58, y: 8, width: 44, height: 18)
         sizeRow.addSubview(scaleLabel)
+
+        // 条目 4：权限控制（校验码解锁全部功能）
+        let accessRowY = sizeRowY - 56 - 10
+        let accessRow = makeSettingRow(frame: NSRect(x: 16, y: accessRowY, width: cw - 32, height: 72), in: container)
+        let arw = accessRow.bounds.width
+
+        let accessTitle = NSTextField(labelWithString: "权限")
+        accessTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        accessTitle.textColor = .labelColor
+        accessTitle.frame = NSRect(x: 14, y: 48, width: 200, height: 18)
+        accessRow.addSubview(accessTitle)
+
+        let statusLabel = NSTextField(labelWithString: AccessControl.isFullAccess ? "已解锁全部功能" : "基础权限")
+        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        statusLabel.textColor = AccessControl.isFullAccess ? .controlAccentColor : .secondaryLabelColor
+        statusLabel.alignment = .right
+        statusLabel.frame = NSRect(x: arw - 16 - 150, y: 48, width: 150, height: 18)
+        accessRow.addSubview(statusLabel)
+        accessStatusLabel = statusLabel
+
+        let accessDesc = NSTextField(labelWithString: "输入校验码解锁全部功能（当前仅开放基础功能）")
+        accessDesc.font = .systemFont(ofSize: 11)
+        accessDesc.textColor = .tertiaryLabelColor
+        accessDesc.frame = NSRect(x: 14, y: 32, width: arw - 28, height: 15)
+        accessRow.addSubview(accessDesc)
+
+        // 校验码输入框 + 解锁按钮（基础权限才显示）
+        let codeField = NSSecureTextField(frame: NSRect(x: 14, y: 6, width: arw - 16 - 58 - 10 - 14, height: 26))
+        codeField.placeholderString = "输入校验码"
+        codeField.font = .systemFont(ofSize: 13)
+        codeField.alignment = .center
+        codeField.bezelStyle = .roundedBezel
+        codeField.target = self
+        codeField.action = #selector(unlockAccess(_:))
+        accessRow.addSubview(codeField)
+        accessCodeField = codeField
+
+        let uBtn = NSButton(title: "解锁", target: self, action: #selector(unlockAccess(_:)))
+        uBtn.frame = NSRect(x: arw - 16 - 58, y: 6, width: 58, height: 26)
+        uBtn.bezelStyle = .rounded
+        accessRow.addSubview(uBtn)
+        unlockBtn = uBtn
+
+        // 已解锁时显示：清除权限（回到基础权限）
+        let clearBtn = NSButton(title: "清除权限", target: self, action: #selector(clearAccess(_:)))
+        clearBtn.frame = NSRect(x: arw - 16 - 92, y: 6, width: 92, height: 26)
+        clearBtn.bezelStyle = .rounded
+        clearBtn.isHidden = !AccessControl.isFullAccess
+        accessRow.addSubview(clearBtn)
+        clearAccessBtn = clearBtn
+
+        if AccessControl.isFullAccess {
+            codeField.isHidden = true
+            uBtn.isHidden = true
+        }
     }
 
     // MARK: - 分区 3：提醒设置
@@ -451,6 +517,56 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 ? .systemFont(ofSize: 13, weight: .semibold)
                 : .systemFont(ofSize: 13)
         }
+    }
+
+    // MARK: - 权限控制（校验码解锁）
+
+    @objc private func unlockAccess(_ sender: Any?) {
+        guard let field = accessCodeField else { return }
+        let code = field.stringValue
+        if AccessControl.unlock(with: code) {
+            field.stringValue = ""
+            refreshAccessUI()
+            onAccessLevelChanged?()
+            let alert = NSAlert()
+            alert.messageText = "解锁成功"
+            alert.informativeText = "已解锁全部功能"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "好")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "校验码错误"
+            alert.informativeText = "请输入正确的校验码"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    @objc private func clearAccess(_ sender: Any?) {
+        AccessControl.clearAccess()
+        refreshAccessUI()
+        onAccessLevelChanged?()
+        let alert = NSAlert()
+        alert.messageText = "已清除权限"
+        alert.informativeText = "已回到基础权限，高级功能已锁定"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private func refreshAccessUI() {
+        let unlocked = AccessControl.isFullAccess
+        accessStatusLabel?.stringValue = unlocked ? "已解锁全部功能" : "基础权限"
+        accessStatusLabel?.textColor = unlocked ? .controlAccentColor : .secondaryLabelColor
+        accessCodeField?.isHidden = unlocked
+        unlockBtn?.isHidden = unlocked
+        clearAccessBtn?.isHidden = !unlocked
+        // 小猫大小为基础功能，不随权限禁用
     }
 
     // MARK: - 小猫大小滑块

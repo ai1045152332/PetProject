@@ -26,8 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 系统信息二级菜单及其条目（实时刷新）
     private var sysInfoMenu: NSMenu?
     private var sysInfoItems: [NSMenuItem] = []
-    /// 启动密码验证管理器
-    private var authManager: AuthManager?
+    /// 一键清理内存菜单项（基础权限置灰）
+    private var cleanMemoryItem: NSMenuItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 初始化文件日志
@@ -48,18 +48,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 开机自启配置（默认开启，启动时确保 LaunchAgent 已安装/卸载）
         AutoLaunchManager.applyOnLaunch()
 
-        // 启动密码验证：验证通过后才显示小猫
-        let auth = AuthManager()
-        self.authManager = auth
-        auth.showAuthWindow { [weak self] in
-            DispatchQueue.main.async {
-                self?.setupCat()
-                // 后台检测权限，未授权时静默提示
-                AccessibilityHelper.checkPermissionAsync { granted in
-                    DispatchQueue.main.async {
-                        if !granted {
-                            self?.showPermissionBanner()
-                        }
+        // 直接启动小猫，不做密码验证
+        DispatchQueue.main.async { [weak self] in
+            self?.setupCat()
+            // 后台检测权限，未授权时静默提示
+            AccessibilityHelper.checkPermissionAsync { granted in
+                DispatchQueue.main.async {
+                    if !granted {
+                        self?.showPermissionBanner()
                     }
                 }
             }
@@ -119,6 +115,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 创建菜单
         let menu = NSMenu()
+        // 关闭自动启用：否则 AppKit 会按 target/action 自动启用所有项，覆盖权限置灰
+        menu.autoenablesItems = false
 
         // ── 最上面：系统信息（二级菜单，悬停/点击展开，实时监控）──
         // 二级菜单的每个指标条目都可点击勾选：勾选后显示在顶部菜单栏
@@ -151,6 +149,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 一键清理内存（测试版）
         let cleanItem = NSMenuItem(title: "一键清理内存（测试版）", action: #selector(cleanMemory(_:)), keyEquivalent: "")
         cleanItem.target = self
+        // 基础权限置灰，解锁后启用（解锁/清除权限时由 refreshMenuAccess 刷新）
+        cleanItem.isEnabled = AccessControl.isFullAccess
+        cleanMemoryItem = cleanItem
         menu.addItem(cleanItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -184,8 +185,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func showSettings(_ sender: Any?) {
         if settingsPanel == nil, let vm = viewModel {
             settingsPanel = SettingsPanel(viewModel: vm)
+            // 解锁/清除权限后同步刷新菜单栏权限
+            settingsPanel?.onAccessLevelChanged = { [weak self] in
+                DispatchQueue.main.async {
+                    self?.refreshMenuAccess()
+                }
+            }
         }
         settingsPanel?.showCentered()
+    }
+
+    /// 按权限刷新菜单栏可用性（解锁后启用一键清理内存等高级项）
+    @MainActor private func refreshMenuAccess() {
+        cleanMemoryItem?.isEnabled = AccessControl.isFullAccess
     }
     
     @MainActor @objc private func quit(_ sender: Any?) {
@@ -276,6 +288,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     /// 一键清理内存（测试版）：后台执行内存回收，完成后弹窗展示效果
     @MainActor @objc private func cleanMemory(_ sender: Any?) {
+        // 高级功能：基础权限需先在校验码解锁
+        guard AccessControl.isFullAccess else {
+            let alert = NSAlert()
+            alert.messageText = "需要校验码"
+            alert.informativeText = "「一键清理内存」属于高级功能，请在 设置 > 通用设置 > 权限 中输入校验码解锁"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let result = MemoryCleaner.clean()
             DispatchQueue.main.async {
@@ -291,7 +314,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 let alert = NSAlert()
                 alert.messageText = "内存清理完成（测试版）"
-                alert.informativeText = String(format: "清理前空闲：%.0f MB\n清理后空闲：%.0f MB\n本次回收：%.0f MB", r.before, r.after, r.freed)
+                alert.informativeText = String(
+                    format: "空闲内存：%.0f → %.0f MB\n压缩内存：%.0f → %.0f MB\n本次回收：%.0f MB",
+                    r.beforeFree, r.afterFree, r.beforeCompressed, r.afterCompressed, r.freedMB
+                )
                 alert.alertStyle = .informational
                 alert.addButton(withTitle: "好")
                 NSApp.activate(ignoringOtherApps: true)

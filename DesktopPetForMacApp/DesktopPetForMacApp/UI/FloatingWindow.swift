@@ -579,44 +579,42 @@ class CatView: NSView {
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        
-        let petItem = NSMenuItem(title: "抚摸 🐾", action: #selector(petAction(_:)), keyEquivalent: "")
-        petItem.target = self
-        petItem.isEnabled = true
-        menu.addItem(petItem)
-        
-        let newsItem = NSMenuItem(title: "今日热点新闻 📰", action: #selector(hotNewsAction(_:)), keyEquivalent: "")
-        newsItem.target = self
-        newsItem.isEnabled = true
-        menu.addItem(newsItem)
-        
-        let weatherItem = NSMenuItem(title: "查询天气 ☀️", action: #selector(weatherAction(_:)), keyEquivalent: "")
-        weatherItem.target = self
-        weatherItem.isEnabled = true
-        menu.addItem(weatherItem)
-        
-        let locWeatherItem = NSMenuItem(title: "输入地点查天气 🌍", action: #selector(locationWeatherAction(_:)), keyEquivalent: "")
-        locWeatherItem.target = self
-        locWeatherItem.isEnabled = true
-        menu.addItem(locWeatherItem)
-        
-        let todoItem = NSMenuItem(title: "Todo 清单 📝", action: #selector(todoAction(_:)), keyEquivalent: "")
-        todoItem.target = self
-        todoItem.isEnabled = true
-        menu.addItem(todoItem)
-        
-        let stockItem = NSMenuItem(title: "输入股票代码查询 📈", action: #selector(stockAction(_:)), keyEquivalent: "")
-        stockItem.target = self
-        stockItem.isEnabled = true
-        menu.addItem(stockItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
+
+        let fullAccess = AccessControl.isFullAccess
+
+        // 菜单项定义：标题、action、权限等级（fullOnly = 需校验码解锁的高级功能）
+        typealias MenuEntry = (title: String, action: Selector, fullOnly: Bool)
+        let entries: [MenuEntry] = [
+            ("抚摸 🐾", #selector(petAction(_:)), false),
+            ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
+            ("查询天气 ☀️", #selector(weatherAction(_:)), true),
+            ("输入地点查天气 🌍", #selector(locationWeatherAction(_:)), true),
+            ("Todo 清单 📝", #selector(todoAction(_:)), false),
+            ("输入股票代码查询 📈", #selector(stockAction(_:)), true),
+        ]
+
+        // 按可用状态排序：可用的在前，置灰的在后（解锁后全部可用，保持原顺序）
+        let usable = entries.filter { !$0.fullOnly }
+        let locked = entries.filter { $0.fullOnly }
+        let ordered = fullAccess ? entries : usable + locked
+
+        for (i, entry) in ordered.enumerated() {
+            let item = NSMenuItem(title: entry.title, action: entry.action, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = fullAccess || !entry.fullOnly
+            menu.addItem(item)
+            // 基础权限下：可用项与置灰项之间插入分隔线
+            if !fullAccess && i == usable.count - 1 {
+                menu.addItem(NSMenuItem.separator())
+            }
+        }
+
         let quitItem = NSMenuItem(title: "关闭 ❌", action: #selector(quitAction(_:)), keyEquivalent: "")
         quitItem.target = self
-        quitItem.isEnabled = true
+        quitItem.isEnabled = fullAccess
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
-        
+
         // 使用事件中的窗口坐标直接转换到视图坐标，最可靠
         let location = self.convert(event.locationInWindow, from: nil)
         menu.popUp(positioning: nil, at: location, in: self)

@@ -1,0 +1,352 @@
+[
+  {
+    "word": "passport",
+    "phonetic": "/ˈpɑːspɔːt/",
+    "meaning": "n. 护照",
+    "example": "Don't forget your passport.",
+    "category": "旅行"
+  },
+  {
+    "word": "reservation",
+    "phonetic": "/ˌrezəˈveɪʃən/",
+    "meaning": "n. 预订，预约",
+    "example": "I have a reservation.",
+    "category": "旅行"
+  },
+  {
+    "word": "currency",
+    "phonetic": "/ˈkʌrənsi/",
+    "meaning": "n. 货币",
+    "example": "What currency do you use here?",
+    "category": "旅行"
+  },
+  {
+    "word": "departure",
+    "phonetic": "/dɪˈpɑːtʃə/",
+    "meaning": "n. 出发，离开",
+    "example": "The departure time is 3 PM.",
+    "category": "旅行"
+  },
+  {
+    "word": "destination",
+    "phonetic": "/ˌdestɪˈneɪʃən/",
+    "meaning": "n. 目的地",
+    "example": "We reached our destination.",
+    "category": "旅行"
+  },
+  {
+    "word": "luggage",
+    "phonetic": "/ˈlʌɡɪdʒ/",
+    "meaning": "n. 行李",
+    "example": "Where can I collect my luggage?",
+    "category": "旅行"
+  },
+  {
+    "word": "itinerary",
+    "phonetic": "/aɪˈtɪnərəri/",
+    "meaning": "n. 行程，路线",
+    "example": "Let me check the itinerary.",
+    "category": "旅行"
+  },
+  {
+    "word": "accommodation",
+    "phonetic": "/əˌkɒməˈdeɪʃən/",
+    "meaning": "n. 住宿",
+    "example": "We booked accommodation online.",
+    "category": "旅行"
+  },
+  {
+    "word": "souvenir",
+    "phonetic": "/ˌsuːvəˈnɪə/",
+    "meaning": "n. 纪念品",
+    "example": "I bought some souvenirs.",
+    "category": "旅行"
+  },
+  {
+    "word": "exchange",
+    "phonetic": "/ɪksˈtʃeɪndʒ/",
+    "meaning": "v. 兑换；交换",
+    "example": "Where can I exchange money?",
+    "category": "旅行"
+  },
+  {
+    "word": "airport",
+    "phonetic": "/ˈeəpɔːt/",
+    "meaning": "n. 机场",
+    "example": "The airport is far from the city center.",
+    "category": "旅行"
+  },
+  {
+    "word": "boarding pass",
+    "phonetic": "/ˈbɔːdɪŋ pɑːs/",
+    "meaning": "n. 登机牌",
+    "example": "Please show your boarding pass.",
+    "category": "旅行"
+  },
+  {
+    "word": "customs",
+    "phonetic": "/ˈkʌstəmz/",
+    "meaning": "n. 海关",
+    "example": "We went through customs quickly.",
+    "category": "旅行"
+  },
+  {
+    "word": "flight",
+    "phonetic": "/flaɪt/",
+    "meaning": "n. 航班；飞行",
+    "example": "My flight was delayed.",
+    "category": "旅行"
+  },
+  {
+    "word": "hotel",
+    "phonetic": "/hoʊˈtel/",
+    "meaning": "n. 酒店",
+    "example": "We stayed at a nice hotel.",
+    "category": "旅行"
+  },
+  {
+    "word": "check-in",
+    "phonetic": "/ˈtʃek ɪn/",
+    "meaning": "n. 登记入住；办理登机",
+    "example": "Check-in time is 3 PM.",
+    "category": "旅行"
+  },
+  {
+    "word": "check-out",
+    "phonetic": "/ˈtʃek aʊt/",
+    "meaning": "n. 退房；结账离开",
+    "example": "Check-out time is 11 AM.",
+    "category": "旅行"
+  },
+  {
+    "word": "tourist",
+    "phonetic": "/ˈtʊərɪst/",
+    "meaning": "n. 游客",
+    "example": "Many tourists visit this place.",
+    "category": "旅行"
+  },
+  {
+    "word": "sightseeing",
+    "phonetic": "/ˈsaɪtsiːɪŋ/",
+    "meaning": "n. 观光",
+    "example": "We went sightseeing in the old town.",
+    "category": "旅行"
+  },
+  {
+    "word": "map",
+    "phonetic": "/mæp/",
+    "meaning": "n. 地图",
+    "example": "Do you have a map of the city?",
+    "category": "旅行"
+  },
+  {
+    "word": "direction",
+    "phonetic": "/dəˈrekʃən/",
+    "meaning": "n. 方向；指示",
+    "example": "Can you give me directions?",
+    "category": "旅行"
+  },
+  {
+    "word": "transportation",
+    "phonetic": "/ˌtrænspɔːˈteɪʃən/",
+    "meaning": "n. 交通",
+    "example": "Public transportation is convenient here.",
+    "category": "旅行"
+  },
+  {
+    "word": "taxi",
+    "phonetic": "/ˈtæksi/",
+    "meaning": "n. 出租车",
+    "example": "Let's take a taxi to the hotel.",
+    "category": "旅行"
+  },
+  {
+    "word": "subway",
+    "phonetic": "/ˈsʌbweɪ/",
+    "meaning": "n. 地铁",
+    "example": "The subway is faster than bus.",
+    "category": "旅行"
+  },
+  {
+    "word": "ticket",
+    "phonetic": "/ˈtɪkɪt/",
+    "meaning": "n. 票；门票",
+    "example": "I need to buy a ticket.",
+    "category": "旅行"
+  },
+  {
+    "word": "visa",
+    "phonetic": "/ˈviːzə/",
+    "meaning": "n. 签证",
+    "example": "You need a visa to enter the country.",
+    "category": "旅行"
+  },
+  {
+    "word": "travel insurance",
+    "phonetic": "/ˈtrævəl ɪnˈʃʊərəns/",
+    "meaning": "n. 旅行保险",
+    "example": "I bought travel insurance for the trip.",
+    "category": "旅行"
+  },
+  {
+    "word": "vacation",
+    "phonetic": "/veɪˈkeɪʃən/",
+    "meaning": "n. 假期",
+    "example": "We're going on vacation next week.",
+    "category": "旅行"
+  },
+  {
+    "word": "tour guide",
+    "phonetic": "/ˈtʊər ɡaɪd/",
+    "meaning": "n. 导游",
+    "example": "Our tour guide was very knowledgeable.",
+    "category": "旅行"
+  },
+  {
+    "word": "landmark",
+    "phonetic": "/ˈlændmɑːk/",
+    "meaning": "n. 地标",
+    "example": "The tower is a famous landmark.",
+    "category": "旅行"
+  },
+  {
+    "word": "terminal",
+    "phonetic": "/ˈtɜːmɪnl/",
+    "meaning": "n. 航站楼；终点站",
+    "example": "Which terminal is our flight from?",
+    "category": "旅行"
+  },
+  {
+    "word": "delay",
+    "phonetic": "/dɪˈleɪ/",
+    "meaning": "n./v. 延误；推迟",
+    "example": "The flight was delayed by two hours.",
+    "category": "旅行"
+  },
+  {
+    "word": "cancellation",
+    "phonetic": "/ˌkænseˈleɪʃən/",
+    "meaning": "n. 取消",
+    "example": "What's the cancellation policy?",
+    "category": "旅行"
+  },
+  {
+    "word": "baggage claim",
+    "phonetic": "/ˈbæɡɪdʒ kleɪm/",
+    "meaning": "n. 行李提取处",
+    "example": "Follow the signs to baggage claim.",
+    "category": "旅行"
+  },
+  {
+    "word": "duty-free",
+    "phonetic": "/ˌdjuːti ˈfriː/",
+    "meaning": "adj. 免税的",
+    "example": "I bought perfume at the duty-free shop.",
+    "category": "旅行"
+  },
+  {
+    "word": "boarding",
+    "phonetic": "/ˈbɔːdɪŋ/",
+    "meaning": "n. 登机",
+    "example": "Boarding starts at gate 12.",
+    "category": "旅行"
+  },
+  {
+    "word": "gate",
+    "phonetic": "/ɡeɪt/",
+    "meaning": "n. 登机口",
+    "example": "Our gate has been changed to B5.",
+    "category": "旅行"
+  },
+  {
+    "word": "aisle",
+    "phonetic": "/aɪl/",
+    "meaning": "n. 过道；走廊",
+    "example": "Can I have an aisle seat, please?",
+    "category": "旅行"
+  },
+  {
+    "word": "window seat",
+    "phonetic": "/ˈwɪndoʊ siːt/",
+    "meaning": "n. 靠窗座位",
+    "example": "I'd prefer a window seat.",
+    "category": "旅行"
+  },
+  {
+    "word": "layover",
+    "phonetic": "/ˈleɪoʊvər/",
+    "meaning": "n. 中转停留",
+    "example": "We have a 3-hour layover in Tokyo.",
+    "category": "旅行"
+  },
+  {
+    "word": "round trip",
+    "phonetic": "/ˌraʊnd ˈtrɪp/",
+    "meaning": "n. 往返旅程",
+    "example": "I booked a round trip ticket.",
+    "category": "旅行"
+  },
+  {
+    "word": "one-way",
+    "phonetic": "/ˌwʌn ˈweɪ/",
+    "meaning": "adj. 单程的",
+    "example": "I need a one-way ticket to London.",
+    "category": "旅行"
+  },
+  {
+    "word": "hostel",
+    "phonetic": "/ˈhɒstl/",
+    "meaning": "n. 青年旅舍",
+    "example": "We stayed in a cheap hostel.",
+    "category": "旅行"
+  },
+  {
+    "word": "receipt",
+    "phonetic": "/rɪˈsiːt/",
+    "meaning": "n. 收据；发票",
+    "example": "Can I have the receipt, please?",
+    "category": "旅行"
+  },
+  {
+    "word": "tip",
+    "phonetic": "/tɪp/",
+    "meaning": "n. 小费 v. 给小费",
+    "example": "Is the tip included in the bill?",
+    "category": "旅行"
+  },
+  {
+    "word": "menu",
+    "phonetic": "/ˈmenjuː/",
+    "meaning": "n. 菜单",
+    "example": "Could I see the menu, please?",
+    "category": "旅行"
+  },
+  {
+    "word": "bill",
+    "phonetic": "/bɪl/",
+    "meaning": "n. 账单",
+    "example": "Can we have the bill, please?",
+    "category": "旅行"
+  },
+  {
+    "word": "embassy",
+    "phonetic": "/ˈembəsi/",
+    "meaning": "n. 大使馆",
+    "example": "Contact the embassy for help.",
+    "category": "旅行"
+  },
+  {
+    "word": "pharmacy",
+    "phonetic": "/ˈfɑːməsi/",
+    "meaning": "n. 药店；药房",
+    "example": "Is there a pharmacy nearby?",
+    "category": "旅行"
+  },
+  {
+    "word": "emergency",
+    "phonetic": "/ɪˈmɜːdʒənsi/",
+    "meaning": "n. 紧急情况",
+    "example": "Call 911 in case of emergency.",
+    "category": "旅行"
+  }
+]

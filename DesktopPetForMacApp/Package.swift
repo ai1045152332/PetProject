@@ -20,6 +20,9 @@ let package = Package(
         .executableTarget(
             name: "DesktopPetForMacApp",
             path: "DesktopPetForMacApp",
+            resources: [
+                .copy("Resources/WordBank")
+            ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]

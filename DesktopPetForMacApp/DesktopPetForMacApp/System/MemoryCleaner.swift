@@ -1,5 +1,5 @@
 // MemoryCleaner.swift
-// DesktopPetForMacApp — 一键清理内存（测试版）
+// DesktopPetForMacApp — 一键清理内存
 // 原理：申请并 touch 大块内存，保持压力数秒，促使系统压缩/回收 inactive
 // 与压缩内存页，然后释放。无需 root 权限。
 // 注意：macOS 会用 inactive/压缩内存做缓存，「空闲」偏低属正常；

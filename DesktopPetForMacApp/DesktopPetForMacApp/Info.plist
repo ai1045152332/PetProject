@@ -20,9 +20,9 @@
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     
-    <!-- 版本号（格式：年.月.日-测试版本） -->
+    <!-- 版本号（格式：年.月.日） -->
     <key>CFBundleShortVersionString</key>
-    <string>2026.10.10-test3</string>
+    <string>2026.10.10</string>
     <key>CFBundleVersion</key>
     <string>2026101003</string>
     

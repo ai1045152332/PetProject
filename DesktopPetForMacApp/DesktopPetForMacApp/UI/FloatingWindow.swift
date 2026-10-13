@@ -60,6 +60,11 @@ final class FloatingWindow {
             cv?.fetchAndShowHotNews()
         }
         
+        // 设置背单词回调
+        viewModel.onStartWordLearning = { [weak cv] in
+            cv?.startWordLearning()
+        }
+        
         // 设置初始帧
         cv.updateLayerImage()
         
@@ -268,7 +273,7 @@ class CatView: NSView {
     /// 展示热点新闻弹窗（表格 + 可点击超链接）
     private func showHotNewsAlert(_ items: [NewsItem]) {
         guard !items.isEmpty else {
-            HTMLAlertWindow.show(title: "今日热点新闻", htmlBody: "<div style=\"text-align:center;padding:20px 0;color:#c0c0d0;\">加载失败，请检查网络连接</div>", width: 340)
+            HTMLAlertWindow.showResizable(title: "今日热点新闻", htmlBody: "<div style=\"text-align:center;padding:30px 0;color:#c0c0d0;\">加载失败，请检查网络连接</div>", width: 400)
             return
         }
         var rows: [String] = []
@@ -296,7 +301,7 @@ class CatView: NSView {
             </tbody>
         </table>
         """
-        HTMLAlertWindow.show(title: "今日热点新闻 Top10", htmlBody: htmlBody, width: 480)
+        HTMLAlertWindow.showResizable(title: "今日热点新闻 Top10", htmlBody: htmlBody, width: 480, maxHeight: 640)
     }
     
     // MARK: - Weather Display
@@ -592,6 +597,7 @@ class CatView: NSView {
         typealias MenuEntry = (title: String, action: Selector, fullOnly: Bool)
         let entries: [MenuEntry] = [
             ("抚摸 🐾", #selector(petAction(_:)), false),
+            ("背单词 📚", #selector(wordLearningAction(_:)), true),
             ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
             ("查询天气 ☀️", #selector(weatherAction(_:)), true),
             ("输入地点查天气 🌍", #selector(locationWeatherAction(_:)), true),
@@ -627,11 +633,310 @@ class CatView: NSView {
     }
     
     @objc private func petAction(_ sender: NSMenuItem) { viewModel?.pet() }
+    @objc private func wordLearningAction(_ sender: NSMenuItem) { viewModel?.startWordLearning() }
     @objc private func hotNewsAction(_ sender: NSMenuItem) { viewModel?.showHotNews() }
     @objc private func weatherAction(_ sender: NSMenuItem) { fetchWeatherAndShow() }
     @objc private func locationWeatherAction(_ sender: NSMenuItem) { showLocationWeatherInput() }
     @objc private func todoAction(_ sender: NSMenuItem) { showTodoList() }
     @objc private func stockAction(_ sender: NSMenuItem) { showStockInput() }
+    
+    // MARK: - 背单词功能
+        
+    /// 当前答题序号
+    private var quizIndex: Int = 0
+    /// 总答题数
+    private var quizTotal: Int = 5
+    /// 得分
+    private var quizScore: Int = 0
+    /// 当前背单词弹窗引用
+    private var wordLearningWindow: HTMLAlertWindow?
+        
+    /// 开始背单词：逐题答题模式
+    func startWordLearning() {
+        let category = WordService.shared.currentCategory
+        let words = WordService.shared.getWords(for: category)
+            
+        guard !words.isEmpty else {
+            FileLogger.log("[DesktopPet] 词库为空: \(category.rawValue)")
+            let htmlBody = """
+            <div style="text-align:center;padding:40px 20px;">
+                <div style="font-size:48px;margin-bottom:16px;">📭</div>
+                <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">词库为空</div>
+                <div style="font-size:14px;color:#888;">请在设置中切换其他分类，或添加单词到词库</div>
+            </div>
+            """
+            wordLearningWindow = HTMLAlertWindow.showWordLearning(title: "背单词 📚", htmlBody: htmlBody, width: 360)
+            return
+        }
+            
+        quizIndex = 0
+        quizScore = 0
+        quizTotal = min(5, words.count)
+        fetchAndShowQuiz()
+    }
+        
+    /// 关闭当前背单词弹窗
+    private func closeWordLearningWindow() {
+        wordLearningWindow?.orderOut(nil)
+        wordLearningWindow?.close()
+        wordLearningWindow = nil
+    }
+        
+    /// 异步获取单词详情并显示答题界面
+    private func fetchAndShowQuiz() {
+        guard quizIndex < quizTotal else {
+            showQuizResult()
+            return
+        }
+            
+        let category = WordService.shared.currentCategory
+            
+        // 显示加载状态
+        let loadingHTML = """
+        <div style="text-align:center;padding:60px 20px;">
+            <div style="font-size:36px;margin-bottom:16px;animation:spin 1.5s linear infinite;">🔄</div>
+            <div style="font-size:15px;color:#888;">正在加载单词...</div>
+        </div>
+        <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
+        """
+        let loadingWindow = HTMLAlertWindow.showWordLearning(
+            title: "背单词 📚",
+            htmlBody: loadingHTML,
+            width: 380
+        )
+        wordLearningWindow = loadingWindow
+            
+        // 使用 Task 异步获取单词 + 生成选择题（避免 semaphore 死锁）
+        Task {
+            do {
+                FileLogger.log("[DesktopPet] 开始获取单词...")
+                let words = WordService.shared.getWords(for: category)
+                FileLogger.log("[DesktopPet] 词库单词数: \(words.count)")
+                
+                guard let word = words.shuffled().first else {
+                    FileLogger.log("[DesktopPet] 词库为空，无法获取单词")
+                    await MainActor.run {
+                        self.closeWordLearningWindow()
+                        self.showEmptyWordBankError()
+                    }
+                    return
+                }
+                
+                FileLogger.log("[DesktopPet] 选中单词: \(word.word)，开始生成选择题...")
+                let quiz = await DictionaryService.shared.generateQuiz(word: word, category: category)
+                FileLogger.log("[DesktopPet] 选择题生成\(quiz != nil ? "成功" : "失败")")
+                
+                await MainActor.run {
+                    self.closeWordLearningWindow()
+                    if let q = quiz {
+                        self.showQuizCard(quiz: q)
+                    } else {
+                        // API 失败，跳过此题
+                        FileLogger.log("[DesktopPet] 生成选择题失败，跳过: \(word.word)")
+                        self.quizIndex += 1
+                        self.fetchAndShowQuiz()
+                    }
+                }
+            } catch {
+                FileLogger.log("[DesktopPet] 获取单词时发生错误: \(error)")
+                await MainActor.run {
+                    self.closeWordLearningWindow()
+                    self.showEmptyWordBankError()
+                }
+            }
+        }
+    }
+    
+    /// 显示词库为空错误
+    private func showEmptyWordBankError() {
+        let htmlBody = """
+        <div style="text-align:center;padding:40px 20px;">
+            <div style="font-size:48px;margin-bottom:16px;">📭</div>
+            <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">词库加载失败</div>
+            <div style="font-size:14px;color:#888;">请检查资源文件或切换其他分类</div>
+        </div>
+        """
+        wordLearningWindow = HTMLAlertWindow.showWordLearning(title: "背单词 📚", htmlBody: htmlBody, width: 360)
+    }
+        
+    /// 显示答题卡片
+    private func showQuizCard(quiz: QuizData) {
+        let options = quiz.shuffledOptions
+        let correctIdx = quiz.correctIndex
+            
+        // 构建选项 HTML
+        var optionsHTML = ""
+        let labels = ["A", "B", "C"]
+        for (i, opt) in options.enumerated() {
+            let escaped = opt.replacingOccurrences(of: "\"", with: "&quot;")
+            optionsHTML += """
+            <button class="quiz-option" onclick="selectAnswer(\(i), \(correctIdx))">
+                <span class="option-label">\(labels[i])</span>
+                <span class="option-text">\(escaped)</span>
+            </button>
+            """
+        }
+            
+        // 例句
+        let exampleHTML: String
+        if let ex = quiz.example {
+            exampleHTML = "<div class=\"word-example\">\"\(ex)\"</div>"
+        } else {
+            exampleHTML = ""
+        }
+            
+        // 音标
+        let phoneticHTML: String
+        if let ph = quiz.phonetic {
+            phoneticHTML = "<span class=\"word-phonetic\">\(ph)</span>"
+        } else {
+            phoneticHTML = ""
+        }
+            
+        // 音频按钮
+        let audioHTML: String
+        if let audio = quiz.audioURL {
+            audioHTML = "<button class=\"audio-btn\" onclick=\"playAudio('\(audio)')\">🔊</button>"
+        } else {
+            audioHTML = ""
+        }
+            
+        let htmlBody = """
+        <div class="quiz-progress-bar">
+            <div class="quiz-progress-fill" style="width:\(Double(quizIndex + 1) / Double(quizTotal) * 100)%"></div>
+        </div>
+        <div class="quiz-meta">
+            <span>第 \(quizIndex + 1) / \(quizTotal) 题</span>
+            <span>得分: \(quizScore)</span>
+        </div>
+        <div class="word-card">
+            <div class="word-row">
+                <span class="word-text">\(quiz.word)</span>
+                \(phoneticHTML)
+                \(audioHTML)
+            </div>
+            \(exampleHTML)
+        </div>
+        <div class="quiz-question">选择正确的中文释义</div>
+        <div class="quiz-options">
+            \(optionsHTML)
+        </div>
+        <style>
+            .quiz-progress-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-bottom: 12px; }
+            .quiz-progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 2px; transition: width 0.3s; }
+            .quiz-meta { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 16px; padding: 0 2px; }
+            .word-card { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 18px; margin-bottom: 18px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
+            .word-row { display: flex; align-items: baseline; justify-content: center; gap: 10px; flex-wrap: wrap; }
+            .word-text { font-size: 28px; font-weight: 700; color: #a0e8ff; }
+            .word-phonetic { font-size: 14px; color: #888; }
+            .audio-btn { background: rgba(160,232,255,0.15); border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; cursor: pointer; transition: all 0.2s; }
+            .audio-btn:hover { background: rgba(160,232,255,0.3); transform: scale(1.1); }
+            .word-example { font-size: 12px; color: #777; font-style: italic; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06); }
+            .quiz-question { font-size: 14px; color: #aaa; text-align: center; margin-bottom: 14px; }
+            .quiz-options { display: flex; flex-direction: column; gap: 10px; }
+            .quiz-option { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 13px 16px; font-size: 14px; color: #e0e0e8; text-align: left; cursor: pointer; transition: all 0.2s; }
+            .quiz-option:hover { background: rgba(160,232,255,0.08); border-color: rgba(160,232,255,0.25); transform: translateX(3px); }
+            .option-label { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.08); font-size: 12px; font-weight: 600; color: #aaa; flex-shrink: 0; }
+            .option-text { flex: 1; line-height: 1.4; }
+            .quiz-option.correct { background: rgba(82,196,26,0.15); border-color: #52c41a; }
+            .quiz-option.correct .option-label { background: #52c41a; color: white; }
+            .quiz-option.wrong { background: rgba(255,77,79,0.15); border-color: #ff4d4f; }
+            .quiz-option.wrong .option-label { background: #ff4d4f; color: white; }
+        </style>
+        <script>
+            function playAudio(url) {
+                var audio = new Audio(url);
+                audio.play().catch(function(){});
+            }
+            function selectAnswer(selected, correct) {
+                var buttons = document.querySelectorAll('.quiz-option');
+                buttons.forEach(function(btn, i) {
+                    btn.onclick = null;
+                    btn.style.cursor = 'default';
+                    if (i === correct) btn.classList.add('correct');
+                    if (i === selected && i !== correct) btn.classList.add('wrong');
+                });
+                setTimeout(function() {
+                    if (window.webkit && window.webkit.messageHandlers.nextQuiz) {
+                        window.webkit.messageHandlers.nextQuiz.postMessage(selected === correct ? 'correct' : 'wrong');
+                    }
+                }, 1200);
+            }
+        </script>
+        """
+            
+        let window = HTMLAlertWindow.showWordLearning(
+            title: "背单词 📚",
+            htmlBody: htmlBody,
+            width: 380,
+            onNextQuiz: { [weak self] isCorrect in
+                if isCorrect { self?.quizScore += 1 }
+                self?.quizIndex += 1
+                self?.closeWordLearningWindow()
+                self?.fetchAndShowQuiz()
+            }
+        )
+        wordLearningWindow = window
+    }
+        
+    /// 显示测试结果
+    private func showQuizResult() {
+        let total = quizTotal
+        let percentage = total > 0 ? Int(Double(quizScore) / Double(total) * 100) : 0
+            
+        var emoji = "🎉"
+        var message = "太棒了！"
+        if percentage < 60 {
+            emoji = "💪"
+            message = "继续加油！"
+        } else if percentage < 100 {
+            emoji = "👍"
+            message = "不错哦！"
+        }
+            
+        let htmlBody = """
+        <div class="result-container">
+            <div class="result-emoji">\(emoji)</div>
+            <div class="result-title">\(message)</div>
+            <div class="result-score">
+                <span class="score-number">\(quizScore)</span>
+                <span class="score-total">/ \(total)</span>
+            </div>
+            <div class="result-percentage">正确率 \(percentage)%</div>
+            <button class="btn-retry" onclick="retryLearning()">再来一次 🔄</button>
+        </div>
+        <style>
+            .result-container { text-align: center; padding: 20px 0; }
+            .result-emoji { font-size: 64px; margin-bottom: 16px; }
+            .result-title { font-size: 22px; font-weight: 700; color: #f0f0f5; margin-bottom: 20px; }
+            .result-score { margin-bottom: 12px; }
+            .score-number { font-size: 48px; font-weight: 800; color: #a0e8ff; }
+            .score-total { font-size: 20px; color: #888; margin-left: 4px; }
+            .result-percentage { font-size: 16px; color: #888; margin-bottom: 24px; }
+            .btn-retry { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 32px; border-radius: 20px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+            .btn-retry:hover { transform: scale(1.05); }
+        </style>
+        <script>
+            function retryLearning() {
+                if (window.webkit && window.webkit.messageHandlers.retryLearning) {
+                    window.webkit.messageHandlers.retryLearning.postMessage('retry');
+                }
+            }
+        </script>
+        """
+            
+        let window = HTMLAlertWindow.showWordLearning(
+            title: "测试结果 🎯",
+            htmlBody: htmlBody,
+            width: 360,
+            onRetryLearning: { [weak self] in
+                self?.closeWordLearningWindow()
+                self?.startWordLearning()
+            }
+        )
+        wordLearningWindow = window
+    }
+    
     @objc private func sleepAction(_ sender: NSMenuItem) {
         if viewModel?.animationState == .sleep {
             viewModel?.wakeUp()

@@ -127,6 +127,9 @@ final class PetViewModel: ObservableObject {
     
     /// 新闻查询回调（供视图层展示弹窗）
     var onShowHotNews: ((String) -> Void)?
+    
+    /// 背单词回调（供视图层展示学习/测试弹窗）
+    var onStartWordLearning: (() -> Void)?
 
     // MARK: - 小猫大小配置
 
@@ -436,5 +439,14 @@ final class PetViewModel: ObservableObject {
     func showHotNews() {
         showContextMenu = false
         onShowHotNews?("")
+    }
+    
+    // MARK: - 背单词功能
+    
+    /// 开始背单词：进入专注状态，启动学习流程
+    func startWordLearning() {
+        showContextMenu = false
+        transitionTo(.focus) // 进入专注状态
+        onStartWordLearning?()
     }
 }

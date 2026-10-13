@@ -1,0 +1,72 @@
+[
+  {
+    "word": "awesome",
+    "phonetic": "/ˈɔːsəm/",
+    "meaning": "adj. 太棒了",
+    "example": "That's awesome!",
+    "category": "口语"
+  },
+  {
+    "word": "chill",
+    "phonetic": "/tʃɪl/",
+    "meaning": "v. 放松 n. 寒冷",
+    "example": "Let's just chill at home.",
+    "category": "口语"
+  },
+  {
+    "word": "hangout",
+    "phonetic": "/ˈhæŋaʊt/",
+    "meaning": "n. 常去的地方",
+    "example": "This is my favorite hangout.",
+    "category": "口语"
+  },
+  {
+    "word": "vibe",
+    "phonetic": "/vaɪb/",
+    "meaning": "n. 氛围，感觉",
+    "example": "I like the vibe here.",
+    "category": "口语"
+  },
+  {
+    "word": "brunch",
+    "phonetic": "/brʌntʃ/",
+    "meaning": "n. 早午餐",
+    "example": "Let's have brunch together.",
+    "category": "口语"
+  },
+  {
+    "word": "Netflix",
+    "phonetic": "/ˈnetflɪks/",
+    "meaning": "n. 网飞（流媒体）",
+    "example": "Let's watch Netflix tonight.",
+    "category": "口语"
+  },
+  {
+    "word": "selfie",
+    "phonetic": "/ˈselfi/",
+    "meaning": "n. 自拍",
+    "example": "Let's take a selfie!",
+    "category": "口语"
+  },
+  {
+    "word": "ghost",
+    "phonetic": "/ɡoʊst/",
+    "meaning": "v. 突然消失；不回复",
+    "example": "He ghosted me after the date.",
+    "category": "口语"
+  },
+  {
+    "word": "squad",
+    "phonetic": "/skwɒd/",
+    "meaning": "n. 一群朋友",
+    "example": "Hanging out with the squad.",
+    "category": "口语"
+  },
+  {
+    "word": "mood",
+    "phonetic": "/muːd/",
+    "meaning": "n. 心情，情绪",
+    "example": "I'm in a good mood today.",
+    "category": "口语"
+  }
+]

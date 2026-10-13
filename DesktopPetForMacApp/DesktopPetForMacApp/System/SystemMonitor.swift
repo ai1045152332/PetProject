@@ -31,6 +31,8 @@ enum SystemMonitor {
     private static var cachedCPU: Double?
     private static var cachedCPUTime: Date = .distantPast
     private static let cpuCacheInterval: TimeInterval = 1.5
+    private static var cachedBreakdown: (system: Double, user: Double, idle: Double)?
+    private static var cachedBreakdownTime: Date = .distantPast
 
     /// CPU 总占用率（0-100）
     /// 首次采样无基线返回 nil，之后基于两次采样的 tick 差值计算
@@ -67,6 +69,47 @@ enum SystemMonitor {
         return usage
     }
 
+    /// CPU 三段明细（0-100）：系统占用 / 用户占用 / 闲置（nice 并入用户），首次采样无基线返回 nil
+    static func cpuBreakdown() -> (system: Double, user: Double, idle: Double)? {
+        cpuLock.lock()
+        defer { cpuLock.unlock() }
+
+        if let cached = cachedBreakdown, Date().timeIntervalSince(cachedBreakdownTime) < cpuCacheInterval {
+            return cached
+        }
+
+        var info = host_cpu_load_info()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.stride / MemoryLayout<integer_t>.stride)
+        let kr = withUnsafeMutablePointer(to: &info) { p in
+            p.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { base in
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, base, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return cachedBreakdown }
+
+        defer { lastCPUInfo = info }
+        guard let prev = lastCPUInfo else { return nil }
+
+        let user   = Double(info.cpu_ticks.0 - prev.cpu_ticks.0)
+        let system = Double(info.cpu_ticks.1 - prev.cpu_ticks.1)
+        let idle   = Double(info.cpu_ticks.2 - prev.cpu_ticks.2)
+        let nice   = Double(info.cpu_ticks.3 - prev.cpu_ticks.3)
+        let total  = user + system + idle + nice
+        guard total > 0 else { return cachedBreakdown }
+
+        let sysPct  = system / total * 100.0
+        let usrPct  = (user + nice) / total * 100.0
+        let idlePct = idle / total * 100.0
+        let bd = (
+            system: min(max(sysPct, 0), 100),
+            user: min(max(usrPct, 0), 100),
+            idle: min(max(idlePct, 0), 100)
+        )
+        cachedBreakdown = bd
+        cachedBreakdownTime = Date()
+        return bd
+    }
+
     // MARK: - 内存占用率
 
     /// 内存使用率（0-100）与容量（GB）
@@ -90,6 +133,34 @@ enum SystemMonitor {
         let used = total > (free + inactive + speculative) ? total - free - inactive - speculative : total
         let percent = min(max(Double(used) / Double(total) * 100.0, 0), 100)
         return (percent, Double(used) / 1_000_000_000, Double(total) / 1_000_000_000)
+    }
+
+    /// 内存两段明细（0-100）：已用 / 空闲，合计正好 100%
+    /// 口径与顶栏 memoryUsage 一致：已用 = 总量 - 空闲 - 非活跃 - 推测（真正占用的活跃/固定/压缩部分）
+    /// 空闲 = 空闲页 + 非活跃 + 推测（可回收内存均算可用），因此已用数值会随活动页变化而波动
+    static func memoryBreakdown() -> (used: Double, free: Double)? {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
+        let kr = withUnsafeMutablePointer(to: &stats) { p in
+            p.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { base in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, base, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return nil }
+
+        let pageSize = Double(UInt64(vm_page_size))
+        let total = Double(ProcessInfo.processInfo.physicalMemory)
+        guard total > 0 else { return nil }
+        let freeBytes = Double(UInt64(stats.free_count)) * pageSize
+        let inactiveBytes = Double(UInt64(stats.inactive_count)) * pageSize
+        let speculativeBytes = Double(UInt64(stats.speculative_count)) * pageSize
+
+        let reclaimableBytes = freeBytes + inactiveBytes + speculativeBytes
+        let usedBytes = total > reclaimableBytes ? total - reclaimableBytes : 0
+        return (
+            used: min(max(usedBytes / total * 100.0, 0), 100),
+            free: min(max(reclaimableBytes / total * 100.0, 0), 100)
+        )
     }
 
     // MARK: - CPU 温度（AppleSMC）

@@ -16,17 +16,13 @@ class TodoManager {
     func load() -> [TodoItem] {
         lock.lock()
         defer { lock.unlock() }
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let items = try? JSONDecoder().decode([TodoItem].self, from: data) else {
-            return []
-        }
-        return items
+        return loadUnlocked()
     }
     
     func add(text: String) {
         lock.lock()
         defer { lock.unlock() }
-        var items = load()
+        var items = loadUnlocked()
         let item = TodoItem(id: UUID().uuidString, text: text)
         items.append(item)
         save(items)
@@ -35,9 +31,18 @@ class TodoManager {
     func delete(id: String) {
         lock.lock()
         defer { lock.unlock() }
-        var items = load()
+        var items = loadUnlocked()
         items.removeAll { $0.id == id }
         save(items)
+    }
+    
+    /// 无锁读取（调用方须已持有 lock，避免 NSLock 不可重入导致死锁）
+    private func loadUnlocked() -> [TodoItem] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let items = try? JSONDecoder().decode([TodoItem].self, from: data) else {
+            return []
+        }
+        return items
     }
     
     private func save(_ items: [TodoItem]) {

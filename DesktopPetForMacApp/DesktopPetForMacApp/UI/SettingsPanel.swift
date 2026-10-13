@@ -53,7 +53,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         self.viewModel = viewModel
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: panelSize.width, height: panelSize.height),
-            styleMask: [.titled, .closable, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -101,7 +101,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         contentView.addSubview(navBg)
 
         // 左侧导航项：固定从上往下顺序排列（不随高度自适应）
-        let navTitles = ["🐱 宠物状态", "⚙️ 通用设置", "🔔 提醒设置"]
+        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置", "📚 背单词"]
         let itemH: CGFloat = 44
         let itemGap: CGFloat = 10
         let navTopPad: CGFloat = 12
@@ -128,13 +128,16 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let section0 = makeContentContainer(frame: contentFrame, in: contentView)
         let section1 = makeContentContainer(frame: contentFrame, in: contentView)
         let section2 = makeContentContainer(frame: contentFrame, in: contentView)
+        let section3 = makeContentContainer(frame: contentFrame, in: contentView)
         section1.isHidden = true
         section2.isHidden = true
-        contentViews = [section0, section1, section2]
+        section3.isHidden = true
+        contentViews = [section0, section1, section2, section3]
 
         fillStateSection(section0)
         fillGeneralSection(section1)
         fillReminderSection(section2)
+        fillWordLearningSection(section3)
 
         applyNavStyle()
     }
@@ -160,9 +163,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let cw = container.bounds.width
         let ch = container.bounds.height
 
-        // ── 头部：标题 + 宠物名称 + 当前状态徽章 ──
-        let petName = PetName.currentName()
-        let titleLbl = NSTextField(labelWithString: "🐱 \(petName)")
+        // ── 头部：标题 + 当前状态徽章 ──
+        let titleLbl = NSTextField(labelWithString: "🐱 宠物信息")
         titleLbl.font = .systemFont(ofSize: 18, weight: .bold)
         titleLbl.textColor = .labelColor
         titleLbl.frame = NSRect(x: 16, y: ch - 44, width: cw - 32, height: 24)
@@ -179,7 +181,52 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
         let divider = NSBox(frame: NSRect(x: 16, y: ch - 76, width: cw - 32, height: 1))
         divider.boxType = .separator
+        divider.autoresizingMask = .width
         container.addSubview(divider)
+
+        // ── 宠物名称条目 ──
+        let nameRowY = ch - 76 - 14 - 48
+        let nameRow = makeSettingRow(frame: NSRect(x: 16, y: nameRowY, width: cw - 32, height: 48), in: container)
+
+        let nameTitle = NSTextField(labelWithString: "宠物名称")
+        nameTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        nameTitle.textColor = .labelColor
+        nameTitle.frame = NSRect(x: 14, y: 24, width: 200, height: 18)
+        nameRow.addSubview(nameTitle)
+
+        let btnW: CGFloat = 58
+        let fieldW: CGFloat = 140
+        let right = nameRow.bounds.width - 16
+        let nameField = NSTextField(frame: NSRect(x: right - btnW - 8 - fieldW, y: 10, width: fieldW, height: 28))
+        nameField.stringValue = PetName.currentName()
+        nameField.font = .systemFont(ofSize: 13)
+        nameField.alignment = .center
+        nameField.bezelStyle = .roundedBezel
+        nameField.delegate = self
+        nameField.isEditable = false
+        nameField.isSelectable = false
+        nameField.textColor = .labelColor
+        nameField.autoresizingMask = .minXMargin
+        nameRow.addSubview(nameField)
+        petNameField = nameField
+
+        let editBtn = NSButton(title: "编辑", target: self, action: #selector(editPetName(_:)))
+        editBtn.frame = NSRect(x: right - btnW, y: 10, width: btnW, height: 28)
+        editBtn.bezelStyle = .rounded
+        editBtn.controlSize = .regular
+        editBtn.autoresizingMask = .minXMargin
+        nameRow.addSubview(editBtn)
+        petNameEditBtn = editBtn
+
+        let saveBtn = NSButton(title: "保存", target: self, action: #selector(savePetName(_:)))
+        saveBtn.frame = NSRect(x: right - btnW, y: 10, width: btnW, height: 28)
+        saveBtn.bezelStyle = .rounded
+        saveBtn.controlSize = .regular
+        saveBtn.keyEquivalent = "\r"
+        saveBtn.autoresizingMask = .minXMargin
+        nameRow.addSubview(saveBtn)
+        petNameSaveBtn = saveBtn
+        updatePetNameButtons()
 
         // ── 状态卡片（带副标题） ──
         let states: [(CatAnimationState, String, String)] = [
@@ -192,7 +239,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let cardH: CGFloat = 120
         let totalCardsW = CGFloat(states.count) * cardW
         let gap = (cw - 32 - totalCardsW) / CGFloat(states.count + 1)
-        let cardY = ch - 76 - 20 - cardH
+        let cardY = nameRowY - 20 - cardH
         var cardX = 16 + gap
         for (state, emoji, subtitle) in states {
             let card = makeCardButton(
@@ -225,54 +272,11 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
         let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
         divider.boxType = .separator
+        divider.autoresizingMask = .width
         container.addSubview(divider)
 
-        // 条目 1：宠物名称
-        let nameRowY = ch - 66 - 14 - 48
-        let nameRow = makeSettingRow(frame: NSRect(x: 16, y: nameRowY, width: cw - 32, height: 48), in: container)
-
-        let nameTitle = NSTextField(labelWithString: "宠物名称")
-        nameTitle.font = .systemFont(ofSize: 13, weight: .semibold)
-        nameTitle.textColor = .labelColor
-        nameTitle.frame = NSRect(x: 14, y: 24, width: 200, height: 18)
-        nameRow.addSubview(nameTitle)
-
-        // 名称输入框（右侧），编辑按钮在最右，两者不重叠
-        let btnW: CGFloat = 58
-        let fieldW: CGFloat = 140
-        let right = nameRow.bounds.width - 16
-        let nameField = NSTextField(frame: NSRect(x: right - btnW - 8 - fieldW, y: 10, width: fieldW, height: 28))
-        nameField.stringValue = PetName.currentName()
-        nameField.font = .systemFont(ofSize: 13)
-        nameField.alignment = .center
-        nameField.bezelStyle = .roundedBezel
-        nameField.delegate = self
-        // 默认只读：必须先点「编辑」才能改
-        nameField.isEditable = false
-        nameField.isSelectable = false
-        nameField.textColor = .labelColor
-        nameRow.addSubview(nameField)
-        petNameField = nameField
-
-        // 编辑 / 保存 按钮（同一位置，互斥显示）
-        let editBtn = NSButton(title: "编辑", target: self, action: #selector(editPetName(_:)))
-        editBtn.frame = NSRect(x: right - btnW, y: 10, width: btnW, height: 28)
-        editBtn.bezelStyle = .rounded
-        editBtn.controlSize = .regular
-        nameRow.addSubview(editBtn)
-        petNameEditBtn = editBtn
-
-        let saveBtn = NSButton(title: "保存", target: self, action: #selector(savePetName(_:)))
-        saveBtn.frame = NSRect(x: right - btnW, y: 10, width: btnW, height: 28)
-        saveBtn.bezelStyle = .rounded
-        saveBtn.controlSize = .regular
-        saveBtn.keyEquivalent = "\r"  // 回车触发保存
-        nameRow.addSubview(saveBtn)
-        petNameSaveBtn = saveBtn
-        updatePetNameButtons()
-
-        // 条目 2：开机自启
-        let rowY = nameRowY - 48 - 10
+        // 条目 1：开机自启
+        let rowY = ch - 66 - 14 - 48
         let row = makeSettingRow(frame: NSRect(x: 16, y: rowY, width: cw - 32, height: 48), in: container)
 
         let itemTitle = NSTextField(labelWithString: "开机自启")
@@ -288,6 +292,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         row.addSubview(itemDesc)
 
         let sw = ToggleSwitch(frame: NSRect(x: row.bounds.width - 16 - 52, y: 11, width: 52, height: 26))
+        sw.autoresizingMask = .minXMargin
         sw.isOn = AutoLaunchManager.isEnabled()
         sw.onToggle = { on in
             AutoLaunchManager.setEnabled(on)
@@ -323,6 +328,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         scaleLabel.textColor = .secondaryLabelColor
         scaleLabel.alignment = .right
         scaleLabel.frame = NSRect(x: sizeRow.bounds.width - 58, y: 8, width: 44, height: 18)
+        scaleLabel.autoresizingMask = .minXMargin
         sizeRow.addSubview(scaleLabel)
 
         // 条目 4：权限控制（校验码解锁全部功能）
@@ -364,6 +370,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let uBtn = NSButton(title: "解锁", target: self, action: #selector(unlockAccess(_:)))
         uBtn.frame = NSRect(x: arw - 16 - 58, y: 6, width: 58, height: 26)
         uBtn.bezelStyle = .rounded
+        uBtn.autoresizingMask = .minXMargin
         accessRow.addSubview(uBtn)
         unlockBtn = uBtn
 
@@ -371,6 +378,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let clearBtn = NSButton(title: "清除权限", target: self, action: #selector(clearAccess(_:)))
         clearBtn.frame = NSRect(x: arw - 16 - 92, y: 6, width: 92, height: 26)
         clearBtn.bezelStyle = .rounded
+        clearBtn.autoresizingMask = .minXMargin
         clearBtn.isHidden = !AccessControl.isFullAccess
         accessRow.addSubview(clearBtn)
         clearAccessBtn = clearBtn
@@ -401,8 +409,9 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
         let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
         divider.boxType = .separator
+        divider.autoresizingMask = .width
         container.addSubview(divider)
-
+        
         // 预设时间间隔按钮
         let presets = [15, 30, 45, 60]
         let currentInterval = viewModel?.reminderInterval ?? PetViewModel.defaultReminderInterval
@@ -419,18 +428,24 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         currentLabel.textColor = .controlAccentColor
         currentLabel.alignment = .right
         currentLabel.frame = NSRect(x: cw - 16 - 140, y: ch - 96, width: 140, height: 18)
+        currentLabel.autoresizingMask = .minXMargin
         container.addSubview(currentLabel)
         currentIntervalLabel = currentLabel
 
+        // 间隔按钮容器（使用居中容器，按钮在 layout 时自动居中）
         let btnW: CGFloat = 68
         let btnH: CGFloat = 32
         let btnGap: CGFloat = 10
         let btnY = ch - 96 - 6
         let totalBtnsW = CGFloat(presets.count) * btnW + CGFloat(presets.count - 1) * btnGap
-        var btnX = (cw - totalBtnsW) / 2
 
+        let btnContainer = CenteredButtonContainer(frame: NSRect(x: 16, y: btnY - btnH, width: cw - 32, height: btnH + 4))
+        btnContainer.autoresizingMask = .width
+        container.addSubview(btnContainer)
+
+        var intervalBtns: [NSButton] = []
         for minutes in presets {
-            let btn = NSButton(frame: NSRect(x: btnX, y: btnY, width: btnW, height: btnH))
+            let btn = NSButton(frame: NSRect(x: 0, y: 2, width: btnW, height: btnH))
             btn.title = "\(minutes) 分钟"
             btn.bezelStyle = .rounded
             btn.target = self
@@ -438,10 +453,11 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             btn.tag = minutes
             btn.wantsLayer = true
             btn.layer?.cornerRadius = 8
-            container.addSubview(btn)
+            btnContainer.addSubview(btn)
             intervalButtons.append((minutes, btn))
-            btnX += btnW + btnGap
+            intervalBtns.append(btn)
         }
+        btnContainer.configureButtons(intervalBtns, gap: btnGap, totalWidth: totalBtnsW)
 
         refreshIntervalButtons(currentInterval: currentInterval)
 
@@ -470,6 +486,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         field.bezelStyle = .roundedBezel
         field.placeholderString = "分钟"
         field.delegate = self
+        field.autoresizingMask = .minXMargin
         customRow.addSubview(field)
         customIntervalField = field
 
@@ -478,6 +495,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         applyBtn.bezelStyle = .rounded
         applyBtn.controlSize = .regular
         applyBtn.keyEquivalent = "\r"
+        applyBtn.autoresizingMask = .minXMargin
         customRow.addSubview(applyBtn)
     }
 
@@ -589,14 +607,15 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     }
 
     /// 通用设置的行容器（统一样式）
-    private func makeSettingRow(frame: NSRect, in container: NSView) -> NSView {
-        let row = NSView(frame: frame)
-        row.wantsLayer = true
-        row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
-        row.layer?.cornerRadius = 10
-        container.addSubview(row)
-        return row
-    }
+private func makeSettingRow(frame: NSRect, in container: NSView) -> NSView {
+let row = NSView(frame: frame)
+row.wantsLayer = true
+row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+row.layer?.cornerRadius = 10
+row.autoresizingMask = [.width, .minYMargin]
+container.addSubview(row)
+return row
+}
 
     // MARK: - 宠物名称编辑/保存
 
@@ -773,6 +792,211 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         // 需要成为 key window，否则「宠物名称」输入框无法获得焦点编辑
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    // MARK: - 分区 4：背单词设置
+    
+    private func fillWordLearningSection(_ container: NSView) {
+        let cw = container.bounds.width
+        let ch = container.bounds.height
+        
+        let titleLbl = NSTextField(labelWithString: "背单词设置")
+        titleLbl.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLbl.textColor = .labelColor
+        titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
+        container.addSubview(titleLbl)
+        
+        let descLbl = NSTextField(labelWithString: "选择单词分类，右键小猫即可开始学习")
+        descLbl.font = .systemFont(ofSize: 11)
+        descLbl.textColor = .tertiaryLabelColor
+        descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
+        container.addSubview(descLbl)
+        
+        let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
+        divider.boxType = .separator
+        divider.autoresizingMask = .width
+        container.addSubview(divider)
+        
+        // 分类选择
+        let rowY = ch - 66 - 20 - 160
+        let row = NSView(frame: NSRect(x: 16, y: rowY, width: cw - 32, height: 160))
+        row.autoresizingMask = [.width, .minYMargin]
+        row.wantsLayer = true
+        row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+        row.layer?.cornerRadius = 10
+        container.addSubview(row)
+        
+        let rowTitle = NSTextField(labelWithString: "单词分类")
+        rowTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        rowTitle.textColor = .labelColor
+        rowTitle.frame = NSRect(x: 14, y: 136, width: 200, height: 18)
+        row.addSubview(rowTitle)
+        
+        let rowDesc = NSTextField(labelWithString: "选择要学习的单词分类")
+        rowDesc.font = .systemFont(ofSize: 11)
+        rowDesc.textColor = .tertiaryLabelColor
+        rowDesc.frame = NSRect(x: 14, y: 118, width: 220, height: 15)
+        row.addSubview(rowDesc)
+        
+        // 分类按钮
+        let categories = WordCategory.allCases
+        let rowW = row.bounds.width
+        let margin: CGFloat = 14
+        let gap: CGFloat = 8
+        let btnH: CGFloat = 32
+        let minBtnW: CGFloat = 80
+        let maxBtnW: CGFloat = 120
+        
+        // 计算单行能否放下
+        let totalGap = gap * CGFloat(categories.count - 1)
+        let idealBtnW = (rowW - margin * 2 - totalGap) / CGFloat(categories.count)
+        let useTwoRows = (idealBtnW < minBtnW)
+        
+        let currentCategory = WordService.shared.currentCategory
+        var buttons: [NSButton] = []
+        
+        if useTwoRows {
+            // 两行：3 + 2
+            let colsPerRow = [3, 2]
+            let btnW = min(maxBtnW, (rowW - margin * 2 - gap) / 2)
+            var idx = 0
+            for (rowIdx, colCount) in colsPerRow.enumerated() {
+                let y = 66 - CGFloat(rowIdx) * (btnH + 6)
+                let rowTotalW = CGFloat(colCount) * btnW + CGFloat(colCount - 1) * gap
+                let startX = (rowW - rowTotalW) / 2
+                for c in 0..<colCount {
+                    if idx >= categories.count { break }
+                    let category = categories[idx]
+                    let x = startX + CGFloat(c) * (btnW + gap)
+                    let btn = makeCategoryButton(frame: NSRect(x: x, y: y, width: btnW, height: btnH),
+                                                 category: category, index: idx,
+                                                 isSelected: category == currentCategory)
+                    row.addSubview(btn)
+                    buttons.append(btn)
+                    idx += 1
+                }
+            }
+        } else {
+            // 单行：均分宽度
+            let btnW = min(maxBtnW, idealBtnW)
+            let totalW = CGFloat(categories.count) * btnW + totalGap
+            let startX = (rowW - totalW) / 2
+            let y: CGFloat = 56
+            for (i, category) in categories.enumerated() {
+                let x = startX + CGFloat(i) * (btnW + gap)
+                let btn = makeCategoryButton(frame: NSRect(x: x, y: y, width: btnW, height: btnH),
+                                             category: category, index: i,
+                                             isSelected: category == currentCategory)
+                row.addSubview(btn)
+                buttons.append(btn)
+            }
+        }
+    }
+    
+    private func makeCategoryButton(frame: NSRect, category: WordCategory, index: Int, isSelected: Bool) -> NSButton {
+        let btn = NSButton(frame: frame)
+        btn.title = category.displayName
+        btn.bezelStyle = .rounded
+        btn.isBordered = false
+        btn.wantsLayer = true
+        btn.tag = index
+        btn.target = self
+        btn.action = #selector(wordCategoryChanged(_:))
+        applyCategoryStyle(btn, isSelected: isSelected)
+        return btn
+    }
+    
+    @objc private func wordCategoryChanged(_ sender: NSButton) {
+        let index = sender.tag
+        guard index >= 0 && index < WordCategory.allCases.count else { return }
+        let category = WordCategory.allCases[index]
+        WordService.shared.currentCategory = category
+        
+        if let row = sender.superview {
+            for subview in row.subviews {
+                if let btn = subview as? NSButton, btn.tag >= 0 && btn.tag < WordCategory.allCases.count {
+                    applyCategoryStyle(btn, isSelected: btn.tag == index)
+                }
+            }
+        }
+    }
+    
+    private func applyCategoryStyle(_ btn: NSButton, isSelected: Bool) {
+        if isSelected {
+            btn.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+            btn.layer?.cornerRadius = 8
+            btn.layer?.shadowOpacity = 0.3
+            btn.layer?.shadowRadius = 4
+            btn.layer?.shadowOffset = NSSize(width: 0, height: -2)
+            btn.layer?.shadowColor = NSColor.controlAccentColor.cgColor
+            btn.attributedTitle = NSAttributedString(
+                string: btn.title,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                    .foregroundColor: NSColor.white
+                ]
+            )
+        } else {
+            btn.layer?.backgroundColor = NSColor(white: 0, alpha: 0.06).cgColor
+            btn.layer?.cornerRadius = 8
+            btn.layer?.shadowOpacity = 0
+            btn.attributedTitle = NSAttributedString(
+                string: btn.title,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: NSColor.secondaryLabelColor
+                ]
+            )
+        }
+    }
+}
+
+// MARK: - 通用居中按钮容器（按钮在 layout 时自动居中）
+
+final class CenteredButtonContainer: NSView {
+    private var buttons: [NSButton] = []
+    private var buttonGap: CGFloat = 8
+    private var buttonsTotalWidth: CGFloat = 0
+    private var drawBackground = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+        /// drawBackground=true 时绘制圆角背景（作为行容器），false 时透明（仅做按钮居中）
+    func configureButtons(_ btns: [NSButton], gap: CGFloat, totalWidth: CGFloat, drawBackground: Bool = false) {
+        buttons = btns
+        buttonGap = gap
+        buttonsTotalWidth = totalWidth
+        self.drawBackground = drawBackground
+        wantsLayer = true
+        if drawBackground {
+            layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+            layer?.cornerRadius = 10
+        }
+        layoutButtons()
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        layoutButtons()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutButtons()
+    }
+
+    private func layoutButtons() {
+        guard bounds.width > 0 else { return }
+        let startX = (bounds.width - buttonsTotalWidth) / 2
+        for (i, btn) in buttons.enumerated() {
+            var f = btn.frame
+            f.origin.x = startX + CGFloat(i) * (f.width + buttonGap)
+            btn.frame = f
+        }
     }
 }
 

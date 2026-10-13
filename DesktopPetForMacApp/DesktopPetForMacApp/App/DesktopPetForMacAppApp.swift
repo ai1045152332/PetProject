@@ -26,8 +26,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 系统信息二级菜单及其条目（实时刷新）
     private var sysInfoMenu: NSMenu?
     private var sysInfoItems: [NSMenuItem] = []
+    /// CPU 环形图菜单项视图（始终刷新，不受勾选控制）
+    private var cpuChartView: RingChartView?
+    /// 内存环形图菜单项视图（始终刷新，不受勾选控制）
+    private var memChartView: RingChartView?
     /// 一键清理内存菜单项（基础权限置灰）
     private var cleanMemoryItem: NSMenuItem?
+    // ── 环形图配色（浅灰底上加深一档，清晰协调）──
+    private let userColor = NSColor(calibratedRed: 0.35, green: 0.47, blue: 0.88, alpha: 1.0)      // CPU 用户-蓝紫
+    private let systemColor = NSColor(calibratedRed: 0.92, green: 0.58, blue: 0.12, alpha: 1.0)   // CPU 系统-琥珀
+    private let idleColor = NSColor(calibratedRed: 0.30, green: 0.65, blue: 0.38, alpha: 1.0)     // CPU 闲置-绿
+    private let memUsedColor = NSColor(calibratedRed: 0.85, green: 0.33, blue: 0.42, alpha: 1.0)  // 内存已用-玫红
+    private let memFreeColor = NSColor(calibratedRed: 0.40, green: 0.72, blue: 0.48, alpha: 1.0)  // 内存空闲-青绿
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 初始化文件日志
@@ -122,12 +132,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 二级菜单的每个指标条目都可点击勾选：勾选后显示在顶部菜单栏
         let sysInfoItem = NSMenuItem(title: "系统信息", action: nil, keyEquivalent: "")
         let subMenu = NSMenu()
+        // 强制浅色外观：白灰背景 + 黑色文字，与环形图浅色主题统一
+        subMenu.appearance = NSAppearance(named: .aqua)
         let cpuItem = NSMenuItem(title: "CPU", action: #selector(toggleSysInfoMetric(_:)), keyEquivalent: "")
         cpuItem.target = self
         cpuItem.tag = 0
+        // CPU 环形图条目（自定义 view：系统 / 用户 / 闲置 三段环形图，实时刷新）
+        let cpuChartItem = NSMenuItem()
+        let cpuChart = RingChartView(title: "CPU 占用", labels: ("系统", "用户", "闲置"), colors: (systemColor, userColor, idleColor))
+        cpuChart.frame = NSRect(x: 0, y: 0, width: 252, height: 126)
+        cpuChartView = cpuChart
+        cpuChartItem.view = cpuChart
+        cpuChartItem.isEnabled = false
         let memItem = NSMenuItem(title: "内存", action: #selector(toggleSysInfoMetric(_:)), keyEquivalent: "")
         memItem.target = self
         memItem.tag = 1
+        // 内存环形图条目（已用 / 缓存 / 空闲 三段环形图，实时刷新）
+        let memChartItem = NSMenuItem()
+        let memChart = RingChartView(title: "内存占用", labels: ("已用", "空闲", ""), colors: (memUsedColor, memFreeColor, .clear), segmentCount: 2, totalSource: { a, _ in a })
+        memChart.frame = NSRect(x: 0, y: 0, width: 252, height: 126)
+        memChartView = memChart
+        memChartItem.view = memChart
+        memChartItem.isEnabled = false
         let diskItem = NSMenuItem(title: "磁盘", action: #selector(toggleSysInfoMetric(_:)), keyEquivalent: "")
         diskItem.target = self
         diskItem.tag = 2
@@ -135,8 +161,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         netItem.target = self
         netItem.tag = 3
         subMenu.addItem(cpuItem)
+        subMenu.addItem(cpuChartItem)
         subMenu.addItem(DashedSeparatorMenuItem())
         subMenu.addItem(memItem)
+        subMenu.addItem(memChartItem)
         subMenu.addItem(DashedSeparatorMenuItem())
         subMenu.addItem(diskItem)
         subMenu.addItem(DashedSeparatorMenuItem())
@@ -146,8 +174,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sysInfoItem.submenu = subMenu
         menu.addItem(sysInfoItem)
 
-        // 一键清理内存（测试版）
-        let cleanItem = NSMenuItem(title: "一键清理内存（测试版）", action: #selector(cleanMemory(_:)), keyEquivalent: "")
+        // 一键清理内存
+        let cleanItem = NSMenuItem(title: "一键清理内存", action: #selector(cleanMemory(_:)), keyEquivalent: "")
         cleanItem.target = self
         // 基础权限置灰，解锁后启用（解锁/清除权限时由 refreshMenuAccess 刷新）
         cleanItem.isEnabled = AccessControl.isFullAccess
@@ -286,7 +314,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return result
     }
     
-    /// 一键清理内存（测试版）：后台执行内存回收，完成后弹窗展示效果
+    /// 一键清理内存：后台执行内存回收，完成后弹窗展示效果
     @MainActor @objc private func cleanMemory(_ sender: Any?) {
         // 高级功能：基础权限需先在校验码解锁
         guard AccessControl.isFullAccess else {
@@ -313,7 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 let alert = NSAlert()
-                alert.messageText = "内存清理完成（测试版）"
+                alert.messageText = "内存清理完成"
                 alert.informativeText = String(
                     format: "空闲内存：%.0f → %.0f MB\n压缩内存：%.0f → %.0f MB\n本次回收：%.0f MB",
                     r.beforeFree, r.afterFree, r.beforeCompressed, r.afterCompressed, r.freedMB
@@ -362,7 +390,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshSysInfo() {
-        // 无任何指标勾选时跳过采集
+        // CPU / 内存环形图始终刷新（菜单展示，不依赖任何勾选），每秒更新三段数据
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let cpuBd = SystemMonitor.cpuBreakdown()
+            let memBd = SystemMonitor.memoryBreakdown()
+            DispatchQueue.main.async {
+                if let chart = self?.cpuChartView, let bd = cpuBd {
+                    chart.setBreakdown(a: bd.system, b: bd.user, c: bd.idle)
+                }
+                if let chart = self?.memChartView, let bd = memBd {
+                    chart.setBreakdown(a: bd.used, b: bd.free, c: 0)
+                }
+            }
+        }
+        // 无任何指标勾选时跳过文本采集
         guard anyMetricEnabled else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var cpuText = "CPU"
@@ -370,11 +411,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             var diskText = "磁盘"
             var netText = "网络"
 
-            if let cpu = SystemMonitor.cpuUsage() {
-                cpuText = String(format: "CPU  %.0f%%", cpu)
+            if let bd = SystemMonitor.cpuBreakdown() {
+                // 标题只留名称，百分比数据由下方环形图（中心+图例）展示，避免冗余
+                cpuText = "CPU"
             }
             if let mem = SystemMonitor.memoryUsage() {
-                memText = String(format: "内存  %.0f%%（已用 %.1fGB / 共 %.1fGB）", mem.percent, mem.usedGB, mem.totalGB)
+                memText = "内存"
             }
             if let disk = SystemMonitor.diskUsage() {
                 diskText = String(format: "磁盘  %.0f%%（已用 %.1fGB / 共 %.1fGB）", disk.percent, disk.usedGB, disk.totalGB)
@@ -427,5 +469,116 @@ private final class DashedSeparatorView: NSView {
         line.setLineDash([4, 4], count: 2, phase: 0)
         NSColor.systemTeal.withAlphaComponent(0.6).setStroke()
         line.stroke()
+    }
+}
+
+// MARK: - 环形图菜单项视图（三段数据：系统 / 用户之类的组合）
+
+/// 右侧菜单「系统信息 > CPU / 内存」下方的环形图条目：两/三段彩色环形 + 中心占用 + 右侧图例
+/// 通用实现：段数（2 或 3）、每段数值/颜色/图例标签均由调用方指定
+final class RingChartView: NSView {
+    // 各段当前值（0-100）
+    private var values: (a: Double, b: Double, c: Double) = (a: 0, b: 0, c: 100)
+    private let segmentCount: Int  // 2（已用/空闲）或 3（系统/用户/闲置）
+    private let title: String
+    private let colors: (a: NSColor, b: NSColor, c: NSColor)
+    private let labels: (a: String, b: String, c: String)
+
+    /// 中心占用口径：对 CPU 为「用户+系统」，对内存为「已用」（即第 0 段）
+    private let totalSource: (Double, Double) -> Double
+
+    init(title: String,
+         labels: (a: String, b: String, c: String),
+         colors: (a: NSColor, b: NSColor, c: NSColor),
+         segmentCount: Int = 3,
+         totalSource: @escaping (Double, Double) -> Double = { $0 + $1 }) {
+        self.segmentCount = max(2, min(3, segmentCount))
+        self.title = title
+        self.labels = labels
+        self.colors = colors
+        self.totalSource = totalSource
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// 更新三段数值（0-100）并重绘
+    func setBreakdown(a: Double, b: Double, c: Double) {
+        values = (a, b, c)
+        needsDisplay = true
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 252, height: 126) }
+    override var isFlipped: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // ── 环形图 ──
+        let ringCenter = NSPoint(x: 46, y: bounds.midY)
+        let radius: CGFloat = 32
+        let lineWidth: CGFloat = 9
+
+        // 底部浅灰背景环（白灰底上做浅灰兜底环，增加立体感）
+        let bgPath = NSBezierPath()
+        bgPath.appendArc(withCenter: ringCenter, radius: radius, startAngle: 0, endAngle: 360, clockwise: true)
+        bgPath.lineWidth = lineWidth
+        NSColor(white: 0, alpha: 0.10).setStroke()
+        bgPath.stroke()
+
+        var segmentData: [(value: Double, color: NSColor)] = [
+            (values.a, colors.a),
+            (values.b, colors.b),
+            (values.c, colors.c)
+        ]
+        if segmentCount < 3 { segmentData.removeLast() }
+        // 各段弧无间隙铺满 360°（平头端帽），任何时刻都是完整整圆、各段合计正好 100%
+        var startAngle = 90.0
+        for seg in segmentData {
+            let angle = seg.value / 100.0 * 360.0
+            guard angle > 0.1 else { continue }
+            let path = NSBezierPath()
+            path.appendArc(withCenter: ringCenter, radius: radius, startAngle: startAngle, endAngle: startAngle - angle, clockwise: true)
+            path.lineWidth = lineWidth
+            path.lineCapStyle = .butt  // 平头：交接处平整不圆滑
+            seg.color.setStroke()
+            path.stroke()
+            startAngle -= angle
+        }
+
+        // 中心文字：总占用率（整数小号黑字，不遮挡环形图）
+        let aR = Int((values.a + 0.5).rounded())
+        let bR = Int((values.b + 0.5).rounded())
+        let cR = segmentCount > 2 ? max(0, 100 - aR - bR) : 0  // 三段时第三段补齐，保证合计正好 100%
+        let total = Int(totalSource(Double(aR), Double(bR)).rounded())
+        // 中心仅显示总占用率（整数黑字，垂直居中，去掉冗余小标题）
+        let pctAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold),
+            .foregroundColor: NSColor.black
+        ]
+        let pctStr = "\(total)%" as NSString
+        let pctSize = pctStr.size(withAttributes: pctAttrs)
+        pctStr.draw(at: NSPoint(x: ringCenter.x - pctSize.width / 2, y: ringCenter.y - pctSize.height / 2 + 1), withAttributes: pctAttrs)
+
+        // ── 右侧图例（整数显示，第三段 = 100 - 前两段，合计正好 100%）──
+        let legendX: CGFloat = 92
+        var legendRows: [(label: String, value: Int, color: NSColor)] = [
+            (labels.a, aR, colors.a),
+            (labels.b, bR, colors.b),
+            (labels.c, cR, colors.c)
+        ]
+        if segmentCount < 3 { legendRows.removeLast() }
+        let rowH: CGFloat = 31
+        let firstY = bounds.height - 26
+        for (i, row) in legendRows.enumerated() {
+            let y = firstY - CGFloat(i) * rowH
+            // 色点
+            let dot = NSBezierPath(ovalIn: NSRect(x: legendX, y: y - 3, width: 10, height: 10))
+            row.color.setFill()
+            dot.fill()
+            // 文本（黑色，浅色底上清晰）
+            let text = "\(row.label)   \(row.value)%" as NSString
+            text.draw(at: NSPoint(x: legendX + 17, y: y - 6), withAttributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor(white: 0.15, alpha: 1.0)
+            ])
+        }
     }
 }

@@ -14,12 +14,20 @@ class HTMLAlertWindow: NSWindow {
     private var targetMaxHeight: CGFloat = 640
     private var hasSized = false
     private var dragOffset: NSPoint = .zero
+    /// Todo 模式窗口初始高度（按待办数量估算，放大后由 CSS height:100% 撑满）
+    private var todoEstimatedHeight: CGFloat?
     
     // MARK: - Todo
     private var onTodoAdd: ((String) -> Void)?
     private var onTodoDelete: ((String) -> Void)?
     private var todoAddHandler: TodoAddMessageHandler?
     private var todoDeleteHandler: TodoDeleteMessageHandler?
+    
+    // MARK: - Word Learning
+    private var onNextQuiz: ((Bool) -> Void)?
+    private var onRetryLearning: (() -> Void)?
+    private var nextQuizHandler: WordNextQuizHandler?
+    private var retryLearningHandler: WordRetryLearningHandler?
 
     /// 显示 HTML 弹窗（高度自适应内容）
     static func show(title: String, htmlBody: String, width: CGFloat = 420, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
@@ -63,15 +71,24 @@ class HTMLAlertWindow: NSWindow {
     }
 
     /// 显示 Todo 清单弹窗
-    static func showTodo(title: String, todos: [TodoItem], width: CGFloat = 360, maxHeight: CGFloat = 520, onAdd: @escaping (String) -> Void, onDelete: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
+    static func showTodo(title: String, todos: [TodoItem], width: CGFloat = 440, maxHeight: CGFloat = 640, onAdd: @escaping (String) -> Void, onDelete: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
+        // Todo 用标准带边框窗口（可缩放、去阴影、有系统边框），区别于其他无边框弹窗
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
-            styleMask: [.borderless],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
+        window.hasShadow = false  // 去阴影
+        window.title = title
+        // 强制深色外观：标题栏与深色内容同色调，消除浅色系统标题栏造成的巨大色差
+        window.appearance = NSAppearance(named: .darkAqua)
+        // 标准系统标题栏：清晰边框 + 红绿灯（绿点缩放），让用户一眼看出窗口边界与缩放位置
+        FileLogger.log("[TodoWindow] styleMask=\(window.styleMask.rawValue) resizable=\(window.styleMask.contains(.resizable))")
         window.targetWidth = width
         window.targetMaxHeight = maxHeight
+        // 初始高度按待办数量估算（空列表 320，每条约 52），避免依赖 scrollHeight
+        window.todoEstimatedHeight = min(maxHeight, max(320, 320 + CGFloat(todos.count) * 52))
         window.onTodoAdd = onAdd
         window.onTodoDelete = onDelete
         window.onClose = onClose
@@ -79,7 +96,8 @@ class HTMLAlertWindow: NSWindow {
         let todosJSON: String
         if let data = try? JSONEncoder().encode(todos),
            let json = String(data: data, encoding: .utf8) {
-            todosJSON = json
+            // 防止待办文本含 "</script>" 提前闭合 script 标签（XSS/页面破坏）
+            todosJSON = json.replacingOccurrences(of: "<", with: "\\u003c")
         } else {
             todosJSON = "[]"
         }
@@ -191,7 +209,49 @@ class HTMLAlertWindow: NSWindow {
         window.orderFrontRegardless()
     }
 
-    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil) {
+    /// 显示可缩放标准窗口（深色标题栏 + 内容铺满，如热点新闻），复用 Todo 的渲染路径
+    static func showResizable(title: String, htmlBody: String, width: CGFloat = 480, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
+        let window = HTMLAlertWindow(
+            contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.hasShadow = false  // 去阴影
+        window.title = title
+        // 强制深色外观：标题栏与深色内容同色调
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.targetWidth = width
+        window.targetMaxHeight = maxHeight
+        window.onClose = onClose
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: true)
+        window.alphaValue = 0
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    /// 显示背单词学习弹窗
+    @discardableResult
+    static func showWordLearning(title: String, htmlBody: String, width: CGFloat = 420, onNextQuiz: ((Bool) -> Void)? = nil, onRetryLearning: (() -> Void)? = nil) -> HTMLAlertWindow {
+        let window = HTMLAlertWindow(
+            contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.hasShadow = false
+        window.targetWidth = width
+        window.targetMaxHeight = 700
+        window.onNextQuiz = onNextQuiz
+        window.onRetryLearning = onRetryLearning
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, isWordLearningMode: true)
+        window.alphaValue = 0
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        return window
+    }
+
+    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false) {
         let config = WKWebViewConfiguration()
         config.setValue(false, forKey: "drawsBackground")
 
@@ -239,6 +299,24 @@ class HTMLAlertWindow: NSWindow {
             config.userContentController.add(addHandler, name: "addTodo")
             config.userContentController.add(deleteHandler, name: "deleteTodo")
         }
+        
+        if isWordLearningMode {
+            let nextQuizHandler = WordNextQuizHandler { [weak self] result in
+                DispatchQueue.main.async {
+                    self?.onNextQuiz?(result == "correct")
+                }
+            }
+            self.nextQuizHandler = nextQuizHandler
+            config.userContentController.add(nextQuizHandler, name: "nextQuiz")
+            
+            let retryHandler = WordRetryLearningHandler { [weak self] in
+                DispatchQueue.main.async {
+                    self?.onRetryLearning?()
+                }
+            }
+            self.retryLearningHandler = retryHandler
+            config.userContentController.add(retryHandler, name: "retryLearning")
+        }
 
         // 注入 JS：拦截所有链接点击，阻止默认导航，通过 message handler 打开外部浏览器
         let linkInterceptor = """
@@ -259,18 +337,21 @@ class HTMLAlertWindow: NSWindow {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
 
-        let html = buildHTML(title: title, body: htmlBody, isInputMode: isInputMode, isTodoMode: isTodoMode, okLabel: okLabel)
+        let html = buildHTML(title: title, body: htmlBody, isInputMode: isInputMode, isTodoMode: isTodoMode, okLabel: okLabel, isWordLearningMode: isWordLearningMode)
         webView.loadHTMLString(html, baseURL: nil)
 
         self.contentView?.addSubview(webView)
-        
-        // 添加顶部拖动条（覆盖标题栏区域，可拖动窗口，留出右侧按钮区域）
-        let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 44, width: targetWidth - 60, height: 44))
-        dragView.autoresizingMask = [.width, .maxYMargin]
-        self.contentView?.addSubview(dragView)
+
+        // Todo 模式用系统标题栏拖动（自带红绿灯与缩放柄），无需自定义拖动条
+        // 背单词模式通过 CSS -webkit-app-region: drag 让 header 可拖动
+        if !isTodoMode && !isWordLearningMode {
+            let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 44, width: targetWidth - 60, height: 44))
+            dragView.autoresizingMask = [.width, .maxYMargin]
+            self.contentView?.addSubview(dragView)
+        }
     }
 
-    private func buildHTML(title: String, body: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil) -> String {
+    private func buildHTML(title: String, body: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false) -> String {
         let okAction = isInputMode
             ? "window.webkit.messageHandlers.confirm.postMessage(document.getElementById('locationInput').value)"
             : "window.webkit.messageHandlers.close.postMessage('')"
@@ -295,33 +376,36 @@ class HTMLAlertWindow: NSWindow {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
                 background: transparent;
                 color: #f0f0f5;
+                height: 100%;
             }
             body {
-                padding: 8px;
+                padding: \(isTodoMode ? 0 : 8)px;
                 display: flex;
                 justify-content: center;
                 align-items: flex-start;
             }
             .container {
-                background: rgba(30, 30, 40, 0.94);
+                background: \(isTodoMode ? "rgba(30, 30, 40, 1)" : "rgba(30, 30, 40, 0.94)");
                 backdrop-filter: blur(24px);
                 -webkit-backdrop-filter: blur(24px);
-                border-radius: 18px;
+                border-radius: \(isTodoMode ? 0 : 18)px;
                 overflow: hidden;
-                box-shadow: 0 24px 70px rgba(0,0,0,0.55);
-                border: 1px solid rgba(255,255,255,0.08);
+                box-shadow: \(isTodoMode || isWordLearningMode ? "none" : "0 24px 70px rgba(0,0,0,0.55)");
+                border: \(isTodoMode || isWordLearningMode ? "none" : "1px solid rgba(255,255,255,0.08)");
                 width: 100%;
-                max-width: \(targetWidth - 16)px;
+                max-width: \(isTodoMode ? "100%" : "\(targetWidth - 16)px");
+                height: \(isTodoMode ? "100%" : "auto");
                 display: flex;
                 flex-direction: column;
             }
             .header {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 padding: 14px 18px;
-                display: flex;
+                display: \(isTodoMode ? "none" : "flex");
                 align-items: center;
                 justify-content: space-between;
                 flex-shrink: 0;
+                \(isWordLearningMode ? "-webkit-app-region: drag;" : "")
             }
             .header-title {
                 display: flex;
@@ -350,6 +434,7 @@ class HTMLAlertWindow: NSWindow {
                 text-align: center;
                 transition: all 0.2s;
                 -webkit-appearance: none;
+                \(isWordLearningMode ? "-webkit-app-region: no-drag;" : "")
             }
             .close-btn:hover {
                 background: rgba(255,255,255,0.35);
@@ -360,7 +445,7 @@ class HTMLAlertWindow: NSWindow {
                 font-size: 14px;
                 flex: 1 1 auto;
                 overflow-y: auto;
-                max-height: 420px;
+                max-height: \(isTodoMode ? "none" : (isWordLearningMode ? "600px" : "420px"));
                 min-height: \(isTodoMode ? 260 : 0)px;
             }
             .footer {
@@ -501,8 +586,8 @@ class HTMLAlertWindow: NSWindow {
             }
             .todo-input-group input {
                 flex: 1;
-                background: rgba(255,255,255,0.06);
-                border: 1px solid rgba(255,255,255,0.1);
+                background: rgba(255,255,255,0.07);
+                border: 1px solid rgba(255,255,255,0.12);
                 border-radius: 10px;
                 padding: 10px 12px;
                 color: #f0f0f5;
@@ -547,11 +632,11 @@ class HTMLAlertWindow: NSWindow {
                 align-items: center;
                 gap: 10px;
                 padding: 10px 12px;
-                background: rgba(255,255,255,0.04);
+                background: rgba(255,255,255,0.06);
                 border-radius: 10px;
                 cursor: pointer;
                 transition: all 0.2s;
-                border: 1px solid rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.07);
             }
             .todo-item:hover {
                 background: rgba(255,255,255,0.08);
@@ -601,26 +686,44 @@ class HTMLAlertWindow: NSWindow {
             <div class="content">
                 \(body)
             </div>
+            \(isWordLearningMode ? "" : """
             <div class="footer">
                 <button class="ok-btn" onclick="\(okAction)">\(finalLabel)</button>
             </div>
+            """)
         </div>
         </body>
         </html>
         """
     }
 
+    /// 移除所有 WKScriptMessageHandler，防止内存泄漏（两种关闭路径共用）
+    private func removeScriptMessageHandlers() {
+        guard let wv = webView else { return }
+        let ucc = wv.configuration.userContentController
+        // 通用 handler（始终注册）
+        ucc.removeScriptMessageHandler(forName: "close")
+        ucc.removeScriptMessageHandler(forName: "openUrl")
+        // 可选 handler（按注册条件移除）
+        if confirmHandler != nil { ucc.removeScriptMessageHandler(forName: "confirm") }
+        if todoAddHandler != nil { ucc.removeScriptMessageHandler(forName: "addTodo") }
+        if todoDeleteHandler != nil { ucc.removeScriptMessageHandler(forName: "deleteTodo") }
+        if nextQuizHandler != nil { ucc.removeScriptMessageHandler(forName: "nextQuiz") }
+        if retryLearningHandler != nil { ucc.removeScriptMessageHandler(forName: "retryLearning") }
+    }
+
+    /// 网页内 ✕ 按钮关闭路径（orderOut 隐藏，与系统红点行为对齐）
     private func closeWindow() {
-        // 移除所有 WKScriptMessageHandler，防止内存泄漏
-        if let wv = webView {
-            wv.configuration.userContentController.removeScriptMessageHandler(forName: "close")
-            wv.configuration.userContentController.removeScriptMessageHandler(forName: "openUrl")
-            wv.configuration.userContentController.removeScriptMessageHandler(forName: "confirm")
-            wv.configuration.userContentController.removeScriptMessageHandler(forName: "addTodo")
-            wv.configuration.userContentController.removeScriptMessageHandler(forName: "deleteTodo")
-        }
+        removeScriptMessageHandlers()
         self.orderOut(nil)
         self.onClose?()
+    }
+
+    /// 系统标题栏红点关闭路径：与网页 ✕ 一致地清理 handler + 回调，再真正关闭
+    override func close() {
+        removeScriptMessageHandlers()
+        self.onClose?()
+        super.close()
     }
 
     /// 刷新 Todo 列表（通过 JS 更新 DOM，不重建窗口）
@@ -628,7 +731,9 @@ class HTMLAlertWindow: NSWindow {
         let todos = TodoManager.shared.load()
         guard let data = try? JSONEncoder().encode(todos),
               let json = String(data: data, encoding: .utf8) else { return }
-        let js = "todos = \(json); renderTodos();"
+        // 与 showTodo 保持一致：转义 < 防 </script> 注入
+        let safeJSON = json.replacingOccurrences(of: "<", with: "\\u003c")
+        let js = "todos = \(safeJSON); renderTodos();"
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
@@ -642,9 +747,16 @@ class HTMLAlertWindow: NSWindow {
 
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
-        self.backgroundColor = .clear
-        self.isOpaque = false
-        self.hasShadow = true
+        if style.contains(.resizable) {
+            // 可缩放窗口（Todo）：不透明深色背景，与 HTML 容器同色，消除窗口与内容的色差
+            self.backgroundColor = NSColor(calibratedRed: 0.118, green: 0.118, blue: 0.157, alpha: 1.0)  // RGB(30,30,40)
+            self.isOpaque = true
+            self.hasShadow = false
+        } else {
+            self.backgroundColor = .clear
+            self.isOpaque = false
+            self.hasShadow = true
+        }
         self.level = .modalPanel
         self.isReleasedWhenClosed = false
     }
@@ -652,12 +764,29 @@ class HTMLAlertWindow: NSWindow {
 
 extension HTMLAlertWindow: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        webView.evaluateJavaScript("document.documentElement.scrollHeight") { [weak self] result, _ in
+        // 可缩放窗口（resizable）：容器 height:100% 撑满时 scrollHeight 会返回窗口高度，
+        // 需临时把容器高度改为 auto 读取真实内容高度，读完恢复撑满（Todo 用估算值，不受影响）
+        let measureJS = """
+        (function() {
+            var c = document.querySelector('.container');
+            if (c) {
+                c.style.height = 'auto';
+                var h = document.documentElement.scrollHeight;
+                c.style.height = '';
+                return h;
+            }
+            return document.documentElement.scrollHeight;
+        })()
+        """
+        webView.evaluateJavaScript(measureJS) { [weak self] result, _ in
             guard let self = self, !self.hasSized else { return }
             self.hasSized = true
 
             let contentHeight: CGFloat
-            if let h = result as? CGFloat {
+            if let est = self.todoEstimatedHeight {
+                // Todo 模式：窗口初始高度用估算值
+                contentHeight = est
+            } else if let h = result as? CGFloat {
                 contentHeight = h
             } else if let h = result as? NSNumber {
                 contentHeight = CGFloat(h.doubleValue)
@@ -744,6 +873,26 @@ class TodoDeleteMessageHandler: NSObject, WKScriptMessageHandler {
         if let id = message.body as? String {
             action(id)
         }
+    }
+}
+
+// MARK: - 背单词消息处理器
+
+class WordNextQuizHandler: NSObject, WKScriptMessageHandler {
+    private let action: (String) -> Void
+    init(action: @escaping (String) -> Void) { self.action = action }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let result = message.body as? String {
+            action(result)
+        }
+    }
+}
+
+class WordRetryLearningHandler: NSObject, WKScriptMessageHandler {
+    private let action: () -> Void
+    init(action: @escaping () -> Void) { self.action = action }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        action()
     }
 }
 

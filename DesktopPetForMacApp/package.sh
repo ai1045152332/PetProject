@@ -66,6 +66,14 @@ for stateDir in */; do
 done
 cd "$PROJECT_DIR"
 
+# 词库 JSON 文件（WordBank）
+WORD_BANK_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/WordBank"
+if [ -d "$WORD_BANK_SRC" ]; then
+    echo "📚 复制词库文件..."
+    mkdir -p "$RESOURCES/WordBank"
+    cp "$WORD_BANK_SRC"/*.json "$RESOURCES/WordBank/"
+fi
+
 # ── 4. 复制并更新 Info.plist ───────────────────────────────────
 cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
 # 应用显示名改为产物名（CFBundleName 与 CFBundleDisplayName）

@@ -137,8 +137,14 @@ class CatView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         // 已移除"看向鼠标"翻转，猫固定朝右，这里原样绘制即可
+        // 素材帧已统一为单张基准图（消除 AI 逐帧抖动），动作幅度完全由渲染层呼吸控制（±1%，4 秒周期，几乎静止）
         guard let image = currentImage else { return }
-        image.draw(in: bounds)
+        let t = Date().timeIntervalSinceReferenceDate
+        let breathe = 1.0 + 0.010 * sin(t * 2.0 * .pi / 4.0)
+        let w = bounds.width * breathe
+        let h = bounds.height * breathe
+        let rect = NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+        image.draw(in: rect)
     }
 
     override func viewDidMoveToWindow() {
@@ -611,7 +617,7 @@ class CatView: NSView {
 
         let quitItem = NSMenuItem(title: "关闭 ❌", action: #selector(quitAction(_:)), keyEquivalent: "")
         quitItem.target = self
-        quitItem.isEnabled = fullAccess
+        quitItem.isEnabled = true  // 退出是最基础功能，任何权限下都允许
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 

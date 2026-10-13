@@ -151,6 +151,11 @@ final class SpriteSheet {
         var dirs: [URL] = []
         let fm = FileManager.default
 
+        // 0. 皮肤包目录（最高优先级）：Skins/<state>/ — 用户照片生成的帧优先于内置精灵图
+        if let skinsRoot = SkinManager.skinsDirectory {
+            dirs.append(skinsRoot.appendingPathComponent(stateName, isDirectory: true))
+        }
+
         // 1. Bundle.main (.app bundle) — 分发环境
         let mainBundle = Bundle.main
         if let url = mainBundle.resourceURL {

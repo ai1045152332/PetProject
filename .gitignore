@@ -25,3 +25,7 @@ Package.resolved
 
 # Misc
 *.log
+
+# 本地旧精灵备份（不入库）
+Sprites_backup_old_*/
+.sprites_backup_path

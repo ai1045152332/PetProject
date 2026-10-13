@@ -40,9 +40,6 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     // 权限控制（通用设置 > 权限）
     var onAccessLevelChanged: (() -> Void)?
     private weak var catScaleSlider: NSSlider?
-    private weak var skinStatusLabel: NSTextField?
-    private weak var skinApplyBtn: NSButton?
-    private weak var skinClearBtn: NSButton?
     private weak var accessStatusLabel: NSTextField?
     private weak var accessCodeField: NSSecureTextField?
     private weak var unlockBtn: NSButton?
@@ -328,41 +325,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         scaleLabel.frame = NSRect(x: sizeRow.bounds.width - 58, y: 8, width: 44, height: 18)
         sizeRow.addSubview(scaleLabel)
 
-        // 条目 3.5：宠物皮肤（基础权限即可使用；照片只在本地处理，不上传）
-        let skinRowY = sizeRowY - 56 - 10
-        let skinRow = makeSettingRow(frame: NSRect(x: 16, y: skinRowY, width: cw - 32, height: 56), in: container)
-
-        let skinTitle = NSTextField(labelWithString: "宠物皮肤")
-        skinTitle.font = .systemFont(ofSize: 13, weight: .semibold)
-        skinTitle.textColor = .labelColor
-        skinTitle.frame = NSRect(x: 14, y: 34, width: 200, height: 18)
-        skinRow.addSubview(skinTitle)
-
-        let skinStatus = NSTextField(labelWithString: "")
-        skinStatus.font = .systemFont(ofSize: 11)
-        skinStatus.textColor = .tertiaryLabelColor
-        skinStatus.frame = NSRect(x: 14, y: 8, width: 240, height: 15)
-        skinRow.addSubview(skinStatus)
-        skinStatusLabel = skinStatus
-
-        let srw = skinRow.bounds.width
-        let applyBtn = NSButton(title: "上传照片生成", target: self, action: #selector(applySkin(_:)))
-        applyBtn.frame = NSRect(x: srw - 16 - 120, y: 14, width: 120, height: 28)
-        applyBtn.bezelStyle = .rounded
-        applyBtn.controlSize = .regular
-        skinRow.addSubview(applyBtn)
-        skinApplyBtn = applyBtn
-
-        let skinResetBtn = NSButton(title: "清除", target: self, action: #selector(clearSkin(_:)))
-        skinResetBtn.frame = NSRect(x: srw - 16 - 120 - 8 - 58, y: 14, width: 58, height: 28)
-        skinResetBtn.bezelStyle = .rounded
-        skinResetBtn.controlSize = .regular
-        skinRow.addSubview(skinResetBtn)
-        skinClearBtn = skinResetBtn
-        refreshSkinUI()
-
         // 条目 4：权限控制（校验码解锁全部功能）
-        let accessRowY = skinRowY - 56 - 10
+        let accessRowY = sizeRowY - 56 - 10
         let accessRow = makeSettingRow(frame: NSRect(x: 16, y: accessRowY, width: cw - 32, height: 72), in: container)
         let arw = accessRow.bounds.width
 
@@ -556,41 +520,6 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     }
 
     // MARK: - 权限控制（校验码解锁）
-
-    // MARK: - 宠物皮肤
-
-    @objc private func applySkin(_ sender: Any?) {
-        SkinManager.pickAndGenerateSkin { [weak self] result in
-            guard let self = self else { return }
-            self.refreshSkinUI()
-            let alert = NSAlert()
-            switch result {
-            case .success:
-                alert.messageText = "皮肤已生成"
-                alert.informativeText = "已用所选照片生成宠物皮肤，照片只在本地处理，不会上传。"
-                alert.alertStyle = .informational
-            case .failure(let error):
-                alert.messageText = "生成失败"
-                alert.informativeText = error.localizedDescription
-                alert.alertStyle = .warning
-            }
-            alert.addButton(withTitle: "好")
-            NSApp.activate(ignoringOtherApps: true)
-            alert.runModal()
-        }
-    }
-
-    @objc private func clearSkin(_ sender: Any?) {
-        SkinManager.clearSkin()
-        refreshSkinUI()
-    }
-
-    /// 刷新皮肤行的状态文案与按钮可见性
-    private func refreshSkinUI() {
-        let hasSkin = SkinManager.hasSkin
-        skinStatusLabel?.stringValue = hasSkin ? "已使用照片皮肤" : "未设置，使用默认小猫"
-        skinClearBtn?.isHidden = !hasSkin
-    }
 
     @objc private func unlockAccess(_ sender: Any?) {
         guard let field = accessCodeField else { return }

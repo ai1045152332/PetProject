@@ -102,9 +102,6 @@ final class PetViewModel: ObservableObject {
     /// 喝水弹窗是否正在显示（未关闭则不弹下一次）
     var isWaterAlertShowing: Bool = false
 
-    /// 皮肤包变更通知观察者（重载精灵帧用）
-    private var skinObserverToken: NSObjectProtocol?
-
     // MARK: - 喝水提醒间隔配置
 
     static let reminderIntervalKey = "settings.drinkWaterInterval"
@@ -160,23 +157,9 @@ final class PetViewModel: ObservableObject {
         startFrameLoop()
         startBehaviorLoop()
         startDrinkWaterReminder()
-
-        // 皮肤包变更（上传/清除照片）→ 重新加载精灵，皮肤帧优先于内置精灵图
-        skinObserverToken = NotificationCenter.default.addObserver(
-            forName: SkinManager.skinChangedNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.reloadSpriteSheets()
-            }
-        }
     }
     
     deinit {
-        if let token = skinObserverToken {
-            NotificationCenter.default.removeObserver(token)
-        }
         frameTimer?.invalidate()
         behaviorTimer?.invalidate()
         drinkWaterTimer?.invalidate()
@@ -209,16 +192,6 @@ final class PetViewModel: ObservableObject {
         }
     }
     
-    /// 皮肤包变更后重新加载所有状态精灵（皮肤帧优先于内置精灵图）
-    private func reloadSpriteSheets() {
-        spriteSheets.removeAll()
-        flippedFrames.removeAll()
-        loadSpriteSheets()
-        currentFrameIndex = 0
-        isPlayingOneShot = false
-        FileLogger.log("[DesktopPet] reloadSpriteSheets: skin changed, sheets reloaded")
-    }
-
     /// 生成水平镜像图片（一次性预渲染，避免运行期翻转绘制）
     /// 使用 CoreGraphics 字节级镜像，最稳定可靠
     private static func mirrorImage(_ image: NSImage) -> NSImage {

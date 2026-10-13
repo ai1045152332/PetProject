@@ -764,14 +764,15 @@ class CatView: NSView {
         let options = quiz.shuffledOptions
         let correctIdx = quiz.correctIndex
             
-        // 构建选项 HTML
+        // 构建选项 HTML（labels 按选项数量动态生成，避免下标越界崩溃）
         var optionsHTML = ""
-        let labels = ["A", "B", "C"]
+        let labelChars: [String] = ["A", "B", "C", "D", "E"]
         for (i, opt) in options.enumerated() {
             let escaped = opt.replacingOccurrences(of: "\"", with: "&quot;")
+            let lb = i < labelChars.count ? labelChars[i] : "\(i + 1)"
             optionsHTML += """
             <button class="quiz-option" onclick="selectAnswer(\(i), \(correctIdx))">
-                <span class="option-label">\(labels[i])</span>
+                <span class="option-label">\(lb)</span>
                 <span class="option-text">\(escaped)</span>
             </button>
             """

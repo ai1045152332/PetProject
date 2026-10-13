@@ -4,9 +4,13 @@
 import Foundation
 
 enum FileLogger {
+    /// 日志文件放在 ~/Library/Logs（Library 子目录无需 TCC「访问桌面/文稿」授权）
+    /// 避免写入桌面目录触发 macOS「此 App 想访问您桌面中的文件」权限弹窗
     static let logFile: URL = {
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
-        return desktop.appendingPathComponent("DesktopPetForMacApp_log.txt")
+        let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let logsDir = base.appendingPathComponent("Logs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+        return logsDir.appendingPathComponent("DesktopPetForMacApp_log.txt")
     }()
 
     static func setup() {

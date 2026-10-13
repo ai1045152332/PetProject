@@ -58,6 +58,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 开机自启配置（默认开启，启动时确保 LaunchAgent 已安装/卸载）
         AutoLaunchManager.applyOnLaunch()
 
+        // 后台初始化词库并打印加载诊断（避免阻塞主线程，利于排查「背单词找不到单词」）
+        DispatchQueue.global(qos: .utility).async {
+            WordBankManager.shared.printAllWordBankInfo()
+        }
+
         // 直接启动小猫，不做密码验证
         DispatchQueue.main.async { [weak self] in
             self?.setupCat()

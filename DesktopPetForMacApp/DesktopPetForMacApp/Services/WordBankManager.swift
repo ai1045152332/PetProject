@@ -45,37 +45,44 @@ class WordBankManager {
     }
     
     /// 从 JSON 文件加载词库
+    /// 注意：打包成 .app 后 SPM 的 Bundle.module 首访可能极慢/阻塞主线程，
+    /// 这里直接用 Bundle.main 的绝对路径定位打包到 Contents/Resources/WordBank 下的词库。
     private func loadWordBank(fileName: String) -> [Word]? {
-        // 优先使用 Bundle.module（SPM 资源）
-        if let url = Bundle.module.url(forResource: fileName, withExtension: "json", subdirectory: "WordBank") {
-            FileLogger.log("[WordBankManager] ✅ 找到资源: \(url.path)")
-            return loadAndParse(url: url, fileName: fileName)
+        // 1. 定位词库目录：优先 app 内 Contents/Resources/WordBank，其次 Bundle.main.subdirectory
+        let resourcesURL: URL? = {
+            if let res = Bundle.main.resourceURL {
+                let wb = res.appendingPathComponent("WordBank", isDirectory: true)
+                if FileManager.default.fileExists(atPath: wb.path) { return wb }
+            }
+            return nil
+        }()
+
+        // 2. 在词库目录中找目标文件
+        if let dirURL = resourcesURL {
+            let url = dirURL.appendingPathComponent("\(fileName).json")
+            if FileManager.default.fileExists(atPath: url.path) {
+                FileLogger.log("[WordBankManager] ✅ 从打包资源加载: \(url.path)")
+                return loadAndParse(url: url, fileName: fileName)
+            }
         }
-        
-        // Fallback: 尝试 Bundle.main
-        if let url = Bundle.main.url(forResource: fileName, withExtension: "json", subdirectory: "WordBank") {
-            FileLogger.log("[WordBankManager] ✅ 从 Bundle.main 找到: \(url.path)")
-            return loadAndParse(url: url, fileName: fileName)
-        }
-        
-        // Fallback: 尝试从可执行文件目录加载
+
+        // 3. Fallback：可执行文件同目录向上若干层找 Resources（调试/裸二进制场景）
         let execDir = Bundle.main.bundlePath
-        let paths = [
+        let fallbackPaths = [
             "\(execDir)/Contents/Resources/WordBank/\(fileName).json",
             "\(execDir)/WordBank/\(fileName).json",
             "\(execDir)/../Resources/WordBank/\(fileName).json"
         ]
-        for path in paths {
+        for path in fallbackPaths {
             let url = URL(fileURLWithPath: path)
             if FileManager.default.fileExists(atPath: url.path) {
-                FileLogger.log("[WordBankManager] ✅ 从 fallback 路径找到: \(path)")
+                FileLogger.log("[WordBankManager] ✅ 从 fallback 找到: \(path)")
                 return loadAndParse(url: url, fileName: fileName)
             }
         }
-        
+
         FileLogger.log("[WordBankManager] ❌ 找不到词库文件: \(fileName).json")
-        FileLogger.log("[WordBankManager]   Bundle.module 路径: \(Bundle.module.bundlePath)")
-        FileLogger.log("[WordBankManager]   Bundle.main 路径: \(Bundle.main.bundlePath)")
+        FileLogger.log("[WordBankManager]   Bundle.main.resourceURL=\(String(describing: Bundle.main.resourceURL))")
         return nil
     }
     
@@ -134,7 +141,11 @@ class WordBankManager {
     /// 获取词库文件路径（用于调试）
     func getWordBankPath(for category: WordCategory) -> String? {
         guard let fileName = wordBankFiles[category] else { return nil }
-        return Bundle.module.url(forResource: fileName, withExtension: "json", subdirectory: "WordBank")?.path
+        if let res = Bundle.main.resourceURL {
+            let url = res.appendingPathComponent("WordBank/\(fileName).json")
+            if FileManager.default.fileExists(atPath: url.path) { return url.path }
+        }
+        return nil
     }
     
     /// 打印所有词库信息（调试用）

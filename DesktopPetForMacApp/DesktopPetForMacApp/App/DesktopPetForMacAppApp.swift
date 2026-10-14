@@ -110,6 +110,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 7. 系统信息二级菜单实时监控（CPU / 内存 / 磁盘 / 网络）
         startSysInfoMonitoring()
+        
+        // 8. 启动心跳上报（每 1 分钟向 Go 后端上报本机信息、版本号与宠物状态）
+        HeartbeatService.shared.attach(viewModel: vm)
+        HeartbeatService.shared.start()
+
+        // 9. 首次启动引导弹窗（填写宠物名称）
+        OnboardingWindow.showIfNeeded { [weak self] in
+            DispatchQueue.main.async {
+                self?.refreshMenuAccess()
+            }
+        }
     }
     
     // MARK: - 菜单栏

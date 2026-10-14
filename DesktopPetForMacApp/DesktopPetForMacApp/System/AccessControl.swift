@@ -2,13 +2,13 @@
 // DesktopPetForMacApp — 权限控制系统
 // 基础权限：只能使用简单功能（小猫显示、系统信息、状态切换、提醒等）
 // 输入校验码后解锁全部功能（一键清理内存、小猫大小调整等高级能力）
-// 校验码当前写死为 456，后续改为接口校验
+// 校验规则：本地校验码 456 直接通过；否则请求后端接口校验（远程校验码由服务端维护）
 
 import Foundation
 
 enum AccessControl {
 
-    /// 校验码（写死，TODO: 后续改为接口校验）
+    /// 本地校验码（写死）
     static let fullCode = "456"
 
     private static let prefsKey = "settings.accessLevel"
@@ -20,18 +20,61 @@ enum AccessControl {
     }
 
     /// 输入校验码解锁
-    /// - 校验通过返回 true 并持久化为「全部功能」；校验失败返回 false
-    static func unlock(with code: String) -> Bool {
+    /// 先比对本地校验码，不匹配再请求后端接口校验；
+    /// 校验通过则持久化为「全部功能」
+    /// - Parameter completion: 在主线程回调，参数为是否解锁成功
+    static func unlock(with code: String, completion: @escaping (Bool) -> Void) {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        // TODO: 校验码后续改为接口校验（替换此处本地比较）
-        guard trimmed == fullCode else { return false }
-        UserDefaults.standard.set(fullLevel, forKey: prefsKey)
-        return true
+        guard !trimmed.isEmpty else {
+            completion(false)
+            return
+        }
+        // 本地校验码直接通过
+        if trimmed == fullCode {
+            persistFullAccess()
+            completion(true)
+            return
+        }
+        // 否则走后端接口校验
+        verifyRemote(code: trimmed) { valid in
+            if valid { persistFullAccess() }
+            completion(valid)
+        }
     }
 
     /// 清除现有权限，回到基础权限（高级功能锁定）
     static func clearAccess() {
         UserDefaults.standard.removeObject(forKey: prefsKey)
+    }
+
+    // MARK: - 私有
+
+    private static func persistFullAccess() {
+        UserDefaults.standard.set(fullLevel, forKey: prefsKey)
+    }
+
+    /// 请求后端接口校验校验码（网络失败按校验失败处理，回调统一回到主线程）
+    private static func verifyRemote(code: String, completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: ServerConfig.baseURL + "/api/access/verify") else {
+            DispatchQueue.main.async { completion(false) }
+            return
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 8)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            var valid = false
+            if error == nil,
+               let data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let dataDict = json["data"] as? [String: Any],
+               let v = dataDict["valid"] as? Bool {
+                valid = v
+            }
+            DispatchQueue.main.async { completion(valid) }
+        }.resume()
     }
 }

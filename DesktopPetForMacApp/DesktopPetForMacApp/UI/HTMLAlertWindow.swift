@@ -33,6 +33,81 @@ class HTMLAlertWindow: NSWindow {
     private var retryLearningHandler: WordRetryLearningHandler?
     private var playAudioHandler: WordPlayAudioHandler?
     private var isWordLearningMode = false
+    /// 天气查询回调（城市输入后传回）
+    var onCityQuery: ((String) -> Void)?
+
+    // MARK: - 天气窗口追踪
+    /// 当前天气查询窗口引用（用于在同一窗口内更新内容）
+    private static weak var currentWeatherWindow: HTMLAlertWindow?
+    /// 页面是否已加载完成（didFinish 后置 true，之前到达的内容暂存）
+    private var isPageLoaded = false
+    /// 页面加载完成前到达的天气内容（JS 字符串字面量，待刷新）
+    private var pendingWeatherLiteral: String?
+
+    /// 在输入框下方展示加载提示
+    static func showWeatherLoading(_ text: String) {
+        updateWeatherContent("<div style=\"text-align:center;padding:26px 10px;color:#8a90b8;font-size:14px;line-height:1.8;\">\(text)</div>")
+    }
+
+    /// 展示错误/提示信息
+    static func showWeatherMessage(_ html: String) {
+        updateWeatherContent("<div style=\"text-align:center;padding:26px 10px;color:#c0c0d0;font-size:14px;line-height:1.8;\">\(html)</div>")
+    }
+
+    /// 渲染天气卡片
+    static func renderWeatherCard(_ forecast: WeatherForecast) {
+        updateWeatherContent(buildWeatherCardHTML(forecast: forecast))
+    }
+
+    /// 更新当前天气窗口的天气内容（保留上方输入框）
+    static func updateWeatherContent(_ html: String) {
+        currentWeatherWindow?.updateWeatherHTML(html)
+    }
+
+    /// 通过 JS 更新 #weatherContent 区域，并让窗口高度自适应新内容
+    func updateWeatherHTML(_ html: String) {
+        // 用 JSONSerialization 安全转义为带引号的 JS 字符串字面量
+        guard let data = try? JSONSerialization.data(withJSONObject: [html], options: []),
+              let jsonStr = String(data: data, encoding: .utf8) else { return }
+        // jsonStr == ["<escaped>"]，剥掉外层 [ ] 得到 "<escaped>"（合法 JS 字符串字面量）
+        let literal = String(jsonStr.dropFirst().dropLast())
+        guard isPageLoaded else {
+            pendingWeatherLiteral = literal
+            return
+        }
+        applyWeatherLiteral(literal)
+    }
+
+    /// 注入内容后重新测量并调整窗口高度（保持顶边位置不变）
+    private func applyWeatherLiteral(_ literal: String) {
+        guard let webView = webView else { return }
+        let js = """
+        (function() {
+            var el = document.getElementById('weatherContent');
+            if (el) { el.innerHTML = \(literal); }
+            var c = document.querySelector('.card');
+            if (c) { c.style.height = 'auto'; }
+            var h = document.documentElement.scrollHeight;
+            if (c) { c.style.height = ''; }
+            return h;
+        })()
+        """
+        webView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self = self else { return }
+            let contentHeight: CGFloat
+            if let h = result as? CGFloat { contentHeight = h }
+            else if let h = result as? NSNumber { contentHeight = CGFloat(h.doubleValue) }
+            else { return }
+            let maxH = min(self.targetMaxHeight, (NSScreen.main?.visibleFrame.height ?? 800) * 0.75)
+            let targetH = max(200, min(contentHeight + 24, maxH))
+            var frame = self.frame
+            let top = frame.maxY
+            frame.size.height = targetH
+            frame.origin.y = top - targetH
+            self.setFrame(frame, display: true)
+        }
+    }
+
 
     /// 显示 HTML 弹窗（高度自适应内容）
     static func show(title: String, htmlBody: String, width: CGFloat = 420, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
@@ -73,6 +148,156 @@ class HTMLAlertWindow: NSWindow {
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
+    }
+
+    /// 显示天气查询弹窗：窗口内输入城市 → 展示天气（同一窗口切换内容）
+    static func showWeatherInput(title: String, width: CGFloat = 380, maxHeight: CGFloat = 640, onQuery: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
+        let window = HTMLAlertWindow(
+            contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.targetWidth = width
+        window.targetMaxHeight = maxHeight
+        window.onClose = onClose
+
+        let htmlBody = """
+        <div class="input-group">
+            <input type="text" id="locationInput" placeholder="输入城市名查询，如：北京、上海" autofocus />
+        </div>
+        <div id="weatherContent">
+            <div style="text-align:center;padding:26px 10px;color:#8a90b8;font-size:14px;line-height:1.8;">🌤️ 正在加载本地天气...</div>
+        </div>
+        <script>
+        (function() {
+            var i = document.getElementById('locationInput');
+            if (i) {
+                i.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') { window.webkit.messageHandlers.confirm.postMessage(i.value); }
+                });
+            }
+        })();
+        </script>
+        """
+        window.setupWebView(
+            title: title,
+            htmlBody: htmlBody,
+            isInputMode: true,
+            okLabel: "æ¥è¯¢å¤©æ° ð",            onCityQuery: onQuery
+        )
+        currentWeatherWindow = window
+        window.alphaValue = 0
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    // MARK: - 天气卡片（与 FloatingWindow.buildWeatherCardHTML 同版本）
+
+    /// 天气描述 → emoji 映射（临时副本，避免依赖 FloatingWindow）
+    private static func weatherEmoji(for text: String) -> String {
+        if text.contains("晴") { return "☀️" }
+        if text.contains("多云") { return "⛅" }
+        if text.contains("阴") { return "☁️" }
+        if text.contains("雨") { return "🌧️" }
+        if text.contains("雪") { return "❄️" }
+        if text.contains("雷") { return "⛈️" }
+        if text.contains("雾") || text.contains("霾") { return "🌫️" }
+        return "🌤️"
+    }
+
+    /// 格式化 ISO 时间为中文小时
+    private static func formatHour(_ isoTime: String) -> String {
+        let parts = isoTime.split(separator: "T")
+        guard parts.count == 2 else { return isoTime }
+        let timePart = String(parts[1])
+        let hourParts = timePart.split(separator: ":")
+        guard let hour = hourParts.first else { return isoTime }
+        return "\(hour)时"
+    }
+
+    /// 构建天气卡片 HTML（返回含 <style> 的完整片段）
+    fileprivate static func buildWeatherCardHTML(forecast: WeatherForecast) -> String {
+        let hourlyItems = forecast.hourly.prefix(6).map { h in
+            """
+            <div class="hw-item">
+                <div class="hw-time">\(h.time)</div>
+                <div class="hw-icon">\(h.icon)</div>
+                <div class="hw-temp">\(h.temp)°</div>
+            </div>
+            """
+        }.joined(separator: "\n")
+
+        let allTemps = forecast.daily.flatMap { [Int($0.tempMin) ?? 0, Int($0.tempMax) ?? 0] }
+        let globalMin = allTemps.min() ?? 0
+        let globalMax = allTemps.max() ?? 1
+        let globalRange = max(globalMax - globalMin, 1)
+
+        let dailyRows = forecast.daily.map { d in
+            let minT = Int(d.tempMin) ?? 0
+            let maxT = Int(d.tempMax) ?? 0
+            let leftP = Double(minT - globalMin) / Double(globalRange) * 100.0
+            let widthP = Double(maxT - minT) / Double(globalRange) * 100.0
+            let barColor = maxT >= 30 ? "linear-gradient(90deg, #f6d365, #ff6b6b)" : "linear-gradient(90deg, #4facfe, #00f2fe)"
+            return """
+            <div class="dw-row">
+                <div class="dw-day">\(d.dayName)</div>
+                <div class="dw-icon">\(d.icon)</div>
+                <div class="dw-min">\(d.tempMin)°</div>
+                <div class="dw-bar-track">
+                    <div class="dw-bar" style="left:\(String(format: "%.1f", leftP))%;width:\(String(format: "%.1f", widthP))%;background:\(barColor);"></div>
+                </div>
+                <div class="dw-max">\(d.tempMax)°</div>
+            </div>
+            """
+        }.joined(separator: "\n")
+
+        return """
+        <style>
+        .w-card { background: linear-gradient(180deg, #5a6a7a 0%, #4a5568 100%); border-radius: 20px; padding: 18px; color: white; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+        .w-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+        .w-loc { font-size: 16px; font-weight: 600; opacity: 0.9; }
+        .w-main { display: flex; align-items: center; gap: 12px; }
+        .w-temp-big { font-size: 48px; font-weight: 300; line-height: 1; }
+        .w-meta { text-align: right; }
+        .w-desc { font-size: 16px; margin-bottom: 4px; }
+        .w-hl { font-size: 13px; opacity: 0.8; }
+        .w-divider { height: 1px; background: rgba(255,255,255,0.15); margin: 12px 0; }
+        .w-hourly { display: flex; justify-content: space-between; margin-bottom: 12px; }
+        .hw-item { text-align: center; flex: 1; }
+        .hw-time { font-size: 11px; opacity: 0.7; margin-bottom: 6px; }
+        .hw-icon { font-size: 20px; margin-bottom: 4px; }
+        .hw-temp { font-size: 13px; font-weight: 500; }
+        .w-daily { display: flex; flex-direction: column; gap: 10px; }
+        .dw-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+        .dw-day { width: 36px; font-weight: 500; }
+        .dw-icon { width: 24px; text-align: center; font-size: 18px; }
+        .dw-min { width: 30px; text-align: right; opacity: 0.7; font-size: 13px; }
+        .dw-max { width: 30px; text-align: left; font-weight: 500; font-size: 13px; }
+        .dw-bar-track { flex: 1; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; position: relative; }
+        .dw-bar { position: absolute; height: 100%; border-radius: 2px; }
+        </style>
+        <div class="w-card">
+            <div class="w-top">
+                <div>
+                    <div class="w-loc">📍 \(forecast.city)</div>
+                    <div class="w-temp-big">\(forecast.nowTemp)°</div>
+                </div>
+                <div class="w-meta">
+                    <div class="w-desc">\(forecast.nowText)</div>
+                    <div class="w-hl">最高 \(forecast.todayMax)° 最低 \(forecast.todayMin)°</div>
+                </div>
+            </div>
+            <div class="w-divider"></div>
+            <div class="w-hourly">
+                \(hourlyItems)
+            </div>
+            <div class="w-divider"></div>
+            <div class="w-daily">
+                \(dailyRows)
+            </div>
+        </div>
+        """
     }
 
     // MARK: - 共享业务 CSS（附加到边框基类，供各弹窗内容使用）
@@ -363,7 +588,7 @@ class HTMLAlertWindow: NSWindow {
 
     /// 显示可缩放窗口（热点新闻等）：复用背单词边框基类，无系统标题栏外边框（borderless），
     /// 保留边缘拖拽缩放（resizable），与背单词弹窗形式完全一致
-    static func showResizable(title: String, htmlBody: String, width: CGFloat = 480, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
+    static func showResizable(title: String, htmlBody: String, width: CGFloat = 480, maxHeight: CGFloat = 640, hideCloseButton: Bool = false, onClose: (() -> Void)? = nil) {
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
             styleMask: [.borderless, .resizable],
@@ -376,7 +601,7 @@ class HTMLAlertWindow: NSWindow {
         window.targetWidth = width
         window.targetMaxHeight = maxHeight
         window.onClose = onClose
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, okLabel: "关闭 ❌")
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, hideCloseButton: hideCloseButton)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -414,7 +639,7 @@ class HTMLAlertWindow: NSWindow {
         <button class="game-close-btn" onclick="window.webkit.messageHandlers.close.postMessage('')">✕</button>
         <iframe src="\(escapedURL)" style="width:100%;height:100%;border:none;border-radius:12px;background:#1a1a2e;" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock"></iframe>
         """
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, okLabel: "关闭 ❌")
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -450,7 +675,7 @@ class HTMLAlertWindow: NSWindow {
         }
     }
 
-    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false) {
+    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
         let config = WKWebViewConfiguration()
         config.setValue(false, forKey: "drawsBackground")
 
@@ -472,8 +697,12 @@ class HTMLAlertWindow: NSWindow {
         if isInputMode {
             let confirmHandler = ConfirmMessageHandler { [weak self] value in
                 DispatchQueue.main.async {
-                    self?.onConfirm?(value)
-                    self?.closeWindow()
+                    if let cityQuery = self?.onCityQuery {
+                        cityQuery(value)
+                    } else {
+                        self?.onConfirm?(value)
+                        self?.closeWindow()
+                    }
                 }
             }
             self.confirmHandler = confirmHandler
@@ -555,10 +784,9 @@ class HTMLAlertWindow: NSWindow {
         // 统一经 CardFrame 边框基类渲染：所有弹窗共享同一套「渐变标题栏 + 深色卡片」骨架
         var frameConfig = CardFrame.Config(title: title, body: htmlBody)
         if isTodoMode {
-            // Todo：标准系统标题栏窗口，内部隐藏渐变标题栏，全出血铺满
+            // Todo：标准系统标题栏窗口（红绿灯关闭），内部隐藏渐变标题栏与底部按钮，全出血铺满
             frameConfig.showHeader = false
-            frameConfig.showFooter = true
-            frameConfig.footerLabel = okLabel ?? "关闭 ❌"
+            frameConfig.showFooter = false
             frameConfig.fullBleed = true
             frameConfig.maxContentHeight = nil
             frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
@@ -600,14 +828,15 @@ class HTMLAlertWindow: NSWindow {
             frameConfig.headerDraggable = true
             frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
         } else {
-            // 普通弹窗 / 输入弹窗 / 可缩放卡片窗口：渐变标题栏卡片 + 底部按钮
+            // 普通弹窗 / 输入弹窗 / 可缩放卡片窗口：渐变标题栏卡片，统一由标题栏右上角 ✕ 关闭
             frameConfig.showHeader = true
-            frameConfig.showFooter = true
             if isInputMode {
+                // 输入弹窗：底部为功能性确认按钮（如「查询天气」），保留
+                frameConfig.showFooter = true
                 frameConfig.footerLabel = okLabel ?? "查询天气 🔍"
                 frameConfig.footerAction = "window.webkit.messageHandlers.confirm.postMessage(document.getElementById('locationInput').value)"
             } else {
-                frameConfig.footerLabel = okLabel ?? "好哒 👌"
+                frameConfig.showFooter = false
             }
             frameConfig.maxContentHeight = targetMaxHeight
             frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
@@ -620,6 +849,7 @@ class HTMLAlertWindow: NSWindow {
                 }
             }
         }
+        frameConfig.hideCloseButton = hideCloseButton
         let html = CardFrame.render(frameConfig)
         webView.loadHTMLString(html, baseURL: nil)
 
@@ -689,7 +919,7 @@ class HTMLAlertWindow: NSWindow {
             // borderless（背单词 / 热点新闻可缩放等）：透明背景，由 HTML 卡片绘制视觉边框与圆角
             self.backgroundColor = .clear
             self.isOpaque = false
-            self.hasShadow = true
+            self.hasShadow = false
         }
         self.level = .modalPanel
         self.isReleasedWhenClosed = false

@@ -581,7 +581,7 @@ class CatView: NSView {
                 if let f = forecast {
                     self.showWeatherAlert(f)
                 } else {
-                    self.showWeatherAlertSimple(cityInput == nil ? "定位失败，无法获取当前位置<br>请使用「输入地点查天气」手动选择城市" : "未找到城市 \"\(cityInput!)\"，请尝试其他名称")
+                    self.showWeatherAlertSimple(cityInput == nil ? "定位失败，无法获取当前位置<br>请尝试其他城市名" : "未找到城市 \"\(cityInput!)\"，请尝试其他名称")
                 }
             }
         }
@@ -600,8 +600,7 @@ class CatView: NSView {
             ("玩小游戏 🎮", #selector(playGameAction(_:)), false),
             ("背单词 📚", #selector(wordLearningAction(_:)), true),
             ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
-            ("查询天气 ☀️", #selector(weatherAction(_:)), true),
-            ("输入地点查天气 🌍", #selector(locationWeatherAction(_:)), true),
+            ("查看天气 ☀️", #selector(showWeatherAction(_:)), true),
             ("Todo 清单 📝", #selector(todoAction(_:)), false),
             ("输入股票代码查询 📈", #selector(stockAction(_:)), true),
         ]
@@ -639,11 +638,24 @@ class CatView: NSView {
     }
     @objc private func wordLearningAction(_ sender: NSMenuItem) { viewModel?.startWordLearning() }
     @objc private func hotNewsAction(_ sender: NSMenuItem) { viewModel?.showHotNews() }
-    @objc private func weatherAction(_ sender: NSMenuItem) { fetchWeatherAndShow() }
-    @objc private func locationWeatherAction(_ sender: NSMenuItem) { showLocationWeatherInput() }
+    @objc private func showWeatherAction(_ sender: NSMenuItem) { showWeatherInput() }
     @objc private func todoAction(_ sender: NSMenuItem) { showTodoList() }
     @objc private func stockAction(_ sender: NSMenuItem) { showStockInput() }
-    
+
+    // MARK: - 天气查询
+
+    /// 显示天气查询弹窗（输入城市 → 展示结果，共用同一窗口切换内容）
+    private func showWeatherInput() {
+        // 打开窗口后立即加载当前位置天气
+        fetchWeatherAndShow(for: nil)
+        HTMLAlertWindow.showWeatherInput(title: "查看天气 ☀️", width: 380, maxHeight: 640,
+            onQuery: { [weak self] city in
+                self?.fetchWeatherAndShow(for: city)
+            },
+            onClose: nil
+        )
+    }
+
     // MARK: - 背单词功能
         
     /// 当前学习/答题序号

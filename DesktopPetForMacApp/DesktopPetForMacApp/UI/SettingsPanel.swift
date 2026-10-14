@@ -387,6 +387,31 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             codeField.isHidden = true
             uBtn.isHidden = true
         }
+
+        // 条目 5：版本号（本地维护，随发布手动更新）
+        let versionRowY = accessRowY - 72 - 10
+        let versionRow = makeSettingRow(frame: NSRect(x: 16, y: versionRowY, width: cw - 32, height: 48), in: container)
+        let vrw = versionRow.bounds.width
+
+        let versionTitle = NSTextField(labelWithString: "版本")
+        versionTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        versionTitle.textColor = .labelColor
+        versionTitle.frame = NSRect(x: 14, y: 24, width: 200, height: 18)
+        versionRow.addSubview(versionTitle)
+
+        let versionDesc = NSTextField(labelWithString: "当前应用版本号")
+        versionDesc.font = .systemFont(ofSize: 11)
+        versionDesc.textColor = .tertiaryLabelColor
+        versionDesc.frame = NSRect(x: 14, y: 6, width: 220, height: 15)
+        versionRow.addSubview(versionDesc)
+
+        let versionLabel = NSTextField(labelWithString: AppVersion.current)
+        versionLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        versionLabel.textColor = .secondaryLabelColor
+        versionLabel.alignment = .right
+        versionLabel.frame = NSRect(x: vrw - 16 - 150, y: 15, width: 150, height: 18)
+        versionLabel.autoresizingMask = .minXMargin
+        versionRow.addSubview(versionLabel)
     }
 
     // MARK: - 分区 3：提醒设置
@@ -542,7 +567,17 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     @objc private func unlockAccess(_ sender: Any?) {
         guard let field = accessCodeField else { return }
         let code = field.stringValue
-        if AccessControl.unlock(with: code) {
+        // 远程校验需等待网络，期间禁用解锁按钮防重复提交
+        unlockBtn?.isEnabled = false
+        AccessControl.unlock(with: code) { [weak self] success in
+            guard let self else { return }
+            self.unlockBtn?.isEnabled = true
+            self.handleUnlockResult(success, field: field)
+        }
+    }
+
+    private func handleUnlockResult(_ success: Bool, field: NSSecureTextField) {
+        if success {
             field.stringValue = ""
             refreshAccessUI()
             onAccessLevelChanged?()
@@ -778,6 +813,19 @@ return row
         }
         // 更新当前状态徽章
         currentStateBadge?.stringValue = "当前状态：\(current.displayName)"
+    }
+
+    /// 聚焦到宠物名称输入框（用于首次启动引导）
+    func focusPetNameField() {
+        // 确保在「宠物信息」分区
+        currentSection = 0
+        for (i, v) in contentViews.enumerated() {
+            v.isHidden = (i != 0)
+        }
+        applyNavStyle()
+        // 自动点编辑：让输入框可编辑并聚焦
+        editPetName(petNameEditBtn ?? NSButton())
+        makeFirstResponder(petNameField)
     }
 
     /// 屏幕居中弹出

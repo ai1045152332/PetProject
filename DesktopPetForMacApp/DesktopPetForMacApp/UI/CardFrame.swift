@@ -13,8 +13,8 @@ enum CardFrame {
 
         /// 是否显示渐变标题栏（标准系统标题栏窗口传 false，隐藏内部渐变标题栏）
         var showHeader: Bool = true
-        /// 是否显示底部按钮
-        var showFooter: Bool = true
+        /// 是否显示底部按钮（弹窗统一由标题栏右上角 ✕ 关闭，仅输入弹窗的功能性确认按钮传 true）
+        var showFooter: Bool = false
         /// 底部按钮文字
         var footerLabel: String = "好哒 👌"
         /// 底部按钮 JS 动作（nil = 关闭弹窗）
@@ -23,6 +23,8 @@ enum CardFrame {
         var cornerRadius: CGFloat = 18
         /// 全出血：内容铺满窗口，去圆角/阴影/边框（用于标准标题栏窗口）
         var fullBleed: Bool = false
+        /// 隐藏标题栏 ✕ 关闭按钮（仍保留标题栏和拖动能力）
+        var hideCloseButton: Bool = false
         /// 内容区最大高度（nil = 不限制）
         var maxContentHeight: CGFloat? = nil
         /// 渐变标题栏是否可拖动窗口（无边框窗口用）
@@ -46,7 +48,7 @@ enum CardFrame {
                         <span class="icon">🐱</span>
                         <h1>\(config.title)</h1>
                     </div>
-                    <button class="close-btn" onclick="window.webkit.messageHandlers.close.postMessage('')">✕</button>
+                    \(config.hideCloseButton ? "" : "<button class=\"close-btn\" onclick=\"window.webkit.messageHandlers.close.postMessage('')\">✕</button>")
                 </div>
             """
         } else {
@@ -89,7 +91,7 @@ enum CardFrame {
     private static func buildCSS(_ c: Config) -> String {
         let radius = c.fullBleed ? 0 : Int(c.cornerRadius)
         let bodyPad = c.fullBleed ? 0 : 8
-        let shadow = c.fullBleed ? "none" : "0 24px 70px rgba(0,0,0,0.55)"
+        let shadow = "none"
         let border = c.fullBleed ? "none" : "1px solid rgba(255,255,255,0.08)"
         let maxW = c.fullBleed ? "100%" : "\(Int(c.cardWidth - 16))px"
         let maxH = c.maxContentHeight.map { "\(Int($0))px" } ?? "none"

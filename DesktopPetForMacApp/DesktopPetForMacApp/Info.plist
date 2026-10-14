@@ -57,5 +57,13 @@
         <!-- 禁止 App Nap，保持动画流畅 -->
     <key>LSAppNapIsDisabled</key>
     <true/>
+
+    <!-- ATS 例外：后端为 IP 直连的明文 HTTP 服务（校验码/心跳接口），
+         exception domain 仅支持域名不支持 IP，故放开任意加载 -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

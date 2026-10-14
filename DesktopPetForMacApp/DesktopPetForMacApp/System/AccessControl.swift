@@ -67,12 +67,15 @@ enum AccessControl {
 
         URLSession.shared.dataTask(with: request) { data, _, error in
             var valid = false
-            if error == nil,
-               let data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let dataDict = json["data"] as? [String: Any],
-               let v = dataDict["valid"] as? Bool {
+            if let error {
+                FileLogger.log("[Access] 校验码远程验证请求失败: \(error.localizedDescription)")
+            } else if let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let dataDict = json["data"] as? [String: Any],
+                      let v = dataDict["valid"] as? Bool {
                 valid = v
+            } else {
+                FileLogger.log("[Access] 校验码远程验证响应解析失败: \(String(data: data ?? Data(), encoding: .utf8) ?? "nil")")
             }
             DispatchQueue.main.async { completion(valid) }
         }.resume()

@@ -1,142 +1,1334 @@
 [
   {
-    "word": "abundant",
-    "meaning": "adj. 丰富的，充裕的"
+    "word": "aboriginal",
+    "meaning": "adj./n. 土著的；原住民"
+  },
+  {
+    "word": "academic",
+    "meaning": "adj. 学术的"
+  },
+  {
+    "word": "accelerate",
+    "meaning": "v. 加速"
+  },
+  {
+    "word": "accommodate",
+    "meaning": "v. 容纳；适应"
+  },
+  {
+    "word": "accordance",
+    "meaning": "n. 一致"
+  },
+  {
+    "word": "accumulate",
+    "meaning": "v. 积累"
   },
   {
     "word": "acknowledge",
-    "meaning": "v. 承认；致谢"
+    "meaning": "v. 承认"
   },
   {
-    "word": "adequate",
-    "meaning": "adj. 足够的，适当的"
+    "word": "acquisition",
+    "meaning": "n. 获得；习得"
   },
   {
-    "word": "advocate",
-    "meaning": "v. 提倡 n. 拥护者"
+    "word": "acupuncture",
+    "meaning": "n. 针灸"
   },
   {
-    "word": "ambiguous",
-    "meaning": "adj. 模棱两可的"
+    "word": "adaptation",
+    "meaning": "n. 适应；改编"
   },
   {
-    "word": "anticipate",
-    "meaning": "v. 预期，期望"
+    "word": "administrative",
+    "meaning": "adj. 行政的"
+  },
+  {
+    "word": "advent",
+    "meaning": "n. 出现，到来"
+  },
+  {
+    "word": "aerial",
+    "meaning": "adj. 空中的"
+  },
+  {
+    "word": "affluent",
+    "meaning": "adj. 富裕的"
+  },
+  {
+    "word": "agriculture",
+    "meaning": "n. 农业"
+  },
+  {
+    "word": "alert",
+    "meaning": "adj./n. 警觉的；警报"
+  },
+  {
+    "word": "altitude",
+    "meaning": "n. 海拔"
+  },
+  {
+    "word": "ambitious",
+    "meaning": "adj. 雄心勃勃的"
+  },
+  {
+    "word": "amendment",
+    "meaning": "n. 修正案"
+  },
+  {
+    "word": "anthropology",
+    "meaning": "n. 人类学"
+  },
+  {
+    "word": "anticipation",
+    "meaning": "n. 预期"
+  },
+  {
+    "word": "apparatus",
+    "meaning": "n. 仪器"
+  },
+  {
+    "word": "appliance",
+    "meaning": "n. 家用电器"
+  },
+  {
+    "word": "applicant",
+    "meaning": "n. 申请人"
+  },
+  {
+    "word": "apprenticeship",
+    "meaning": "n. 学徒期"
+  },
+  {
+    "word": "arable",
+    "meaning": "adj. 可耕种的"
+  },
+  {
+    "word": "archive",
+    "meaning": "n./v. 档案；存档"
+  },
+  {
+    "word": "array",
+    "meaning": "n. 一系列"
+  },
+  {
+    "word": "assignment",
+    "meaning": "n. 作业；任务"
+  },
+  {
+    "word": "assumption",
+    "meaning": "n. 假设"
+  },
+  {
+    "word": "astronomy",
+    "meaning": "n. 天文学"
+  },
+  {
+    "word": "athletic",
+    "meaning": "adj. 运动的"
+  },
+  {
+    "word": "attendance",
+    "meaning": "n. 出席"
+  },
+  {
+    "word": "auction",
+    "meaning": "n./v. 拍卖"
+  },
+  {
+    "word": "auditorium",
+    "meaning": "n. 礼堂"
+  },
+  {
+    "word": "auditory",
+    "meaning": "adj. 听觉的"
+  },
+  {
+    "word": "behavior",
+    "meaning": "n. 行为"
+  },
+  {
+    "word": "beneficial",
+    "meaning": "adj. 有益的"
+  },
+  {
+    "word": "bibliography",
+    "meaning": "n. 参考书目"
+  },
+  {
+    "word": "bilingual",
+    "meaning": "adj. 双语的"
+  },
+  {
+    "word": "biochemistry",
+    "meaning": "n. 生物化学"
+  },
+  {
+    "word": "biodiversity",
+    "meaning": "n. 生物多样性"
+  },
+  {
+    "word": "botany",
+    "meaning": "n. 植物学"
+  },
+  {
+    "word": "brainstorm",
+    "meaning": "v./n. 头脑风暴"
+  },
+  {
+    "word": "bulletin",
+    "meaning": "n. 公告"
+  },
+  {
+    "word": "capacity",
+    "meaning": "n. 容量；能力"
+  },
+  {
+    "word": "carbon",
+    "meaning": "n. 碳"
+  },
+  {
+    "word": "carving",
+    "meaning": "n. 雕刻品"
+  },
+  {
+    "word": "catalyst",
+    "meaning": "n. 催化剂"
+  },
+  {
+    "word": "ceramic",
+    "meaning": "n. 陶瓷"
+  },
+  {
+    "word": "chronological",
+    "meaning": "adj. 按时间顺序的"
+  },
+  {
+    "word": "classify",
+    "meaning": "v. 分类"
+  },
+  {
+    "word": "coastal",
+    "meaning": "adj. 沿海的"
+  },
+  {
+    "word": "coexistence",
+    "meaning": "n. 共存"
+  },
+  {
+    "word": "cognitive",
+    "meaning": "adj. 认知的"
+  },
+  {
+    "word": "coherent",
+    "meaning": "adj. 连贯的"
+  },
+  {
+    "word": "colonize",
+    "meaning": "v. 殖民"
+  },
+  {
+    "word": "communication",
+    "meaning": "n. 交流"
+  },
+  {
+    "word": "competition",
+    "meaning": "n. 竞争"
+  },
+  {
+    "word": "complementary",
+    "meaning": "adj. 互补的"
   },
   {
     "word": "comprehensive",
-    "meaning": "adj. 全面的，综合的"
+    "meaning": "adj. 全面的"
+  },
+  {
+    "word": "concurrent",
+    "meaning": "adj. 并发的"
+  },
+  {
+    "word": "conservation",
+    "meaning": "n. 保护；保存"
   },
   {
     "word": "considerable",
-    "meaning": "adj. 相当大的，重要的"
+    "meaning": "adj. 相当大的"
+  },
+  {
+    "word": "consistent",
+    "meaning": "adj. 始终如一的"
+  },
+  {
+    "word": "consumer",
+    "meaning": "n. 消费者"
   },
   {
     "word": "contemporary",
-    "meaning": "adj. 当代的；同时代的"
+    "meaning": "adj. 当代的"
   },
   {
-    "word": "contradict",
-    "meaning": "v. 反驳，与…矛盾"
+    "word": "contradictory",
+    "meaning": "adj. 矛盾的"
   },
   {
-    "word": "crucial",
-    "meaning": "adj. 至关重要的"
+    "word": "controversial",
+    "meaning": "adj. 有争议的"
   },
   {
-    "word": "demonstrate",
-    "meaning": "v. 展示，证明"
+    "word": "conventional",
+    "meaning": "adj. 传统的"
   },
   {
-    "word": "deteriorate",
-    "meaning": "v. 恶化，退化"
+    "word": "coral",
+    "meaning": "n. 珊瑚"
   },
   {
-    "word": "diminish",
-    "meaning": "v. 减少，缩小"
+    "word": "correlation",
+    "meaning": "n. 相关性"
   },
   {
-    "word": "eliminate",
-    "meaning": "v. 消除，淘汰"
+    "word": "corresponding",
+    "meaning": "adj. 相应的"
   },
   {
-    "word": "emphasize",
-    "meaning": "v. 强调，着重"
+    "word": "costume",
+    "meaning": "n. 服装"
   },
   {
-    "word": "equivalent",
-    "meaning": "adj. 等价的 n. 对等物"
+    "word": "creativity",
+    "meaning": "n. 创造力"
   },
   {
-    "word": "facilitate",
-    "meaning": "v. 促进，使便利"
+    "word": "credibility",
+    "meaning": "n. 可信度"
   },
   {
-    "word": "fluctuate",
-    "meaning": "v. 波动，起伏"
+    "word": "crisis",
+    "meaning": "n. 危机"
   },
   {
-    "word": "implement",
-    "meaning": "v. 实施，执行"
+    "word": "criticism",
+    "meaning": "n. 批评"
   },
   {
-    "word": "incentive",
-    "meaning": "n. 激励，动机"
+    "word": "cross-cultural",
+    "meaning": "adj. 跨文化的"
   },
   {
-    "word": "inevitable",
-    "meaning": "adj. 不可避免的"
+    "word": "cultivation",
+    "meaning": "n. 耕作"
+  },
+  {
+    "word": "cultural",
+    "meaning": "adj. 文化的"
+  },
+  {
+    "word": "curriculum",
+    "meaning": "n. 课程"
+  },
+  {
+    "word": "deforestation",
+    "meaning": "n. 森林砍伐"
+  },
+  {
+    "word": "degradation",
+    "meaning": "n. 退化"
+  },
+  {
+    "word": "deliberation",
+    "meaning": "n. 审议"
+  },
+  {
+    "word": "demographic",
+    "meaning": "adj./n. 人口统计的"
+  },
+  {
+    "word": "diabetes",
+    "meaning": "n. 糖尿病"
+  },
+  {
+    "word": "digestive",
+    "meaning": "adj. 消化的"
+  },
+  {
+    "word": "discourse",
+    "meaning": "n. 话语"
+  },
+  {
+    "word": "diversify",
+    "meaning": "v. 多样化"
+  },
+  {
+    "word": "diversity",
+    "meaning": "n. 多样性"
+  },
+  {
+    "word": "documentation",
+    "meaning": "n. 文档"
+  },
+  {
+    "word": "dominant",
+    "meaning": "adj. 支配的"
+  },
+  {
+    "word": "duration",
+    "meaning": "n. 持续时间"
+  },
+  {
+    "word": "dwelling",
+    "meaning": "n. 住所"
+  },
+  {
+    "word": "ecosystem",
+    "meaning": "n. 生态系统"
+  },
+  {
+    "word": "edible",
+    "meaning": "adj. 可食用的"
+  },
+  {
+    "word": "education",
+    "meaning": "n. 教育"
+  },
+  {
+    "word": "elderly",
+    "meaning": "adj. 年长的"
+  },
+  {
+    "word": "electricity",
+    "meaning": "n. 电力"
+  },
+  {
+    "word": "emission",
+    "meaning": "n. 排放"
+  },
+  {
+    "word": "emotional",
+    "meaning": "adj. 情感的"
+  },
+  {
+    "word": "employee",
+    "meaning": "n. 员工"
+  },
+  {
+    "word": "employment",
+    "meaning": "n. 就业"
+  },
+  {
+    "word": "energy",
+    "meaning": "n. 能源"
+  },
+  {
+    "word": "engineering",
+    "meaning": "n. 工程"
+  },
+  {
+    "word": "enquiry",
+    "meaning": "n. 询问"
+  },
+  {
+    "word": "environmental",
+    "meaning": "adj. 环境的"
+  },
+  {
+    "word": "equator",
+    "meaning": "n. 赤道"
+  },
+  {
+    "word": "equilibrium",
+    "meaning": "n. 平衡"
+  },
+  {
+    "word": "equipment",
+    "meaning": "n. 设备"
+  },
+  {
+    "word": "equity",
+    "meaning": "n. 公平"
+  },
+  {
+    "word": "eruption",
+    "meaning": "n. 爆发"
+  },
+  {
+    "word": "evident",
+    "meaning": "adj. 明显的"
+  },
+  {
+    "word": "excavate",
+    "meaning": "v. 挖掘"
+  },
+  {
+    "word": "exceptional",
+    "meaning": "adj. 卓越的"
+  },
+  {
+    "word": "excerpt",
+    "meaning": "n. 摘录"
+  },
+  {
+    "word": "exemplify",
+    "meaning": "v. 举例说明"
+  },
+  {
+    "word": "expertise",
+    "meaning": "n. 专业知识"
+  },
+  {
+    "word": "explicit",
+    "meaning": "adj. 明确的"
+  },
+  {
+    "word": "extinction",
+    "meaning": "n. 灭绝"
+  },
+  {
+    "word": "fauna",
+    "meaning": "n. 动物群"
+  },
+  {
+    "word": "fertilizer",
+    "meaning": "n. 肥料"
+  },
+  {
+    "word": "finite",
+    "meaning": "adj. 有限的"
+  },
+  {
+    "word": "flora",
+    "meaning": "n. 植物群"
+  },
+  {
+    "word": "footwear",
+    "meaning": "n. 鞋类"
+  },
+  {
+    "word": "forestry",
+    "meaning": "n. 林业"
+  },
+  {
+    "word": "fossil",
+    "meaning": "n. 化石"
+  },
+  {
+    "word": "frequent",
+    "meaning": "adj. 频繁的"
+  },
+  {
+    "word": "function",
+    "meaning": "n./v. 功能"
+  },
+  {
+    "word": "genetics",
+    "meaning": "n. 遗传学"
+  },
+  {
+    "word": "geology",
+    "meaning": "n. 地质学"
+  },
+  {
+    "word": "gesture",
+    "meaning": "n. 手势"
+  },
+  {
+    "word": "glacier",
+    "meaning": "n. 冰川"
+  },
+  {
+    "word": "globalization",
+    "meaning": "n. 全球化"
+  },
+  {
+    "word": "graduate",
+    "meaning": "n./v. 毕业生"
+  },
+  {
+    "word": "greenhouse",
+    "meaning": "n. 温室"
+  },
+  {
+    "word": "growth",
+    "meaning": "n. 增长"
+  },
+  {
+    "word": "guideline",
+    "meaning": "n. 准则"
+  },
+  {
+    "word": "habitat",
+    "meaning": "n. 栖息地"
+  },
+  {
+    "word": "harbor",
+    "meaning": "n. 港口"
+  },
+  {
+    "word": "holistic",
+    "meaning": "adj. 整体的"
+  },
+  {
+    "word": "humanitarian",
+    "meaning": "adj. 人道主义的"
+  },
+  {
+    "word": "humid",
+    "meaning": "adj. 潮湿的"
+  },
+  {
+    "word": "hygiene",
+    "meaning": "n. 卫生"
+  },
+  {
+    "word": "immerse",
+    "meaning": "v. 沉浸"
+  },
+  {
+    "word": "impairment",
+    "meaning": "n. 损伤"
+  },
+  {
+    "word": "implication",
+    "meaning": "n. 含义；影响"
+  },
+  {
+    "word": "indigenous",
+    "meaning": "adj. 本土的"
+  },
+  {
+    "word": "industrial",
+    "meaning": "adj. 工业的"
+  },
+  {
+    "word": "industry",
+    "meaning": "n. 工业"
+  },
+  {
+    "word": "infant",
+    "meaning": "n. 婴儿"
+  },
+  {
+    "word": "infer",
+    "meaning": "v. 推断"
+  },
+  {
+    "word": "infrastructure",
+    "meaning": "n. 基础设施"
+  },
+  {
+    "word": "innovate",
+    "meaning": "v. 创新"
+  },
+  {
+    "word": "innovative",
+    "meaning": "adj. 创新的"
+  },
+  {
+    "word": "institution",
+    "meaning": "n. 机构"
+  },
+  {
+    "word": "insulation",
+    "meaning": "n. 隔热"
+  },
+  {
+    "word": "insurance",
+    "meaning": "n. 保险"
+  },
+  {
+    "word": "intensive",
+    "meaning": "adj. 密集的"
+  },
+  {
+    "word": "interact",
+    "meaning": "v. 互动"
+  },
+  {
+    "word": "interpret",
+    "meaning": "v. 解释；口译"
+  },
+  {
+    "word": "intuitive",
+    "meaning": "adj. 直觉的"
+  },
+  {
+    "word": "investment",
+    "meaning": "n. 投资"
+  },
+  {
+    "word": "irrigation",
+    "meaning": "n. 灌溉"
+  },
+  {
+    "word": "issue",
+    "meaning": "n./v. 问题；发行"
+  },
+  {
+    "word": "journalism",
+    "meaning": "n. 新闻业"
+  },
+  {
+    "word": "laboratory",
+    "meaning": "n. 实验室"
+  },
+  {
+    "word": "landscape",
+    "meaning": "n. 景观"
+  },
+  {
+    "word": "latitude",
+    "meaning": "n. 纬度"
+  },
+  {
+    "word": "linguistics",
+    "meaning": "n. 语言学"
+  },
+  {
+    "word": "livestock",
+    "meaning": "n. 牲畜"
+  },
+  {
+    "word": "longitude",
+    "meaning": "n. 经度"
+  },
+  {
+    "word": "mainstream",
+    "meaning": "n./adj. 主流"
+  },
+  {
+    "word": "management",
+    "meaning": "n. 管理"
   },
   {
     "word": "manipulate",
-    "meaning": "v. 操纵，操控"
+    "meaning": "v. 操纵"
   },
   {
-    "word": "notion",
-    "meaning": "n. 概念，观念"
+    "word": "marine",
+    "meaning": "adj. 海洋的"
+  },
+  {
+    "word": "maritime",
+    "meaning": "adj. 海事的"
+  },
+  {
+    "word": "material",
+    "meaning": "n. 材料"
+  },
+  {
+    "word": "maternal",
+    "meaning": "adj. 母亲的"
+  },
+  {
+    "word": "measurement",
+    "meaning": "n. 测量"
+  },
+  {
+    "word": "mechanical",
+    "meaning": "adj. 机械的"
+  },
+  {
+    "word": "medical",
+    "meaning": "adj. 医疗的"
+  },
+  {
+    "word": "mental",
+    "meaning": "adj. 心理的"
+  },
+  {
+    "word": "metabolic",
+    "meaning": "adj. 新陈代谢的"
+  },
+  {
+    "word": "methodology",
+    "meaning": "n. 方法论"
+  },
+  {
+    "word": "microbiology",
+    "meaning": "n. 微生物学"
+  },
+  {
+    "word": "migration",
+    "meaning": "n. 迁徙"
+  },
+  {
+    "word": "mineral",
+    "meaning": "n. 矿物"
+  },
+  {
+    "word": "mitigate",
+    "meaning": "v. 缓解"
+  },
+  {
+    "word": "molecule",
+    "meaning": "n. 分子"
+  },
+  {
+    "word": "momentum",
+    "meaning": "n. 势头"
+  },
+  {
+    "word": "motivation",
+    "meaning": "n. 动机"
+  },
+  {
+    "word": "multicultural",
+    "meaning": "adj. 多元文化的"
+  },
+  {
+    "word": "muscle",
+    "meaning": "n. 肌肉"
+  },
+  {
+    "word": "narrative",
+    "meaning": "n. 叙事"
+  },
+  {
+    "word": "natural",
+    "meaning": "adj. 自然的"
+  },
+  {
+    "word": "negative",
+    "meaning": "adj. 负面的"
+  },
+  {
+    "word": "neurological",
+    "meaning": "adj. 神经系统的"
+  },
+  {
+    "word": "nutrient",
+    "meaning": "n. 营养物"
+  },
+  {
+    "word": "nutrition",
+    "meaning": "n. 营养"
+  },
+  {
+    "word": "obesity",
+    "meaning": "n. 肥胖"
+  },
+  {
+    "word": "objective",
+    "meaning": "n./adj. 目标；客观的"
+  },
+  {
+    "word": "observation",
+    "meaning": "n. 观察"
+  },
+  {
+    "word": "obtain",
+    "meaning": "v. 获得"
+  },
+  {
+    "word": "obvious",
+    "meaning": "adj. 明显的"
+  },
+  {
+    "word": "occurrence",
+    "meaning": "n. 发生"
+  },
+  {
+    "word": "offspring",
+    "meaning": "n. 后代"
+  },
+  {
+    "word": "optimize",
+    "meaning": "v. 优化"
+  },
+  {
+    "word": "organization",
+    "meaning": "n. 组织"
+  },
+  {
+    "word": "ornament",
+    "meaning": "n. 装饰品"
+  },
+  {
+    "word": "ozone",
+    "meaning": "n. 臭氧"
   },
   {
     "word": "paradigm",
-    "meaning": "n. 范式，典范"
+    "meaning": "n. 范式"
   },
   {
-    "word": "phenomenon",
-    "meaning": "n. 现象"
+    "word": "parameter",
+    "meaning": "n. 参数"
   },
   {
-    "word": "predominantly",
-    "meaning": "adv. 主要地，显著地"
+    "word": "patient",
+    "meaning": "n./adj. 病人；耐心的"
   },
   {
-    "word": "profound",
-    "meaning": "adj. 深刻的，深远的"
+    "word": "pedestrian",
+    "meaning": "n. 行人"
   },
   {
-    "word": "proportion",
-    "meaning": "n. 比例，部分"
+    "word": "pension",
+    "meaning": "n. 养老金"
   },
   {
-    "word": "sophisticated",
-    "meaning": "adj. 复杂的；老练的"
+    "word": "perception",
+    "meaning": "n. 感知"
   },
   {
-    "word": "subsequent",
-    "meaning": "adj. 随后的，后来的"
+    "word": "performance",
+    "meaning": "n. 表现"
   },
   {
-    "word": "substantial",
-    "meaning": "adj. 大量的，实质的"
+    "word": "persistent",
+    "meaning": "adj. 持久的"
+  },
+  {
+    "word": "personal",
+    "meaning": "adj. 个人的"
+  },
+  {
+    "word": "pest",
+    "meaning": "n. 害虫"
+  },
+  {
+    "word": "pesticide",
+    "meaning": "n. 农药"
+  },
+  {
+    "word": "plateau",
+    "meaning": "n. 高原"
+  },
+  {
+    "word": "pollutant",
+    "meaning": "n. 污染物"
+  },
+  {
+    "word": "pollution",
+    "meaning": "n. 污染"
+  },
+  {
+    "word": "population",
+    "meaning": "n. 人口"
+  },
+  {
+    "word": "positive",
+    "meaning": "adj. 积极的"
+  },
+  {
+    "word": "poultry",
+    "meaning": "n. 家禽"
+  },
+  {
+    "word": "precipitation",
+    "meaning": "n. 降水"
+  },
+  {
+    "word": "predator",
+    "meaning": "n. 捕食者"
+  },
+  {
+    "word": "prehistoric",
+    "meaning": "adj. 史前的"
+  },
+  {
+    "word": "preservation",
+    "meaning": "n. 保存"
+  },
+  {
+    "word": "pressure",
+    "meaning": "n. 压力"
+  },
+  {
+    "word": "prevalent",
+    "meaning": "adj. 普遍的"
+  },
+  {
+    "word": "prevent",
+    "meaning": "v. 预防"
+  },
+  {
+    "word": "professional",
+    "meaning": "adj. 专业的"
+  },
+  {
+    "word": "proficiency",
+    "meaning": "n. 熟练"
+  },
+  {
+    "word": "profit",
+    "meaning": "n. 利润"
+  },
+  {
+    "word": "progress",
+    "meaning": "n. 进步"
+  },
+  {
+    "word": "project",
+    "meaning": "n. 项目"
+  },
+  {
+    "word": "prominent",
+    "meaning": "adj. 突出的"
+  },
+  {
+    "word": "protect",
+    "meaning": "v. 保护"
+  },
+  {
+    "word": "provision",
+    "meaning": "n. 供应"
+  },
+  {
+    "word": "psychology",
+    "meaning": "n. 心理学"
+  },
+  {
+    "word": "public",
+    "meaning": "adj. 公共的"
+  },
+  {
+    "word": "publicity",
+    "meaning": "n. 宣传"
+  },
+  {
+    "word": "qualitative",
+    "meaning": "adj. 定性的"
+  },
+  {
+    "word": "quality",
+    "meaning": "n. 质量"
+  },
+  {
+    "word": "quantitative",
+    "meaning": "adj. 定量的"
+  },
+  {
+    "word": "questionnaire",
+    "meaning": "n. 问卷"
+  },
+  {
+    "word": "radiation",
+    "meaning": "n. 辐射"
+  },
+  {
+    "word": "rainfall",
+    "meaning": "n. 降雨量"
+  },
+  {
+    "word": "recycle",
+    "meaning": "v. 回收利用"
+  },
+  {
+    "word": "reduce",
+    "meaning": "v. 减少"
+  },
+  {
+    "word": "regional",
+    "meaning": "adj. 地区的"
+  },
+  {
+    "word": "regulation",
+    "meaning": "n. 法规"
+  },
+  {
+    "word": "relationship",
+    "meaning": "n. 关系"
+  },
+  {
+    "word": "relevance",
+    "meaning": "n. 相关性"
+  },
+  {
+    "word": "reliance",
+    "meaning": "n. 依赖"
+  },
+  {
+    "word": "renewable",
+    "meaning": "adj. 可再生的"
+  },
+  {
+    "word": "replenish",
+    "meaning": "v. 补充"
+  },
+  {
+    "word": "replicate",
+    "meaning": "v. 复制"
+  },
+  {
+    "word": "requirement",
+    "meaning": "n. 要求"
+  },
+  {
+    "word": "resemble",
+    "meaning": "v. 像"
+  },
+  {
+    "word": "reservoir",
+    "meaning": "n. 水库"
+  },
+  {
+    "word": "residential",
+    "meaning": "adj. 住宅的"
+  },
+  {
+    "word": "respectively",
+    "meaning": "adv. 分别地"
+  },
+  {
+    "word": "responsibility",
+    "meaning": "n. 责任"
+  },
+  {
+    "word": "result",
+    "meaning": "n. 结果"
+  },
+  {
+    "word": "ritual",
+    "meaning": "n. 仪式"
+  },
+  {
+    "word": "rural",
+    "meaning": "adj. 农村的"
+  },
+  {
+    "word": "scholar",
+    "meaning": "n. 学者"
+  },
+  {
+    "word": "scholarship",
+    "meaning": "n. 奖学金"
+  },
+  {
+    "word": "science",
+    "meaning": "n. 科学"
+  },
+  {
+    "word": "scope",
+    "meaning": "n. 范围"
+  },
+  {
+    "word": "sector",
+    "meaning": "n. 部门"
+  },
+  {
+    "word": "segment",
+    "meaning": "n./v. 部分；分割"
+  },
+  {
+    "word": "seminar",
+    "meaning": "n. 研讨会"
+  },
+  {
+    "word": "service",
+    "meaning": "n. 服务"
+  },
+  {
+    "word": "shortage",
+    "meaning": "n. 短缺"
+  },
+  {
+    "word": "sibling",
+    "meaning": "n. 兄弟姐妹"
+  },
+  {
+    "word": "significant",
+    "meaning": "adj. 重要的"
+  },
+  {
+    "word": "simulate",
+    "meaning": "v. 模拟"
+  },
+  {
+    "word": "skepticism",
+    "meaning": "n. 怀疑态度"
+  },
+  {
+    "word": "social",
+    "meaning": "adj. 社会的"
+  },
+  {
+    "word": "society",
+    "meaning": "n. 社会"
+  },
+  {
+    "word": "sociology",
+    "meaning": "n. 社会学"
+  },
+  {
+    "word": "solution",
+    "meaning": "n. 解决方案"
+  },
+  {
+    "word": "species",
+    "meaning": "n. 物种"
+  },
+  {
+    "word": "spectator",
+    "meaning": "n. 观众"
+  },
+  {
+    "word": "spectrum",
+    "meaning": "n. 范围；光谱"
+  },
+  {
+    "word": "stability",
+    "meaning": "n. 稳定性"
+  },
+  {
+    "word": "standard",
+    "meaning": "n. 标准"
+  },
+  {
+    "word": "statistical",
+    "meaning": "adj. 统计的"
+  },
+  {
+    "word": "stimulus",
+    "meaning": "n. 刺激"
+  },
+  {
+    "word": "suburb",
+    "meaning": "n. 郊区"
+  },
+  {
+    "word": "success",
+    "meaning": "n. 成功"
+  },
+  {
+    "word": "supervision",
+    "meaning": "n. 监督"
+  },
+  {
+    "word": "surveillance",
+    "meaning": "n. 监控"
+  },
+  {
+    "word": "survey",
+    "meaning": "n./v. 调查"
   },
   {
     "word": "sustainable",
     "meaning": "adj. 可持续的"
   },
   {
-    "word": "transform",
-    "meaning": "v. 转变，改造"
+    "word": "syllabus",
+    "meaning": "n. 教学大纲"
   },
   {
-    "word": "undermine",
-    "meaning": "v. 削弱，破坏"
+    "word": "symposium",
+    "meaning": "n. 专题研讨会"
+  },
+  {
+    "word": "system",
+    "meaning": "n. 系统"
+  },
+  {
+    "word": "systematic",
+    "meaning": "adj. 系统的"
+  },
+  {
+    "word": "technical",
+    "meaning": "adj. 技术的"
+  },
+  {
+    "word": "technician",
+    "meaning": "n. 技术员"
+  },
+  {
+    "word": "temperature",
+    "meaning": "n. 温度"
+  },
+  {
+    "word": "theoretical",
+    "meaning": "adj. 理论上的"
+  },
+  {
+    "word": "tradition",
+    "meaning": "n. 传统"
+  },
+  {
+    "word": "transport",
+    "meaning": "n./v. 运输"
+  },
+  {
+    "word": "treatment",
+    "meaning": "n. 治疗"
+  },
+  {
+    "word": "tuition",
+    "meaning": "n. 学费"
+  },
+  {
+    "word": "tunnel",
+    "meaning": "n. 隧道"
+  },
+  {
+    "word": "underestimate",
+    "meaning": "v. 低估"
+  },
+  {
+    "word": "underlying",
+    "meaning": "adj. 潜在的"
+  },
+  {
+    "word": "unemployment",
+    "meaning": "n. 失业"
+  },
+  {
+    "word": "urbanization",
+    "meaning": "n. 城市化"
+  },
+  {
+    "word": "vaccine",
+    "meaning": "n. 疫苗"
+  },
+  {
+    "word": "vegetation",
+    "meaning": "n. 植被"
+  },
+  {
+    "word": "veterinary",
+    "meaning": "adj. 兽医的"
+  },
+  {
+    "word": "victim",
+    "meaning": "n. 受害者"
+  },
+  {
+    "word": "vocational",
+    "meaning": "adj. 职业的"
+  },
+  {
+    "word": "volcanic",
+    "meaning": "adj. 火山的"
+  },
+  {
+    "word": "volunteer",
+    "meaning": "n./v. 志愿者"
+  },
+  {
+    "word": "weather",
+    "meaning": "n. 天气"
+  },
+  {
+    "word": "widespread",
+    "meaning": "adj. 广泛的"
+  },
+  {
+    "word": "wildlife",
+    "meaning": "n. 野生动物"
+  },
+  {
+    "word": "worker",
+    "meaning": "n. 工人"
+  },
+  {
+    "word": "workforce",
+    "meaning": "n. 劳动力"
+  },
+  {
+    "word": "workplace",
+    "meaning": "n. 工作场所"
+  },
+  {
+    "word": "zoology",
+    "meaning": "n. 动物学"
   }
 ]

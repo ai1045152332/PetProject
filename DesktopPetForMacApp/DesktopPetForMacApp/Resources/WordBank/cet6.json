@@ -1,42 +1,1870 @@
 [
   {
-    "word": "accommodate",
-    "meaning": "v. 容纳；提供住宿"
+    "word": "abrupt",
+    "meaning": "adj. 突然的，唐突的"
   },
   {
-    "word": "acquisition",
-    "meaning": "n. 获得；收购"
+    "word": "absurd",
+    "meaning": "adj. 荒谬的"
+  },
+  {
+    "word": "abundance",
+    "meaning": "n. 丰富，充裕"
+  },
+  {
+    "word": "accessory",
+    "meaning": "n. 配件；adj. 附属的"
+  },
+  {
+    "word": "acclaim",
+    "meaning": "v./n. 称赞"
+  },
+  {
+    "word": "accord",
+    "meaning": "n./v. 一致；给予"
+  },
+  {
+    "word": "accountable",
+    "meaning": "adj. 负有责任的"
+  },
+  {
+    "word": "accustomed",
+    "meaning": "adj. 习惯的"
+  },
+  {
+    "word": "acute",
+    "meaning": "adj. 敏锐的；急性的"
+  },
+  {
+    "word": "adhere",
+    "meaning": "v. 坚持；粘附"
+  },
+  {
+    "word": "adjacent",
+    "meaning": "adj. 邻近的"
+  },
+  {
+    "word": "adverse",
+    "meaning": "adj. 不利的"
+  },
+  {
+    "word": "advocate",
+    "meaning": "v./n. 提倡；拥护者"
+  },
+  {
+    "word": "aesthetic",
+    "meaning": "adj. 审美的"
+  },
+  {
+    "word": "affiliate",
+    "meaning": "v./n. 使隶属；分支机构"
+  },
+  {
+    "word": "aggravate",
+    "meaning": "v. 加剧"
+  },
+  {
+    "word": "alleviate",
+    "meaning": "v. 减轻"
+  },
+  {
+    "word": "alliance",
+    "meaning": "n. 联盟"
+  },
+  {
+    "word": "allowance",
+    "meaning": "n. 津贴"
+  },
+  {
+    "word": "alter",
+    "meaning": "v. 改变"
   },
   {
     "word": "ambiguous",
     "meaning": "adj. 模棱两可的"
   },
   {
-    "word": "comprehensive",
-    "meaning": "adj. 全面的，综合的"
+    "word": "amend",
+    "meaning": "v. 修正"
   },
   {
-    "word": "controversial",
-    "meaning": "adj. 有争议的"
+    "word": "ample",
+    "meaning": "adj. 充足的"
+  },
+  {
+    "word": "amplify",
+    "meaning": "v. 放大"
+  },
+  {
+    "word": "analogy",
+    "meaning": "n. 类比"
+  },
+  {
+    "word": "anonymous",
+    "meaning": "adj. 匿名的"
+  },
+  {
+    "word": "apathy",
+    "meaning": "n. 冷漠"
+  },
+  {
+    "word": "appraisal",
+    "meaning": "n. 评估"
+  },
+  {
+    "word": "apt",
+    "meaning": "adj. 恰当的；易于…的"
+  },
+  {
+    "word": "arbitrary",
+    "meaning": "adj. 任意的"
+  },
+  {
+    "word": "arena",
+    "meaning": "n. 竞技场"
+  },
+  {
+    "word": "arrogant",
+    "meaning": "adj. 傲慢的"
+  },
+  {
+    "word": "articulate",
+    "meaning": "v./adj. 清晰表达；口齿伶俐的"
+  },
+  {
+    "word": "ascend",
+    "meaning": "v. 上升"
+  },
+  {
+    "word": "ascertain",
+    "meaning": "v. 查明"
+  },
+  {
+    "word": "aspiration",
+    "meaning": "n. 渴望"
+  },
+  {
+    "word": "assemble",
+    "meaning": "v. 组装；集合"
+  },
+  {
+    "word": "asset",
+    "meaning": "n. 资产"
+  },
+  {
+    "word": "assimilate",
+    "meaning": "v. 同化"
+  },
+  {
+    "word": "attorney",
+    "meaning": "n. 律师"
+  },
+  {
+    "word": "audit",
+    "meaning": "v./n. 审计"
+  },
+  {
+    "word": "authentic",
+    "meaning": "adj. 真正的"
+  },
+  {
+    "word": "autonomy",
+    "meaning": "n. 自治"
+  },
+  {
+    "word": "avert",
+    "meaning": "v. 避免"
+  },
+  {
+    "word": "aviation",
+    "meaning": "n. 航空"
+  },
+  {
+    "word": "bald",
+    "meaning": "adj. 秃头的"
+  },
+  {
+    "word": "ballot",
+    "meaning": "n. 选票"
+  },
+  {
+    "word": "ban",
+    "meaning": "v./n. 禁止"
+  },
+  {
+    "word": "bargain",
+    "meaning": "n./v. 便宜货；讨价还价"
+  },
+  {
+    "word": "barren",
+    "meaning": "adj. 贫瘠的"
+  },
+  {
+    "word": "batch",
+    "meaning": "n. 一批"
+  },
+  {
+    "word": "beloved",
+    "meaning": "adj. 心爱的"
+  },
+  {
+    "word": "benchmark",
+    "meaning": "n. 基准"
+  },
+  {
+    "word": "betray",
+    "meaning": "v. 背叛"
+  },
+  {
+    "word": "beverage",
+    "meaning": "n. 饮料"
+  },
+  {
+    "word": "bias",
+    "meaning": "n. 偏见"
+  },
+  {
+    "word": "bid",
+    "meaning": "v./n. 出价；投标"
+  },
+  {
+    "word": "biography",
+    "meaning": "n. 传记"
+  },
+  {
+    "word": "blockade",
+    "meaning": "n./v. 封锁"
+  },
+  {
+    "word": "blur",
+    "meaning": "v./n. 模糊"
+  },
+  {
+    "word": "bolster",
+    "meaning": "v. 支持，加固"
+  },
+  {
+    "word": "brake",
+    "meaning": "n./v. 刹车"
+  },
+  {
+    "word": "breakthrough",
+    "meaning": "n. 突破"
+  },
+  {
+    "word": "brutal",
+    "meaning": "adj. 残忍的"
+  },
+  {
+    "word": "bulk",
+    "meaning": "n. 大量；大部分"
+  },
+  {
+    "word": "bureaucratic",
+    "meaning": "adj. 官僚的"
+  },
+  {
+    "word": "calamity",
+    "meaning": "n. 灾难"
+  },
+  {
+    "word": "canvas",
+    "meaning": "n. 帆布；画布"
+  },
+  {
+    "word": "caption",
+    "meaning": "n. 标题；字幕"
+  },
+  {
+    "word": "casualty",
+    "meaning": "n. 伤亡人员"
+  },
+  {
+    "word": "catastrophe",
+    "meaning": "n. 大灾难"
+  },
+  {
+    "word": "cater",
+    "meaning": "v. 迎合；提供饮食"
+  },
+  {
+    "word": "caution",
+    "meaning": "n./v. 谨慎；警告"
+  },
+  {
+    "word": "cease",
+    "meaning": "v. 停止"
+  },
+  {
+    "word": "celebrity",
+    "meaning": "n. 名人"
+  },
+  {
+    "word": "census",
+    "meaning": "n. 人口普查"
+  },
+  {
+    "word": "certify",
+    "meaning": "v. 证明"
+  },
+  {
+    "word": "chaos",
+    "meaning": "n. 混乱"
+  },
+  {
+    "word": "cherish",
+    "meaning": "v. 珍爱"
+  },
+  {
+    "word": "chronic",
+    "meaning": "adj. 慢性的"
+  },
+  {
+    "word": "circulate",
+    "meaning": "v. 循环；流通"
+  },
+  {
+    "word": "cite",
+    "meaning": "v. 引用"
+  },
+  {
+    "word": "civilian",
+    "meaning": "n. 平民"
+  },
+  {
+    "word": "clarify",
+    "meaning": "v. 澄清"
+  },
+  {
+    "word": "cling",
+    "meaning": "v. 紧抓；依附"
+  },
+  {
+    "word": "cluster",
+    "meaning": "n./v. 群；聚集"
+  },
+  {
+    "word": "coincide",
+    "meaning": "v. 同时发生；一致"
+  },
+  {
+    "word": "collaborate",
+    "meaning": "v. 合作"
+  },
+  {
+    "word": "commence",
+    "meaning": "v. 开始"
+  },
+  {
+    "word": "commodity",
+    "meaning": "n. 商品"
+  },
+  {
+    "word": "compact",
+    "meaning": "adj./v. 紧凑的；压缩"
+  },
+  {
+    "word": "compatible",
+    "meaning": "adj. 兼容的"
+  },
+  {
+    "word": "compel",
+    "meaning": "v. 强迫"
+  },
+  {
+    "word": "compensate",
+    "meaning": "v. 补偿"
+  },
+  {
+    "word": "competent",
+    "meaning": "adj. 能胜任的"
+  },
+  {
+    "word": "compile",
+    "meaning": "v. 汇编"
+  },
+  {
+    "word": "complement",
+    "meaning": "v./n. 补充"
+  },
+  {
+    "word": "comply",
+    "meaning": "v. 遵守"
+  },
+  {
+    "word": "comprise",
+    "meaning": "v. 包含"
+  },
+  {
+    "word": "compulsory",
+    "meaning": "adj. 强制的"
+  },
+  {
+    "word": "conceal",
+    "meaning": "v. 隐藏"
+  },
+  {
+    "word": "concede",
+    "meaning": "v. 承认；让步"
+  },
+  {
+    "word": "conceive",
+    "meaning": "v. 构想；怀孕"
+  },
+  {
+    "word": "condemn",
+    "meaning": "v. 谴责"
+  },
+  {
+    "word": "confer",
+    "meaning": "v. 授予；商议"
+  },
+  {
+    "word": "confess",
+    "meaning": "v. 坦白"
+  },
+  {
+    "word": "confine",
+    "meaning": "v. 限制"
+  },
+  {
+    "word": "conform",
+    "meaning": "v. 遵从"
+  },
+  {
+    "word": "confront",
+    "meaning": "v. 面对"
+  },
+  {
+    "word": "consecutive",
+    "meaning": "adj. 连续的"
+  },
+  {
+    "word": "consensus",
+    "meaning": "n. 共识"
+  },
+  {
+    "word": "consolidate",
+    "meaning": "v. 巩固"
+  },
+  {
+    "word": "conspicuous",
+    "meaning": "adj. 显眼的"
+  },
+  {
+    "word": "constrain",
+    "meaning": "v. 约束"
+  },
+  {
+    "word": "contaminate",
+    "meaning": "v. 污染"
+  },
+  {
+    "word": "contempt",
+    "meaning": "n. 蔑视"
+  },
+  {
+    "word": "contend",
+    "meaning": "v. 争辩；竞争"
+  },
+  {
+    "word": "contradict",
+    "meaning": "v. 反驳；矛盾"
+  },
+  {
+    "word": "converge",
+    "meaning": "v. 汇聚"
+  },
+  {
+    "word": "convey",
+    "meaning": "v. 传达；运送"
+  },
+  {
+    "word": "cordial",
+    "meaning": "adj. 诚恳的"
+  },
+  {
+    "word": "corporate",
+    "meaning": "adj. 公司的"
+  },
+  {
+    "word": "correlate",
+    "meaning": "v. 关联"
+  },
+  {
+    "word": "corrupt",
+    "meaning": "adj./v. 腐败的；贿赂"
+  },
+  {
+    "word": "counterpart",
+    "meaning": "n. 对应的人或物"
+  },
+  {
+    "word": "credible",
+    "meaning": "adj. 可信的"
+  },
+  {
+    "word": "criterion",
+    "meaning": "n. 标准"
+  },
+  {
+    "word": "crude",
+    "meaning": "adj. 粗糙的；原油的"
+  },
+  {
+    "word": "crucial",
+    "meaning": "adj. 至关重要的"
+  },
+  {
+    "word": "cumulative",
+    "meaning": "adj. 累积的"
+  },
+  {
+    "word": "curb",
+    "meaning": "n./v. 抑制"
+  },
+  {
+    "word": "cynical",
+    "meaning": "adj. 愤世嫉俗的"
+  },
+  {
+    "word": "decay",
+    "meaning": "v./n. 腐烂；衰退"
+  },
+  {
+    "word": "deceive",
+    "meaning": "v. 欺骗"
+  },
+  {
+    "word": "decisive",
+    "meaning": "adj. 决定性的"
+  },
+  {
+    "word": "dedicate",
+    "meaning": "v. 奉献"
+  },
+  {
+    "word": "deduce",
+    "meaning": "v. 推断"
+  },
+  {
+    "word": "deem",
+    "meaning": "v. 认为"
+  },
+  {
+    "word": "defect",
+    "meaning": "n. 缺陷"
+  },
+  {
+    "word": "deficiency",
+    "meaning": "n. 缺乏；缺陷"
+  },
+  {
+    "word": "deficit",
+    "meaning": "n. 赤字"
+  },
+  {
+    "word": "defy",
+    "meaning": "v. 违抗"
+  },
+  {
+    "word": "degenerate",
+    "meaning": "v./adj. 退化；堕落的"
+  },
+  {
+    "word": "degrade",
+    "meaning": "v. 降级；贬低"
+  },
+  {
+    "word": "delegate",
+    "meaning": "n./v. 代表；委托"
+  },
+  {
+    "word": "delicate",
+    "meaning": "adj. 精致的；微妙的"
+  },
+  {
+    "word": "democracy",
+    "meaning": "n. 民主"
+  },
+  {
+    "word": "denote",
+    "meaning": "v. 表示"
+  },
+  {
+    "word": "denounce",
+    "meaning": "v. 谴责"
+  },
+  {
+    "word": "depict",
+    "meaning": "v. 描绘"
+  },
+  {
+    "word": "deplete",
+    "meaning": "v. 耗尽"
+  },
+  {
+    "word": "deploy",
+    "meaning": "v. 部署"
+  },
+  {
+    "word": "deprive",
+    "meaning": "v. 剥夺"
+  },
+  {
+    "word": "deteriorate",
+    "meaning": "v. 恶化"
+  },
+  {
+    "word": "deviate",
+    "meaning": "v. 偏离"
+  },
+  {
+    "word": "devise",
+    "meaning": "v. 设计，发明"
+  },
+  {
+    "word": "diminish",
+    "meaning": "v. 减少"
+  },
+  {
+    "word": "disable",
+    "meaning": "v. 使失去能力"
+  },
+  {
+    "word": "discard",
+    "meaning": "v. 丢弃"
+  },
+  {
+    "word": "discern",
+    "meaning": "v. 辨别"
+  },
+  {
+    "word": "disclose",
+    "meaning": "v. 揭露"
+  },
+  {
+    "word": "discrete",
+    "meaning": "adj. 分离的"
+  },
+  {
+    "word": "discriminate",
+    "meaning": "v. 歧视；区分"
+  },
+  {
+    "word": "disdain",
+    "meaning": "n./v. 鄙视"
+  },
+  {
+    "word": "disguise",
+    "meaning": "v./n. 伪装"
+  },
+  {
+    "word": "dismay",
+    "meaning": "n./v. 沮丧"
+  },
+  {
+    "word": "disperse",
+    "meaning": "v. 驱散"
+  },
+  {
+    "word": "displace",
+    "meaning": "v. 取代；使离开"
+  },
+  {
+    "word": "dispose",
+    "meaning": "v. 处理；处置"
+  },
+  {
+    "word": "disrupt",
+    "meaning": "v. 扰乱"
+  },
+  {
+    "word": "dissolve",
+    "meaning": "v. 溶解"
+  },
+  {
+    "word": "distort",
+    "meaning": "v. 扭曲"
+  },
+  {
+    "word": "distress",
+    "meaning": "n. 痛苦"
+  },
+  {
+    "word": "divert",
+    "meaning": "v. 转移"
+  },
+  {
+    "word": "doctrine",
+    "meaning": "n. 教义"
+  },
+  {
+    "word": "domain",
+    "meaning": "n. 领域"
+  },
+  {
+    "word": "donate",
+    "meaning": "v. 捐赠"
+  },
+  {
+    "word": "dubious",
+    "meaning": "adj. 可疑的"
+  },
+  {
+    "word": "dwell",
+    "meaning": "v. 居住；细想"
+  },
+  {
+    "word": "eclipse",
+    "meaning": "n./v. 日食；使失色"
+  },
+  {
+    "word": "ecology",
+    "meaning": "n. 生态"
   },
   {
     "word": "elaborate",
-    "meaning": "adj. 精心的 v. 详细阐述"
+    "meaning": "adj./v. 精心制作的；详述"
+  },
+  {
+    "word": "elephant",
+    "meaning": "n. 大象"
+  },
+  {
+    "word": "eligible",
+    "meaning": "adj. 有资格的"
+  },
+  {
+    "word": "eloquent",
+    "meaning": "adj. 雄辩的"
+  },
+  {
+    "word": "embark",
+    "meaning": "v. 着手；登船"
+  },
+  {
+    "word": "embody",
+    "meaning": "v. 体现"
+  },
+  {
+    "word": "eminent",
+    "meaning": "adj. 杰出的"
+  },
+  {
+    "word": "empirical",
+    "meaning": "adj. 经验的"
+  },
+  {
+    "word": "enact",
+    "meaning": "v. 制定法律"
+  },
+  {
+    "word": "encompass",
+    "meaning": "v. 包含"
+  },
+  {
+    "word": "endeavor",
+    "meaning": "n./v. 努力"
+  },
+  {
+    "word": "endorse",
+    "meaning": "v. 支持；签署"
+  },
+  {
+    "word": "endow",
+    "meaning": "v. 捐赠；赋予"
+  },
+  {
+    "word": "enforce",
+    "meaning": "v. 执行"
+  },
+  {
+    "word": "engagement",
+    "meaning": "n. 约定；订婚"
+  },
+  {
+    "word": "enrich",
+    "meaning": "v. 丰富"
+  },
+  {
+    "word": "enroll",
+    "meaning": "v. 登记；入学"
+  },
+  {
+    "word": "entail",
+    "meaning": "v. 需要；牵涉"
+  },
+  {
+    "word": "entitle",
+    "meaning": "v. 使有权"
+  },
+  {
+    "word": "epidemic",
+    "meaning": "n./adj. 流行病；流行的"
+  },
+  {
+    "word": "erode",
+    "meaning": "v. 侵蚀"
+  },
+  {
+    "word": "escalate",
+    "meaning": "v. 升级"
+  },
+  {
+    "word": "escort",
+    "meaning": "n./v. 护送"
+  },
+  {
+    "word": "ethical",
+    "meaning": "adj. 道德的"
+  },
+  {
+    "word": "evacuate",
+    "meaning": "v. 疏散"
+  },
+  {
+    "word": "evoke",
+    "meaning": "v. 唤起"
+  },
+  {
+    "word": "exempt",
+    "meaning": "adj./v. 免除的；豁免"
+  },
+  {
+    "word": "exert",
+    "meaning": "v. 施加"
+  },
+  {
+    "word": "exquisite",
+    "meaning": "adj. 精致的"
+  },
+  {
+    "word": "extinct",
+    "meaning": "adj. 灭绝的"
+  },
+  {
+    "word": "extract",
+    "meaning": "v./n. 提取；摘录"
+  },
+  {
+    "word": "fabricate",
+    "meaning": "v. 捏造；制造"
+  },
+  {
+    "word": "facilitate",
+    "meaning": "v. 促进"
+  },
+  {
+    "word": "faction",
+    "meaning": "n. 派系"
+  },
+  {
+    "word": "fatigue",
+    "meaning": "n. 疲劳"
+  },
+  {
+    "word": "feasible",
+    "meaning": "adj. 可行的"
+  },
+  {
+    "word": "feeble",
+    "meaning": "adj. 虚弱的"
+  },
+  {
+    "word": "figure",
+    "meaning": "n./v. 人物；数字；认为"
+  },
+  {
+    "word": "flaw",
+    "meaning": "n. 缺陷"
   },
   {
     "word": "fluctuate",
-    "meaning": "v. 波动，起伏"
+    "meaning": "v. 波动"
   },
   {
-    "word": "implement",
-    "meaning": "v. 实施，执行"
+    "word": "foremost",
+    "meaning": "adj. 首要的"
   },
   {
-    "word": "sophisticated",
-    "meaning": "adj. 复杂的；精密的"
+    "word": "formidable",
+    "meaning": "adj. 强大的；艰巨的"
+  },
+  {
+    "word": "formulate",
+    "meaning": "v. 制定"
+  },
+  {
+    "word": "forsake",
+    "meaning": "v. 抛弃"
+  },
+  {
+    "word": "foster",
+    "meaning": "v. 培养；收养"
+  },
+  {
+    "word": "fragile",
+    "meaning": "adj. 脆弱的"
+  },
+  {
+    "word": "fragment",
+    "meaning": "n. 碎片"
+  },
+  {
+    "word": "framework",
+    "meaning": "n. 框架"
+  },
+  {
+    "word": "fraud",
+    "meaning": "n. 欺诈"
+  },
+  {
+    "word": "friction",
+    "meaning": "n. 摩擦"
+  },
+  {
+    "word": "fringe",
+    "meaning": "n. 边缘"
+  },
+  {
+    "word": "frugal",
+    "meaning": "adj. 节俭的"
+  },
+  {
+    "word": "funding",
+    "meaning": "n. 资金"
+  },
+  {
+    "word": "fury",
+    "meaning": "n. 狂怒"
+  },
+  {
+    "word": "gauge",
+    "meaning": "v./n. 估计；计量器"
+  },
+  {
+    "word": "generalize",
+    "meaning": "v. 概括"
+  },
+  {
+    "word": "genetic",
+    "meaning": "adj. 基因的"
+  },
+  {
+    "word": "genocide",
+    "meaning": "n. 种族灭绝"
+  },
+  {
+    "word": "glimpse",
+    "meaning": "n./v. 一瞥"
+  },
+  {
+    "word": "glitter",
+    "meaning": "v./n. 闪光"
+  },
+  {
+    "word": "gorgeous",
+    "meaning": "adj. 华丽的"
+  },
+  {
+    "word": "grasp",
+    "meaning": "v. 抓住；理解"
+  },
+  {
+    "word": "grave",
+    "meaning": "adj./n. 严重的；坟墓"
+  },
+  {
+    "word": "grief",
+    "meaning": "n. 悲伤"
+  },
+  {
+    "word": "gross",
+    "meaning": "adj. 总的；粗俗的"
+  },
+  {
+    "word": "guilt",
+    "meaning": "n. 内疚"
+  },
+  {
+    "word": "hamper",
+    "meaning": "v. 妨碍"
+  },
+  {
+    "word": "harassment",
+    "meaning": "n. 骚扰"
+  },
+  {
+    "word": "haul",
+    "meaning": "v./n. 拖运"
+  },
+  {
+    "word": "haunt",
+    "meaning": "v. 萦绕"
+  },
+  {
+    "word": "hazard",
+    "meaning": "n. 危险"
+  },
+  {
+    "word": "heritage",
+    "meaning": "n. 遗产"
+  },
+  {
+    "word": "hierarchy",
+    "meaning": "n. 等级制度"
+  },
+  {
+    "word": "hinder",
+    "meaning": "v. 阻碍"
+  },
+  {
+    "word": "hollow",
+    "meaning": "adj. 空心的"
+  },
+  {
+    "word": "homogeneous",
+    "meaning": "adj. 同质的"
+  },
+  {
+    "word": "hostile",
+    "meaning": "adj. 敌意的"
+  },
+  {
+    "word": "humanity",
+    "meaning": "n. 人类；人道"
+  },
+  {
+    "word": "hybrid",
+    "meaning": "n./adj. 混合的"
+  },
+  {
+    "word": "hypothesis",
+    "meaning": "n. 假设"
+  },
+  {
+    "word": "ideology",
+    "meaning": "n. 意识形态"
+  },
+  {
+    "word": "idle",
+    "meaning": "adj. 空闲的"
+  },
+  {
+    "word": "illuminate",
+    "meaning": "v. 照亮；阐明"
+  },
+  {
+    "word": "imminent",
+    "meaning": "adj. 即将发生的"
+  },
+  {
+    "word": "immune",
+    "meaning": "adj. 免疫的"
+  },
+  {
+    "word": "impair",
+    "meaning": "v. 损害"
+  },
+  {
+    "word": "impart",
+    "meaning": "v. 传授"
+  },
+  {
+    "word": "imperative",
+    "meaning": "adj./n. 必要的；命令"
+  },
+  {
+    "word": "implicit",
+    "meaning": "adj. 含蓄的"
+  },
+  {
+    "word": "inaugurate",
+    "meaning": "v. 就职；开创"
+  },
+  {
+    "word": "incentive",
+    "meaning": "n. 激励"
+  },
+  {
+    "word": "incidence",
+    "meaning": "n. 发生率"
+  },
+  {
+    "word": "incline",
+    "meaning": "v. 倾向"
+  },
+  {
+    "word": "incorporate",
+    "meaning": "v. 合并"
+  },
+  {
+    "word": "indignant",
+    "meaning": "adj. 愤怒的"
+  },
+  {
+    "word": "induce",
+    "meaning": "v. 引起；诱使"
+  },
+  {
+    "word": "indulge",
+    "meaning": "v. 沉溺"
+  },
+  {
+    "word": "inflict",
+    "meaning": "v. 造成（伤害）"
+  },
+  {
+    "word": "inherent",
+    "meaning": "adj. 固有的"
+  },
+  {
+    "word": "inhibit",
+    "meaning": "v. 抑制"
+  },
+  {
+    "word": "initiate",
+    "meaning": "v. 发起"
+  },
+  {
+    "word": "inject",
+    "meaning": "v. 注射"
+  },
+  {
+    "word": "innate",
+    "meaning": "adj. 天生的"
+  },
+  {
+    "word": "insight",
+    "meaning": "n. 洞察力"
+  },
+  {
+    "word": "inspection",
+    "meaning": "n. 检查"
+  },
+  {
+    "word": "integral",
+    "meaning": "adj. 不可或缺的"
+  },
+  {
+    "word": "integrity",
+    "meaning": "n. 诚信；完整"
+  },
+  {
+    "word": "interim",
+    "meaning": "adj./n. 临时的；过渡期"
+  },
+  {
+    "word": "intervene",
+    "meaning": "v. 干预"
+  },
+  {
+    "word": "intimidate",
+    "meaning": "v. 恐吓"
+  },
+  {
+    "word": "intricate",
+    "meaning": "adj. 复杂的"
+  },
+  {
+    "word": "intrinsic",
+    "meaning": "adj. 内在的"
+  },
+  {
+    "word": "invaluable",
+    "meaning": "adj. 无价的"
+  },
+  {
+    "word": "inventory",
+    "meaning": "n. 库存"
+  },
+  {
+    "word": "irony",
+    "meaning": "n. 讽刺"
+  },
+  {
+    "word": "jeopardize",
+    "meaning": "v. 危及"
+  },
+  {
+    "word": "kidnap",
+    "meaning": "v. 绑架"
+  },
+  {
+    "word": "legitimate",
+    "meaning": "adj. 合法的"
+  },
+  {
+    "word": "liability",
+    "meaning": "n. 责任；负债"
+  },
+  {
+    "word": "linger",
+    "meaning": "v. 逗留"
+  },
+  {
+    "word": "literacy",
+    "meaning": "n. 读写能力"
+  },
+  {
+    "word": "lobby",
+    "meaning": "n./v. 游说"
+  },
+  {
+    "word": "loyalty",
+    "meaning": "n. 忠诚"
+  },
+  {
+    "word": "magnitude",
+    "meaning": "n. 巨大；数值"
+  },
+  {
+    "word": "mandatory",
+    "meaning": "adj. 强制的"
+  },
+  {
+    "word": "maneuver",
+    "meaning": "n./v. 策略；操作"
+  },
+  {
+    "word": "manuscript",
+    "meaning": "n. 手稿"
+  },
+  {
+    "word": "marginal",
+    "meaning": "adj. 边缘的；微小的"
+  },
+  {
+    "word": "mediate",
+    "meaning": "v. 调解"
+  },
+  {
+    "word": "meditate",
+    "meaning": "v. 冥想"
+  },
+  {
+    "word": "merit",
+    "meaning": "n./v. 优点；值得"
+  },
+  {
+    "word": "metaphor",
+    "meaning": "n. 隐喻"
+  },
+  {
+    "word": "meticulous",
+    "meaning": "adj. 细致的"
+  },
+  {
+    "word": "migrate",
+    "meaning": "v. 迁徙"
+  },
+  {
+    "word": "milestone",
+    "meaning": "n. 里程碑"
+  },
+  {
+    "word": "mingle",
+    "meaning": "v. 混合；交往"
+  },
+  {
+    "word": "minimal",
+    "meaning": "adj. 最小的"
+  },
+  {
+    "word": "mobilize",
+    "meaning": "v. 动员"
+  },
+  {
+    "word": "mock",
+    "meaning": "v./adj. 嘲弄；模拟的"
+  },
+  {
+    "word": "mortality",
+    "meaning": "n. 死亡率"
+  },
+  {
+    "word": "motivate",
+    "meaning": "v. 激励"
+  },
+  {
+    "word": "navigate",
+    "meaning": "v. 导航"
+  },
+  {
+    "word": "negligible",
+    "meaning": "adj. 微不足道的"
+  },
+  {
+    "word": "nominal",
+    "meaning": "adj. 名义上的"
+  },
+  {
+    "word": "notable",
+    "meaning": "adj. 显著的"
+  },
+  {
+    "word": "notorious",
+    "meaning": "adj. 臭名昭著的"
+  },
+  {
+    "word": "nourish",
+    "meaning": "v. 滋养"
+  },
+  {
+    "word": "obedient",
+    "meaning": "adj. 顺从的"
+  },
+  {
+    "word": "oblige",
+    "meaning": "v. 迫使；帮忙"
+  },
+  {
+    "word": "obscure",
+    "meaning": "adj./v. 模糊的；使晦涩"
+  },
+  {
+    "word": "obsolete",
+    "meaning": "adj. 过时的"
+  },
+  {
+    "word": "offset",
+    "meaning": "v. 抵消"
+  },
+  {
+    "word": "ominous",
+    "meaning": "adj. 不祥的"
+  },
+  {
+    "word": "oppress",
+    "meaning": "v. 压迫"
+  },
+  {
+    "word": "optimism",
+    "meaning": "n. 乐观"
+  },
+  {
+    "word": "outbreak",
+    "meaning": "n. 爆发"
+  },
+  {
+    "word": "outcry",
+    "meaning": "n. 抗议"
+  },
+  {
+    "word": "outrage",
+    "meaning": "n. 愤怒"
+  },
+  {
+    "word": "overhaul",
+    "meaning": "v./n. 彻底检修"
+  },
+  {
+    "word": "overlap",
+    "meaning": "v./n. 重叠"
+  },
+  {
+    "word": "overwhelm",
+    "meaning": "v. 压倒"
+  },
+  {
+    "word": "paradox",
+    "meaning": "n. 悖论"
+  },
+  {
+    "word": "paralyze",
+    "meaning": "v. 使瘫痪"
+  },
+  {
+    "word": "parliament",
+    "meaning": "n. 议会"
+  },
+  {
+    "word": "passive",
+    "meaning": "adj. 被动的"
+  },
+  {
+    "word": "patent",
+    "meaning": "n./adj. 专利"
+  },
+  {
+    "word": "pathetic",
+    "meaning": "adj. 可怜的"
+  },
+  {
+    "word": "peculiar",
+    "meaning": "adj. 奇特的"
+  },
+  {
+    "word": "perpetual",
+    "meaning": "adj. 永恒的"
+  },
+  {
+    "word": "persuade",
+    "meaning": "v. 说服"
+  },
+  {
+    "word": "pioneer",
+    "meaning": "n./v. 先驱；开创"
+  },
+  {
+    "word": "plausible",
+    "meaning": "adj. 貌似合理的"
+  },
+  {
+    "word": "plead",
+    "meaning": "v. 恳求；辩护"
+  },
+  {
+    "word": "pledge",
+    "meaning": "n./v. 承诺"
+  },
+  {
+    "word": "plight",
+    "meaning": "n. 困境"
+  },
+  {
+    "word": "plunge",
+    "meaning": "v./n. 骤降；跳入"
+  },
+  {
+    "word": "poll",
+    "meaning": "n./v. 民意调查"
+  },
+  {
+    "word": "portray",
+    "meaning": "v. 描绘"
+  },
+  {
+    "word": "postpone",
+    "meaning": "v. 推迟"
+  },
+  {
+    "word": "precaution",
+    "meaning": "n. 预防措施"
+  },
+  {
+    "word": "precede",
+    "meaning": "v. 先于"
+  },
+  {
+    "word": "precedent",
+    "meaning": "n. 先例"
+  },
+  {
+    "word": "predecessor",
+    "meaning": "n. 前任"
+  },
+  {
+    "word": "predominant",
+    "meaning": "adj. 主要的"
+  },
+  {
+    "word": "preliminary",
+    "meaning": "adj. 初步的"
+  },
+  {
+    "word": "premise",
+    "meaning": "n. 前提"
+  },
+  {
+    "word": "prescribe",
+    "meaning": "v. 开处方；规定"
+  },
+  {
+    "word": "prestige",
+    "meaning": "n. 声望"
+  },
+  {
+    "word": "presume",
+    "meaning": "v. 假定"
+  },
+  {
+    "word": "prevail",
+    "meaning": "v. 盛行；获胜"
+  },
+  {
+    "word": "proficient",
+    "meaning": "adj. 熟练的"
+  },
+  {
+    "word": "prolong",
+    "meaning": "v. 延长"
+  },
+  {
+    "word": "prone",
+    "meaning": "adj. 易于…的"
+  },
+  {
+    "word": "prosecute",
+    "meaning": "v. 起诉"
+  },
+  {
+    "word": "provoke",
+    "meaning": "v. 挑衅"
+  },
+  {
+    "word": "prudent",
+    "meaning": "adj. 谨慎的"
+  },
+  {
+    "word": "quota",
+    "meaning": "n. 配额"
+  },
+  {
+    "word": "radiant",
+    "meaning": "adj. 容光焕发的"
+  },
+  {
+    "word": "ratify",
+    "meaning": "v. 批准"
+  },
+  {
+    "word": "rebel",
+    "meaning": "n./v. 反抗者；反叛"
+  },
+  {
+    "word": "recession",
+    "meaning": "n. 衰退"
+  },
+  {
+    "word": "recipient",
+    "meaning": "n. 接受者"
+  },
+  {
+    "word": "reckless",
+    "meaning": "adj. 鲁莽的"
+  },
+  {
+    "word": "reconcile",
+    "meaning": "v. 调和"
+  },
+  {
+    "word": "refute",
+    "meaning": "v. 反驳"
+  },
+  {
+    "word": "regime",
+    "meaning": "n. 政权"
+  },
+  {
+    "word": "reign",
+    "meaning": "n./v. 统治"
+  },
+  {
+    "word": "remedy",
+    "meaning": "n./v. 补救"
+  },
+  {
+    "word": "renowned",
+    "meaning": "adj. 著名的"
+  },
+  {
+    "word": "repression",
+    "meaning": "n. 压制"
+  },
+  {
+    "word": "resent",
+    "meaning": "v. 怨恨"
+  },
+  {
+    "word": "reside",
+    "meaning": "v. 居住"
+  },
+  {
+    "word": "resumption",
+    "meaning": "n. 恢复"
+  },
+  {
+    "word": "retrieve",
+    "meaning": "v. 取回"
+  },
+  {
+    "word": "rigorous",
+    "meaning": "adj. 严格的"
+  },
+  {
+    "word": "robust",
+    "meaning": "adj. 强健的"
+  },
+  {
+    "word": "rupture",
+    "meaning": "n./v. 破裂"
+  },
+  {
+    "word": "savage",
+    "meaning": "adj. 野蛮的"
+  },
+  {
+    "word": "scenario",
+    "meaning": "n. 剧情；设想"
+  },
+  {
+    "word": "scrap",
+    "meaning": "n./v. 废料；废弃"
+  },
+  {
+    "word": "scrutiny",
+    "meaning": "n. 审查"
+  },
+  {
+    "word": "segregate",
+    "meaning": "v. 隔离"
+  },
+  {
+    "word": "sensation",
+    "meaning": "n. 感觉；轰动"
+  },
+  {
+    "word": "sentiment",
+    "meaning": "n. 情感"
+  },
+  {
+    "word": "setback",
+    "meaning": "n. 挫折"
+  },
+  {
+    "word": "shield",
+    "meaning": "n./v. 盾牌；保护"
+  },
+  {
+    "word": "simultaneous",
+    "meaning": "adj. 同时的"
+  },
+  {
+    "word": "skeptical",
+    "meaning": "adj. 怀疑的"
+  },
+  {
+    "word": "slack",
+    "meaning": "adj. 松弛的"
+  },
+  {
+    "word": "slogan",
+    "meaning": "n. 标语"
+  },
+  {
+    "word": "sovereign",
+    "meaning": "n./adj. 君主；主权的"
+  },
+  {
+    "word": "spectacular",
+    "meaning": "adj. 壮观的"
+  },
+  {
+    "word": "speculate",
+    "meaning": "v. 猜测；投机"
+  },
+  {
+    "word": "stagnant",
+    "meaning": "adj. 停滞的"
+  },
+  {
+    "word": "stake",
+    "meaning": "n. 股份；利害关系"
+  },
+  {
+    "word": "statute",
+    "meaning": "n. 法规"
+  },
+  {
+    "word": "stern",
+    "meaning": "adj. 严厉的"
+  },
+  {
+    "word": "stimulate",
+    "meaning": "v. 刺激"
+  },
+  {
+    "word": "subordinate",
+    "meaning": "adj./n. 从属的；下属"
+  },
+  {
+    "word": "subsequent",
+    "meaning": "adj. 随后的"
+  },
+  {
+    "word": "subsidy",
+    "meaning": "n. 补贴"
   },
   {
     "word": "substantial",
-    "meaning": "adj. 大量的，实质的"
+    "meaning": "adj. 大量的"
+  },
+  {
+    "word": "succession",
+    "meaning": "n. 连续；继承"
+  },
+  {
+    "word": "summit",
+    "meaning": "n. 峰会；顶峰"
+  },
+  {
+    "word": "superstition",
+    "meaning": "n. 迷信"
+  },
+  {
+    "word": "supplementary",
+    "meaning": "adj. 补充的"
+  },
+  {
+    "word": "suppress",
+    "meaning": "v. 镇压；抑制"
+  },
+  {
+    "word": "surpass",
+    "meaning": "v. 超越"
+  },
+  {
+    "word": "susceptible",
+    "meaning": "adj. 易受影响的"
+  },
+  {
+    "word": "synthesis",
+    "meaning": "n. 合成"
+  },
+  {
+    "word": "tackle",
+    "meaning": "v. 处理"
+  },
+  {
+    "word": "tactic",
+    "meaning": "n. 策略"
+  },
+  {
+    "word": "tangible",
+    "meaning": "adj. 有形的"
+  },
+  {
+    "word": "tedious",
+    "meaning": "adj. 冗长的"
+  },
+  {
+    "word": "tempt",
+    "meaning": "v. 诱惑"
+  },
+  {
+    "word": "tentative",
+    "meaning": "adj. 试探性的"
+  },
+  {
+    "word": "terminate",
+    "meaning": "v. 终止"
+  },
+  {
+    "word": "testify",
+    "meaning": "v. 作证"
+  },
+  {
+    "word": "theft",
+    "meaning": "n. 盗窃"
+  },
+  {
+    "word": "thesis",
+    "meaning": "n. 论文"
+  },
+  {
+    "word": "threshold",
+    "meaning": "n. 门槛"
+  },
+  {
+    "word": "tolerate",
+    "meaning": "v. 容忍"
+  },
+  {
+    "word": "trait",
+    "meaning": "n. 特征"
+  },
+  {
+    "word": "transaction",
+    "meaning": "n. 交易"
+  },
+  {
+    "word": "transcend",
+    "meaning": "v. 超越"
+  },
+  {
+    "word": "transient",
+    "meaning": "adj. 短暂的"
+  },
+  {
+    "word": "traverse",
+    "meaning": "v. 穿越"
+  },
+  {
+    "word": "tremendous",
+    "meaning": "adj. 巨大的"
+  },
+  {
+    "word": "turbulent",
+    "meaning": "adj. 动荡的"
+  },
+  {
+    "word": "unify",
+    "meaning": "v. 统一"
+  },
+  {
+    "word": "vacant",
+    "meaning": "adj. 空的"
+  },
+  {
+    "word": "valid",
+    "meaning": "adj. 有效的"
+  },
+  {
+    "word": "vanish",
+    "meaning": "v. 消失"
+  },
+  {
+    "word": "vent",
+    "meaning": "n./v. 通风口；发泄"
+  },
+  {
+    "word": "verify",
+    "meaning": "v. 核实"
+  },
+  {
+    "word": "versatile",
+    "meaning": "adj. 多才多艺的"
+  },
+  {
+    "word": "viable",
+    "meaning": "adj. 可行的"
+  },
+  {
+    "word": "vibrant",
+    "meaning": "adj. 充满活力的"
+  },
+  {
+    "word": "vigor",
+    "meaning": "n. 活力"
+  },
+  {
+    "word": "virtue",
+    "meaning": "n. 美德"
+  },
+  {
+    "word": "warfare",
+    "meaning": "n. 战争"
+  },
+  {
+    "word": "warrant",
+    "meaning": "n./v. 令状；保证"
+  },
+  {
+    "word": "weary",
+    "meaning": "adj. 疲倦的"
+  },
+  {
+    "word": "withdraw",
+    "meaning": "v. 撤回；取款"
+  },
+  {
+    "word": "withstand",
+    "meaning": "v. 承受"
+  },
+  {
+    "word": "yield",
+    "meaning": "v./n. 产生；屈服；产量"
   }
 ]

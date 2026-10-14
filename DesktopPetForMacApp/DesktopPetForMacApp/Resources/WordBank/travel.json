@@ -4,16 +4,24 @@
     "meaning": "n. 护照"
   },
   {
-    "word": "reservation",
-    "meaning": "n. 预订，预约"
+    "word": "visa",
+    "meaning": "n. 签证"
   },
   {
-    "word": "currency",
-    "meaning": "n. 货币"
+    "word": "reservation",
+    "meaning": "n. 预订"
+  },
+  {
+    "word": "itinerary",
+    "meaning": "n. 行程表"
   },
   {
     "word": "departure",
-    "meaning": "n. 出发，离开"
+    "meaning": "n. 出发"
+  },
+  {
+    "word": "arrival",
+    "meaning": "n. 到达"
   },
   {
     "word": "destination",
@@ -24,120 +32,28 @@
     "meaning": "n. 行李"
   },
   {
-    "word": "itinerary",
-    "meaning": "n. 行程，路线"
+    "word": "baggage",
+    "meaning": "n. 行李"
   },
   {
-    "word": "accommodation",
-    "meaning": "n. 住宿"
+    "word": "carry-on",
+    "meaning": "n. 随身行李"
   },
   {
-    "word": "souvenir",
-    "meaning": "n. 纪念品"
+    "word": "suitcase",
+    "meaning": "n. 行李箱"
   },
   {
-    "word": "exchange",
-    "meaning": "v. 兑换；交换"
-  },
-  {
-    "word": "airport",
-    "meaning": "n. 机场"
+    "word": "backpack",
+    "meaning": "n. 背包"
   },
   {
     "word": "boarding pass",
     "meaning": "n. 登机牌"
   },
   {
-    "word": "customs",
-    "meaning": "n. 海关"
-  },
-  {
-    "word": "flight",
-    "meaning": "n. 航班；飞行"
-  },
-  {
-    "word": "hotel",
-    "meaning": "n. 酒店"
-  },
-  {
     "word": "check-in",
-    "meaning": "n. 登记入住；办理登机"
-  },
-  {
-    "word": "check-out",
-    "meaning": "n. 退房；结账离开"
-  },
-  {
-    "word": "tourist",
-    "meaning": "n. 游客"
-  },
-  {
-    "word": "sightseeing",
-    "meaning": "n. 观光"
-  },
-  {
-    "word": "map",
-    "meaning": "n. 地图"
-  },
-  {
-    "word": "direction",
-    "meaning": "n. 方向；指示"
-  },
-  {
-    "word": "transportation",
-    "meaning": "n. 交通"
-  },
-  {
-    "word": "taxi",
-    "meaning": "n. 出租车"
-  },
-  {
-    "word": "subway",
-    "meaning": "n. 地铁"
-  },
-  {
-    "word": "ticket",
-    "meaning": "n. 票；门票"
-  },
-  {
-    "word": "visa",
-    "meaning": "n. 签证"
-  },
-  {
-    "word": "travel insurance",
-    "meaning": "n. 旅行保险"
-  },
-  {
-    "word": "vacation",
-    "meaning": "n. 假期"
-  },
-  {
-    "word": "tour guide",
-    "meaning": "n. 导游"
-  },
-  {
-    "word": "landmark",
-    "meaning": "n. 地标"
-  },
-  {
-    "word": "terminal",
-    "meaning": "n. 航站楼；终点站"
-  },
-  {
-    "word": "delay",
-    "meaning": "n./v. 延误；推迟"
-  },
-  {
-    "word": "cancellation",
-    "meaning": "n. 取消"
-  },
-  {
-    "word": "baggage claim",
-    "meaning": "n. 行李提取处"
-  },
-  {
-    "word": "duty-free",
-    "meaning": "adj. 免税的"
+    "meaning": "n. 值机；入住"
   },
   {
     "word": "boarding",
@@ -148,55 +64,407 @@
     "meaning": "n. 登机口"
   },
   {
-    "word": "aisle",
-    "meaning": "n. 过道；走廊"
-  },
-  {
-    "word": "window seat",
-    "meaning": "n. 靠窗座位"
-  },
-  {
     "word": "layover",
     "meaning": "n. 中转停留"
   },
   {
-    "word": "round trip",
-    "meaning": "n. 往返旅程"
+    "word": "transfer",
+    "meaning": "v./n. 转机；换乘"
+  },
+  {
+    "word": "customs",
+    "meaning": "n. 海关"
+  },
+  {
+    "word": "immigration",
+    "meaning": "n. 出入境检查"
+  },
+  {
+    "word": "declaration",
+    "meaning": "n. 申报"
+  },
+  {
+    "word": "duty-free",
+    "meaning": "adj. 免税的"
+  },
+  {
+    "word": "currency",
+    "meaning": "n. 货币"
+  },
+  {
+    "word": "exchange rate",
+    "meaning": "n. 汇率"
+  },
+  {
+    "word": "cash",
+    "meaning": "n. 现金"
+  },
+  {
+    "word": "credit card",
+    "meaning": "n. 信用卡"
+  },
+  {
+    "word": "receipt",
+    "meaning": "n. 收据"
+  },
+  {
+    "word": "refund",
+    "meaning": "n./v. 退款"
+  },
+  {
+    "word": "tip",
+    "meaning": "n./v. 小费"
+  },
+  {
+    "word": "fare",
+    "meaning": "n. 票价"
+  },
+  {
+    "word": "ticket",
+    "meaning": "n. 票"
+  },
+  {
+    "word": "round-trip",
+    "meaning": "adj. 往返的"
   },
   {
     "word": "one-way",
     "meaning": "adj. 单程的"
   },
   {
+    "word": "economy class",
+    "meaning": "n. 经济舱"
+  },
+  {
+    "word": "business class",
+    "meaning": "n. 商务舱"
+  },
+  {
+    "word": "aisle seat",
+    "meaning": "n. 靠过道座位"
+  },
+  {
+    "word": "window seat",
+    "meaning": "n. 靠窗座位"
+  },
+  {
+    "word": "seat belt",
+    "meaning": "n. 安全带"
+  },
+  {
+    "word": "flight attendant",
+    "meaning": "n. 空乘人员"
+  },
+  {
+    "word": "captain",
+    "meaning": "n. 机长"
+  },
+  {
+    "word": "takeoff",
+    "meaning": "n. 起飞"
+  },
+  {
+    "word": "landing",
+    "meaning": "n. 降落"
+  },
+  {
+    "word": "turbulence",
+    "meaning": "n. 气流颠簸"
+  },
+  {
+    "word": "cancellation",
+    "meaning": "n. 取消"
+  },
+  {
+    "word": "shuttle",
+    "meaning": "n. 机场巴士"
+  },
+  {
+    "word": "taxi",
+    "meaning": "n. 出租车"
+  },
+  {
+    "word": "subway",
+    "meaning": "n. 地铁"
+  },
+  {
+    "word": "platform",
+    "meaning": "n. 站台"
+  },
+  {
+    "word": "station",
+    "meaning": "n. 车站"
+  },
+  {
     "word": "hostel",
     "meaning": "n. 青年旅舍"
   },
   {
-    "word": "receipt",
-    "meaning": "n. 收据；发票"
+    "word": "hotel",
+    "meaning": "n. 酒店"
   },
   {
-    "word": "tip",
-    "meaning": "n. 小费 v. 给小费"
+    "word": "suite",
+    "meaning": "n. 套房"
+  },
+  {
+    "word": "double room",
+    "meaning": "n. 双人房"
+  },
+  {
+    "word": "twin room",
+    "meaning": "n. 双床房"
+  },
+  {
+    "word": "vacancy",
+    "meaning": "n. 空房"
+  },
+  {
+    "word": "housekeeping",
+    "meaning": "n. 客房服务"
+  },
+  {
+    "word": "front desk",
+    "meaning": "n. 前台"
+  },
+  {
+    "word": "concierge",
+    "meaning": "n. 礼宾部"
+  },
+  {
+    "word": "amenity",
+    "meaning": "n. 便利设施"
+  },
+  {
+    "word": "wake-up call",
+    "meaning": "n. 叫醒服务"
+  },
+  {
+    "word": "sightseeing",
+    "meaning": "n. 观光"
+  },
+  {
+    "word": "attraction",
+    "meaning": "n. 景点"
+  },
+  {
+    "word": "landmark",
+    "meaning": "n. 地标"
+  },
+  {
+    "word": "museum",
+    "meaning": "n. 博物馆"
+  },
+  {
+    "word": "gallery",
+    "meaning": "n. 美术馆"
+  },
+  {
+    "word": "temple",
+    "meaning": "n. 寺庙"
+  },
+  {
+    "word": "castle",
+    "meaning": "n. 城堡"
+  },
+  {
+    "word": "viewpoint",
+    "meaning": "n. 观景点"
+  },
+  {
+    "word": "souvenir",
+    "meaning": "n. 纪念品"
+  },
+  {
+    "word": "local guide",
+    "meaning": "n. 当地向导"
+  },
+  {
+    "word": "tour group",
+    "meaning": "n. 旅行团"
+  },
+  {
+    "word": "brochure",
+    "meaning": "n. 宣传册"
+  },
+  {
+    "word": "scenery",
+    "meaning": "n. 风景"
+  },
+  {
+    "word": "adventure",
+    "meaning": "n. 冒险"
+  },
+  {
+    "word": "hiking",
+    "meaning": "n. 徒步"
+  },
+  {
+    "word": "camping",
+    "meaning": "n. 露营"
+  },
+  {
+    "word": "snorkeling",
+    "meaning": "n. 浮潜"
+  },
+  {
+    "word": "surfing",
+    "meaning": "n. 冲浪"
+  },
+  {
+    "word": "skiing",
+    "meaning": "n. 滑雪"
+  },
+  {
+    "word": "seaside",
+    "meaning": "n. 海滨"
+  },
+  {
+    "word": "beach",
+    "meaning": "n. 海滩"
+  },
+  {
+    "word": "island",
+    "meaning": "n. 岛屿"
+  },
+  {
+    "word": "desert",
+    "meaning": "n. 沙漠"
+  },
+  {
+    "word": "rainforest",
+    "meaning": "n. 雨林"
+  },
+  {
+    "word": "waterfall",
+    "meaning": "n. 瀑布"
+  },
+  {
+    "word": "sunrise",
+    "meaning": "n. 日出"
+  },
+  {
+    "word": "sunset",
+    "meaning": "n. 日落"
+  },
+  {
+    "word": "cuisine",
+    "meaning": "n. 美食"
+  },
+  {
+    "word": "seafood",
+    "meaning": "n. 海鲜"
+  },
+  {
+    "word": "snack",
+    "meaning": "n. 小吃"
+  },
+  {
+    "word": "hot spring",
+    "meaning": "n. 温泉"
   },
   {
     "word": "menu",
     "meaning": "n. 菜单"
   },
   {
-    "word": "bill",
-    "meaning": "n. 账单"
+    "word": "specialty",
+    "meaning": "n. 特色菜"
+  },
+  {
+    "word": "vegetarian",
+    "meaning": "n./adj. 素食者；素食的"
+  },
+  {
+    "word": "allergy",
+    "meaning": "n. 过敏"
+  },
+  {
+    "word": "reservation confirmation",
+    "meaning": "n. 预订确认单"
+  },
+  {
+    "word": "travel insurance",
+    "meaning": "n. 旅行保险"
+  },
+  {
+    "word": "emergency",
+    "meaning": "n. 紧急情况"
   },
   {
     "word": "embassy",
     "meaning": "n. 大使馆"
   },
   {
-    "word": "pharmacy",
-    "meaning": "n. 药店；药房"
+    "word": "consulate",
+    "meaning": "n. 领事馆"
   },
   {
-    "word": "emergency",
-    "meaning": "n. 紧急情况"
+    "word": "lost and found",
+    "meaning": "n. 失物招领处"
+  },
+  {
+    "word": "pharmacy",
+    "meaning": "n. 药店"
+  },
+  {
+    "word": "hospital",
+    "meaning": "n. 医院"
+  },
+  {
+    "word": "police station",
+    "meaning": "n. 警察局"
+  },
+  {
+    "word": "sunscreen",
+    "meaning": "n. 防晒霜"
+  },
+  {
+    "word": "first-aid kit",
+    "meaning": "n. 急救包"
+  },
+  {
+    "word": "adapter",
+    "meaning": "n. 转换插头"
+  },
+  {
+    "word": "charger",
+    "meaning": "n. 充电器"
+  },
+  {
+    "word": "sim card",
+    "meaning": "n. SIM 卡"
+  },
+  {
+    "word": "roaming",
+    "meaning": "n. 漫游"
+  },
+  {
+    "word": "delayed flight",
+    "meaning": "n. 延误航班"
+  },
+  {
+    "word": "customs officer",
+    "meaning": "n. 海关官员"
+  },
+  {
+    "word": "boarding time",
+    "meaning": "n. 登机时间"
+  },
+  {
+    "word": "gate change",
+    "meaning": "n. 登机口变更"
+  },
+  {
+    "word": "delay notice",
+    "meaning": "n. 延误通知"
+  },
+  {
+    "word": "vegetarian meal",
+    "meaning": "n. 素食餐"
+  },
+  {
+    "word": "lost luggage",
+    "meaning": "n. 行李丢失"
   }
 ]

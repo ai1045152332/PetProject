@@ -23,7 +23,8 @@ func main() {
 	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc)
 	accessSvc := service.NewAccessService()
 	accessCtrl := controller.NewAccessController(accessSvc)
-	handler := router.New(heartbeatCtrl, accessCtrl)
+	pingCtrl := controller.NewPingController()
+	handler := router.New(heartbeatCtrl, accessCtrl, pingCtrl)
 
 	addr := ":8080"
 	log.Printf("PetServer 启动，监听 %s", addr)

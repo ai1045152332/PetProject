@@ -28,6 +28,7 @@ launchd 运行时为 `PetServer/`）。同时内存中按主机名维护每台�
 
 | 接口 | 说明 |
 | --- | --- |
+| `GET /api/ping` | 连通性测试（浏览器可直接打开） |
 | `POST /api/heartbeat` | 心跳上报：版本号 + 本机信息 + 宠物名/状态 |
 | `POST /api/access/verify` | 校验码远程验证（远程码写死 123） |
 

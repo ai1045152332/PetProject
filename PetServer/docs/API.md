@@ -5,7 +5,7 @@
 ## 通用说明
 
 - **Base URL**：`http://<host>:8080`（本地开发为 `http://11.0.213.233:8080`）
-- **请求格式**：`POST` + `Content-Type: application/json`
+- **请求格式**：除 `GET /api/ping` 外均为 `POST` + `Content-Type: application/json`
 - **统一响应信封**：
 
 | 字段 | 类型 | 说明 |
@@ -13,6 +13,35 @@
 | code | int | 0 成功；400 参数错误；405 请求方法不允许 |
 | msg | string | 结果描述（成功为 `ok`，失败为具体原因） |
 | data | object | 业务数据，失败时无此字段 |
+
+---
+
+## 0. 连通性测试
+
+供浏览器或 curl 直接访问，验证服务是否可达（无需请求体）。
+
+```
+GET /api/ping
+```
+
+### 请求示例
+
+```bash
+curl http://11.0.213.233:8080/api/ping
+```
+
+### 成功响应
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "service": "PetServer",
+    "serverTime": "2026-10-14T15:00:00+08:00"
+  }
+}
+```
 
 ---
 

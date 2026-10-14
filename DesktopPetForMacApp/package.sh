@@ -74,6 +74,14 @@ if [ -d "$WORD_BANK_SRC" ]; then
     cp "$WORD_BANK_SRC"/*.json "$RESOURCES/WordBank/"
 fi
 
+# 刷题题库（ProblemBank：LeetCode 热题 100）
+PROBLEM_BANK_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/ProblemBank"
+if [ -d "$PROBLEM_BANK_SRC" ]; then
+    echo "🧩 复制题库文件..."
+    mkdir -p "$RESOURCES/ProblemBank"
+    cp "$PROBLEM_BANK_SRC"/*.json "$RESOURCES/ProblemBank/"
+fi
+
 # ── 4. 复制并更新 Info.plist ───────────────────────────────────
 cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
 # 应用显示名改为产物名（CFBundleName 与 CFBundleDisplayName）

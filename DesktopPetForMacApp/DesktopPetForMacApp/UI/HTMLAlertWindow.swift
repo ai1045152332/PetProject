@@ -31,6 +31,9 @@ class HTMLAlertWindow: NSWindow {
     private var onRetryLearning: (() -> Void)?
     private var nextQuizHandler: WordNextQuizHandler?
     private var retryLearningHandler: WordRetryLearningHandler?
+    // 我要做题：「换一题」回调
+    private var onProblemNext: (() -> Void)?
+    private var problemNextHandler: WordRetryLearningHandler?
     private var playAudioHandler: WordPlayAudioHandler?
     private var isWordLearningMode = false
     /// 天气查询回调（城市输入后传回）
@@ -668,6 +671,26 @@ class HTMLAlertWindow: NSWindow {
         return window
     }
 
+    /// 显示「我要做题」弹窗（LeetCode 热题 100 随机抽题，风格与背单词一致）
+    @discardableResult
+    static func showProblem(title: String, htmlBody: String, width: CGFloat = 360, onNext: (() -> Void)? = nil) -> HTMLAlertWindow {
+        let window = HTMLAlertWindow(
+            contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.hasShadow = false
+        window.targetWidth = width
+        window.targetMaxHeight = 700
+        window.onProblemNext = onNext
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, isProblemMode: true)
+        window.alphaValue = 0
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        return window
+    }
+
     /// 在当前窗口 WebView 中执行 JS（用于背单词卡片在 API 数据到达后的热更新）
     func evaluateScript(_ script: String) {
         DispatchQueue.main.async { [weak self] in
@@ -676,7 +699,7 @@ class HTMLAlertWindow: NSWindow {
         }
     }
 
-    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
+    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, isProblemMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
         let config = WKWebViewConfiguration()
         config.setValue(false, forKey: "drawsBackground")
 
@@ -761,6 +784,16 @@ class HTMLAlertWindow: NSWindow {
             }
             self.playAudioHandler = playAudioHandler
             config.userContentController.add(playAudioHandler, name: "playAudio")
+        }
+
+        if isProblemMode {
+            let problemNextHandler = WordRetryLearningHandler { [weak self] in
+                DispatchQueue.main.async {
+                    self?.onProblemNext?()
+                }
+            }
+            self.problemNextHandler = problemNextHandler
+            config.userContentController.add(problemNextHandler, name: "problemNext")
         }
 
         // 注入 JS：拦截所有链接点击，阻止默认导航，通过 message handler 打开外部浏览器
@@ -874,6 +907,7 @@ class HTMLAlertWindow: NSWindow {
         if nextQuizHandler != nil { ucc.removeScriptMessageHandler(forName: "nextQuiz") }
         if retryLearningHandler != nil { ucc.removeScriptMessageHandler(forName: "retryLearning") }
         if playAudioHandler != nil { ucc.removeScriptMessageHandler(forName: "playAudio") }
+        if problemNextHandler != nil { ucc.removeScriptMessageHandler(forName: "problemNext") }
     }
 
     /// 网页内 ✕ 按钮关闭路径（orderOut 隐藏，与系统红点行为对齐）

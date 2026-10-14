@@ -599,6 +599,7 @@ class CatView: NSView {
             ("抚摸 🐾", #selector(petAction(_:)), false),
             ("玩小游戏 🎮", #selector(playGameAction(_:)), false),
             ("背单词 📚", #selector(wordLearningAction(_:)), true),
+            ("我要做题 🧩", #selector(problemAction(_:)), true),
             ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
             ("查看天气 ☀️", #selector(showWeatherAction(_:)), true),
             ("Todo 清单 📝", #selector(todoAction(_:)), false),
@@ -637,6 +638,7 @@ class CatView: NSView {
         HTMLAlertWindow.showWeb(title: "玩小游戏 🎮", urlString: "https://brake.tp0k.us/")
     }
     @objc private func wordLearningAction(_ sender: NSMenuItem) { viewModel?.startWordLearning() }
+    @objc private func problemAction(_ sender: NSMenuItem) { showRandomProblem() }
     @objc private func hotNewsAction(_ sender: NSMenuItem) { viewModel?.showHotNews() }
     @objc private func showWeatherAction(_ sender: NSMenuItem) { showWeatherInput() }
     @objc private func todoAction(_ sender: NSMenuItem) { showTodoList() }
@@ -654,6 +656,105 @@ class CatView: NSView {
             },
             onClose: nil
         )
+    }
+
+    // MARK: - 我要做题（LeetCode 热题 100）
+
+    /// 当前做题弹窗引用
+    private var problemWindow: HTMLAlertWindow?
+
+    /// 随机抽一题并展示（换一题时重入，避开上一题）
+    /// 题干由 LeetCodeService 后台拉取（图片内联 base64），完成后弹完整卡片
+    private func showRandomProblem() {
+        guard let problem = ProblemBankManager.randomProblem() else {
+            FileLogger.log("[ProblemBank] 题库未加载，无法出题")
+            problemWindow = HTMLAlertWindow.showProblem(title: "我要做题 🧩", htmlBody: """
+            <div style="text-align:center;padding:40px 20px;">
+                <div style="font-size:48px;margin-bottom:16px;">📭</div>
+                <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">题库加载失败</div>
+                <div style="font-size:14px;color:#888;">未找到热题 100 题库文件，请重新安装应用</div>
+            </div>
+            """)
+            return
+        }
+        FileLogger.log("[ProblemBank] 抽题: \(problem.id). \(problem.title)（\(problem.difficulty)）")
+
+        // 首次拉取需请求 LeetCode 接口并下载图片，用 toast 提示加载中
+        showLoadingToast("正在拉取题干…")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let detail = LeetCodeService.fetchDetail(slug: problem.slug)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.hideLoadingToast()
+                let htmlBody = Self.problemCardHTML(problem: problem, detail: detail)
+                self.problemWindow?.close()
+                self.problemWindow = HTMLAlertWindow.showProblem(
+                    title: "我要做题 🧩",
+                    htmlBody: htmlBody,
+                    width: 520
+                ) { [weak self] in
+                    self?.showRandomProblem()
+                }
+            }
+        }
+    }
+
+    /// 拼装题干卡片 HTML（题干内容 + 深色卡片适配样式 + 换一题按钮）
+    private static func problemCardHTML(problem: LeetCodeProblem, detail: LeetCodeService.ProblemDetail?) -> String {
+        // 难度徽章配色：简单-绿 / 中等-琥珀 / 困难-玫红
+        let badgeColor: String
+        switch problem.difficulty {
+        case "简单": badgeColor = "#52c41a"
+        case "困难": badgeColor = "#e0526a"
+        default:    badgeColor = "#e8a33d"
+        }
+
+        // 题干主体：拉取失败时给出提示（可点换一题重试）
+        let contentHTML: String
+        if let detail {
+            contentHTML = "<div class=\"problem-content\">\(detail.contentHTML)</div>"
+        } else {
+            contentHTML = """
+            <div style="text-align:center;padding:30px 16px;">
+                <div style="font-size:40px;margin-bottom:12px;">📡</div>
+                <div style="font-size:15px;font-weight:600;color:#f0f0f5;margin-bottom:10px;">题干拉取失败</div>
+                <div style="font-size:13px;color:#888;">可能是网络问题或 LeetCode 接口限流<br>点击下方「换一题」重试</div>
+            </div>
+            """
+        }
+
+        return """
+        <div class="quiz-meta">
+            <span>LeetCode 热题 100</span>
+            <span>\(problem.id) · \(problem.difficulty)</span>
+        </div>
+        <div class="problem-header">
+            <div class="problem-badge" style="background:\(badgeColor)">\(problem.difficulty)</div>
+            <div class="problem-title">\(problem.id). \(problem.title)</div>
+        </div>
+        \(contentHTML)
+        <button class="btn-swap" onclick="window.webkit.messageHandlers.problemNext.postMessage('')">换一题 🔄</button>
+        <style>
+            .quiz-meta { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 12px; padding: 0 2px; }
+            .problem-header { text-align: center; padding: 14px 10px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
+            .problem-badge { display: inline-block; font-size: 12px; font-weight: 600; color: white; padding: 3px 12px; border-radius: 10px; margin-bottom: 10px; }
+            .problem-title { font-size: 22px; font-weight: 700; color: #a0e8ff; line-height: 1.4; }
+            /* LeetCode 题干样式适配深色卡片 */
+            .problem-content { font-size: 14px; color: #d0d0dc; line-height: 1.8; margin-bottom: 16px; }
+            .problem-content p { margin: 8px 0; }
+            .problem-content img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; }
+            .problem-content pre { background: rgba(0,0,0,0.35); padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; color: #d8d8e8; white-space: pre-wrap; word-break: break-word; }
+            .problem-content code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; color: #a0e8ff; }
+            .problem-content pre code { background: none; padding: 0; color: #d8d8e8; }
+            .problem-content ul, .problem-content ol { padding-left: 22px; margin: 8px 0; }
+            .problem-content li { margin: 4px 0; }
+            .problem-content strong { color: #f0f0f8; }
+            .problem-content table { border-collapse: collapse; margin: 8px 0; }
+            .problem-content td, .problem-content th { border: 1px solid rgba(255,255,255,0.15); padding: 6px 10px; font-size: 13px; }
+            .btn-swap { background: rgba(255,255,255,0.08); color: #c0c0d0; border: 1px solid rgba(255,255,255,0.12); padding: 10px 32px; border-radius: 20px; font-size: 14px; cursor: pointer; transition: all 0.2s; width: 100%; }
+            .btn-swap:hover { background: rgba(255,255,255,0.14); }
+        </style>
+        """
     }
 
     // MARK: - 背单词功能

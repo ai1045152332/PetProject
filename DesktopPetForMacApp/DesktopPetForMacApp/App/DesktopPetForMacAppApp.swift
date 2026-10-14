@@ -58,6 +58,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 开机自启配置（默认开启，启动时确保 LaunchAgent 已安装/卸载）
         AutoLaunchManager.applyOnLaunch()
 
+        // 新版本安装后启动：清除旧版本通过的校验权限，需重新输入校验码
+        AccessControl.resetIfVersionChanged()
+
         // 后台初始化词库并打印加载诊断（避免阻塞主线程，利于排查「背单词找不到单词」）
         DispatchQueue.global(qos: .utility).async {
             WordBankManager.shared.printAllWordBankInfo()

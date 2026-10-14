@@ -13,10 +13,23 @@ enum AccessControl {
 
     private static let prefsKey = "settings.accessLevel"
     private static let fullLevel = "full"
+    /// 权限通过时的 App 版本号（用于新版本安装后清除旧权限）
+    private static let grantedVersionKey = "settings.accessGrantedVersion"
 
     /// 当前是否已解锁全部功能
     static var isFullAccess: Bool {
         UserDefaults.standard.string(forKey: prefsKey) == fullLevel
+    }
+
+    /// 启动时调用：版本号变化（新安装/升级）则清除旧版本通过的校验权限
+    static func resetIfVersionChanged() {
+        let grantedVersion = UserDefaults.standard.string(forKey: grantedVersionKey)
+        guard grantedVersion != AppVersion.current else { return }
+        if isFullAccess {
+            FileLogger.log("[AccessControl] 检测到新版本 \(AppVersion.current)（旧权限版本 \(grantedVersion ?? "无")），清除旧权限")
+            clearAccess()
+        }
+        UserDefaults.standard.set(AppVersion.current, forKey: grantedVersionKey)
     }
 
     /// 输入校验码解锁
@@ -51,6 +64,7 @@ enum AccessControl {
 
     private static func persistFullAccess() {
         UserDefaults.standard.set(fullLevel, forKey: prefsKey)
+        UserDefaults.standard.set(AppVersion.current, forKey: grantedVersionKey)
     }
 
     /// 请求后端接口校验校验码（网络失败按校验失败处理，回调统一回到主线程）

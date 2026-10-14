@@ -362,20 +362,17 @@ class HTMLAlertWindow: NSWindow {
         window.orderFrontRegardless()
     }
 
-    /// 显示可缩放标准窗口（热点新闻等）：复用背单词边框基类，透明系统标题栏 + 渐变卡片，
-    /// 保留系统红绿灯与边缘缩放，与背单词弹窗形式完全一致
+    /// 显示可缩放窗口（热点新闻等）：复用背单词边框基类，无系统标题栏外边框（borderless），
+    /// 保留边缘拖拽缩放（resizable），与背单词弹窗形式完全一致
     static func showResizable(title: String, htmlBody: String, width: CGFloat = 480, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
         window.hasShadow = false  // 去阴影
         window.title = title
-        // 透明标题栏：系统标题栏不显示文字，让内部渐变标题栏卡片作为视觉标题栏（与背单词一致）
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
         window.appearance = NSAppearance(named: .darkAqua)
         window.targetWidth = width
         window.targetMaxHeight = maxHeight
@@ -547,10 +544,13 @@ class HTMLAlertWindow: NSWindow {
             }
             frameConfig.maxContentHeight = targetMaxHeight
             frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
-            // 可缩放标准窗口（热点新闻）：内部渐变标题栏作为视觉标题栏，启用拖动，左侧为红绿灯让位
+            // 可缩放窗口（热点新闻，borderless+resizable）：内部渐变标题栏作为视觉标题栏，启用拖动
+            // 仅标准系统标题栏窗口（titled）需为红绿灯让位；borderless 无红绿灯，不留
             if styleMask.contains(.resizable) {
                 frameConfig.headerDraggable = true
-                frameConfig.headerLeftInset = 78
+                if styleMask.contains(.titled) {
+                    frameConfig.headerLeftInset = 78
+                }
             }
         }
         let html = CardFrame.render(frameConfig)

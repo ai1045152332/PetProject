@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import WebKit
 
 /// 基于 WKWebView 的自定义弹窗窗口（支持自适应高度 + 输入模式）
@@ -13,6 +12,7 @@ class HTMLAlertWindow: NSWindow {
     private var confirmHandler: ConfirmMessageHandler?
     private var targetWidth: CGFloat = 420
     private var targetMaxHeight: CGFloat = 640
+    private var webWindowSize: NSSize?
     private var hasSized = false
     private var dragOffset: NSPoint = .zero
     /// 附加业务 CSS（Todo 列表 / 热点新闻表格 / 喝水文案等），经 CardFrame 基类渲染
@@ -32,7 +32,6 @@ class HTMLAlertWindow: NSWindow {
     private var nextQuizHandler: WordNextQuizHandler?
     private var retryLearningHandler: WordRetryLearningHandler?
     private var playAudioHandler: WordPlayAudioHandler?
-    private var audioPlayer: AVAudioPlayer?
     private var isWordLearningMode = false
 
     /// 显示 HTML 弹窗（高度自适应内容）
@@ -383,6 +382,44 @@ class HTMLAlertWindow: NSWindow {
         window.orderFrontRegardless()
     }
 
+    /// 显示内嵌网页弹窗（通过 iframe 嵌入外部 H5 页面，如小游戏）
+    /// 默认按手机竖屏比例取屏幕可用高度的 75%，宽度不足时等比缩窄
+    static func showWeb(title: String, urlString: String, maxHeightRatio: CGFloat = 0.75, onClose: (() -> Void)? = nil) {
+        let visible = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
+        var height = visible.height * maxHeightRatio
+        var width = height * 0.46
+        if width > visible.width * 0.92 {
+            width = visible.width * 0.92
+            height = width / 0.46
+        }
+        let windowSize = NSSize(width: width, height: height)
+        let window = HTMLAlertWindow(
+            contentRect: NSRect(x: -1000, y: -1000, width: windowSize.width, height: windowSize.height),
+            styleMask: [.borderless, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.hasShadow = false
+        window.title = title
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.targetWidth = windowSize.width
+        window.targetMaxHeight = windowSize.height
+        window.webWindowSize = windowSize
+        window.onClose = onClose
+
+        let escapedURL = urlString
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+        let htmlBody = """
+        <button class="game-close-btn" onclick="window.webkit.messageHandlers.close.postMessage('')">✕</button>
+        <iframe src="\(escapedURL)" style="width:100%;height:100%;border:none;border-radius:12px;background:#1a1a2e;" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock"></iframe>
+        """
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, okLabel: "关闭 ❌")
+        window.alphaValue = 0
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
     /// 显示背单词学习弹窗
     @discardableResult
     static func showWordLearning(title: String, htmlBody: String, width: CGFloat = 420, onNextQuiz: ((Bool) -> Void)? = nil, onRetryLearning: (() -> Void)? = nil) -> HTMLAlertWindow {
@@ -479,17 +516,17 @@ class HTMLAlertWindow: NSWindow {
             self.retryLearningHandler = retryHandler
             config.userContentController.add(retryHandler, name: "retryLearning")
             
-            let playAudioHandler = WordPlayAudioHandler { [weak self] word in
-                guard let self = self else { return }
-                Task {
-                    if let audioURL = await DictionaryService.shared.fetchAudioURL(word: word) {
-                        await MainActor.run {
-                            if let url = URL(string: audioURL) {
-                                self.audioPlayer = try? AVAudioPlayer(contentsOf: url)
-                                self.audioPlayer?.play()
-                            }
-                        }
+            let playAudioHandler = WordPlayAudioHandler { word in
+                guard let audioURL = await DictionaryService.shared.fetchAudioURL(word: word),
+                      let url = URL(string: audioURL) else { return }
+                do {
+                    let (data, _) = try await URLSession.shared.data(from: url)
+                    await MainActor.run {
+                        let sound = NSSound(data: data)
+                        sound?.play()
                     }
+                } catch {
+                    FileLogger.log("[Audio] 下载失败: \(word) \(error.localizedDescription)")
                 }
             }
             self.playAudioHandler = playAudioHandler
@@ -510,7 +547,7 @@ class HTMLAlertWindow: NSWindow {
         let userScript = WKUserScript(source: linkInterceptor, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         config.userContentController.addUserScript(userScript)
 
-        webView = WKWebView(frame: self.contentView!.bounds, configuration: config)
+        webView = WKWebView(frame: self.contentView?.bounds ?? .zero, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
@@ -525,6 +562,36 @@ class HTMLAlertWindow: NSWindow {
             frameConfig.fullBleed = true
             frameConfig.maxContentHeight = nil
             frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
+        } else if webWindowSize != nil {
+            // 小游戏：无标题栏、无底部按钮，游戏铺满窗口 + 右上角悬浮关闭
+            frameConfig.showHeader = false
+            frameConfig.showFooter = false
+            frameConfig.maxContentHeight = nil
+            frameConfig.cardWidth = targetWidth
+            frameConfig.extraCSS = """
+                .card { height: 100%; max-width: none; }
+                .card-content { padding: 0; min-height: 0; overflow: hidden; position: relative; }
+                .card-content iframe { display: block; }
+                .game-close-btn {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    width: 30px;
+                    height: 30px;
+                    border: none;
+                    border-radius: 50%;
+                    background: rgba(0, 0, 0, 0.45);
+                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 15px;
+                    line-height: 30px;
+                    text-align: center;
+                    cursor: pointer;
+                    z-index: 10;
+                    -webkit-appearance: none;
+                    transition: background 0.2s;
+                }
+                .game-close-btn:hover { background: rgba(0, 0, 0, 0.7); }
+            """
         } else if isWordLearningMode {
             // 背单词：无边框窗口 + 渐变标题栏卡片 + 无底部按钮 + 标题栏可拖动
             frameConfig.showHeader = true
@@ -613,12 +680,13 @@ class HTMLAlertWindow: NSWindow {
 
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
-        if style.contains(.resizable) {
-            // 可缩放窗口（Todo）：不透明深色背景，与 HTML 容器同色，消除窗口与内容的色差
+        if style.contains(.titled) && style.contains(.resizable) {
+            // Todo 标准标题栏窗口：不透明深色背景，与 HTML 容器同色，消除窗口与内容的色差
             self.backgroundColor = NSColor(calibratedRed: 0.118, green: 0.118, blue: 0.157, alpha: 1.0)  // RGB(30,30,40)
             self.isOpaque = true
             self.hasShadow = false
         } else {
+            // borderless（背单词 / 热点新闻可缩放等）：透明背景，由 HTML 卡片绘制视觉边框与圆角
             self.backgroundColor = .clear
             self.isOpaque = false
             self.hasShadow = true
@@ -662,7 +730,7 @@ extension HTMLAlertWindow: WKNavigationDelegate {
 
             let minH: CGFloat = 200
             let maxH = min(self.targetMaxHeight, (NSScreen.main?.visibleFrame.height ?? 800) * 0.75)
-            let targetH = max(minH, min(contentHeight + 24, maxH))
+            let targetH = self.webWindowSize?.height ?? max(minH, min(contentHeight + 24, maxH))
 
             var frame = self.frame
             frame.size.width = self.targetWidth
@@ -672,7 +740,7 @@ extension HTMLAlertWindow: WKNavigationDelegate {
 
             // 所有无边框窗口（非可缩放）：sizing 完成后添加原生拖动条（此时 frame 已正确）
             // 可缩放标准窗口（热点新闻）的渐变标题栏已启用 -webkit-app-region: drag，无需原生拖动条
-            if self.todoEstimatedHeight == nil && !self.styleMask.contains(.resizable) {
+            if self.todoEstimatedHeight == nil && self.webWindowSize == nil && !self.styleMask.contains(.resizable) {
                 let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 48, width: self.frame.width - 40, height: 48))
                 dragView.autoresizingMask = [.width, .minYMargin]
                 self.contentView?.addSubview(dragView)
@@ -686,7 +754,10 @@ extension HTMLAlertWindow: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if let url = navigationAction.request.url, let scheme = url.scheme, scheme.hasPrefix("http") {
+        // 新窗口（targetFrame == nil）或由 iframe 外链触发的导航 → 外部浏览器打开
+        // iframe 自身的主框架导航 → 允许加载
+        if let url = navigationAction.request.url, let scheme = url.scheme, scheme.hasPrefix("http"),
+           navigationAction.targetFrame == nil || (navigationAction.targetFrame?.isMainFrame == false && navigationAction.navigationType == .linkActivated) {
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
             return
@@ -771,11 +842,11 @@ class WordRetryLearningHandler: NSObject, WKScriptMessageHandler {
 }
 
 class WordPlayAudioHandler: NSObject, WKScriptMessageHandler {
-    private let action: (String) -> Void
-    init(action: @escaping (String) -> Void) { self.action = action }
+    private let action: (String) async -> Void
+    init(action: @escaping (String) async -> Void) { self.action = action }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if let word = message.body as? String {
-            action(word)
+            Task { await action(word) }
         }
     }
 }

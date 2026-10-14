@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # DesktopPetForMacApp 打包脚本
-# 产出 petNoUse.app 到桌面
+# 产出 cute pet.app 到桌面
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_NAME="DesktopPetForMacApp"   # 编译产物/可执行文件名（保持不变，避免影响 CFBundleExecutable）
-APP_NAME="petNoUse"               # 固定产物名（不使用宠物名称，避免中文文件名转义问题）
+APP_NAME="cute pet"               # 固定产物名（不使用宠物名称，避免中文文件名转义问题）
 DESKTOP="$HOME/Desktop"
 
 # ── 1. Release 编译 ──────────────────────────────────────────────

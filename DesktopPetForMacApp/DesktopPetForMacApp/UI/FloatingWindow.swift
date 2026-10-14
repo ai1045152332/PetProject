@@ -597,6 +597,7 @@ class CatView: NSView {
         typealias MenuEntry = (title: String, action: Selector, fullOnly: Bool)
         let entries: [MenuEntry] = [
             ("抚摸 🐾", #selector(petAction(_:)), false),
+            ("玩小游戏 🎮", #selector(playGameAction(_:)), false),
             ("背单词 📚", #selector(wordLearningAction(_:)), true),
             ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
             ("查询天气 ☀️", #selector(weatherAction(_:)), true),
@@ -633,6 +634,9 @@ class CatView: NSView {
     }
     
     @objc private func petAction(_ sender: NSMenuItem) { viewModel?.pet() }
+    @objc private func playGameAction(_ sender: NSMenuItem) {
+        HTMLAlertWindow.showWeb(title: "玩小游戏 🎮", urlString: "https://brake.tp0k.us/")
+    }
     @objc private func wordLearningAction(_ sender: NSMenuItem) { viewModel?.startWordLearning() }
     @objc private func hotNewsAction(_ sender: NSMenuItem) { viewModel?.showHotNews() }
     @objc private func weatherAction(_ sender: NSMenuItem) { fetchWeatherAndShow() }

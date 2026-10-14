@@ -5,7 +5,7 @@ set -euo pipefail
 # 流程：编译 → 打包 → 杀旧进程 → 启动
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="petNoUse"
+APP_NAME="cute pet"
 DEST_APP="$HOME/Desktop/$APP_NAME.app"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

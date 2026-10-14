@@ -30,6 +30,10 @@
     <key>NSAccessibilityUsageDescription</key>
     <string>DesktopPetForMacApp 需要辅助功能权限来监听鼠标事件，并始终悬浮在桌面最上层。</string>
     
+    <!-- 定位权限说明（天气默认城市用 Wi-Fi 定位） -->
+    <key>NSLocationUsageDescription</key>
+    <string>DesktopPetForMacApp 需要定位权限来获取您所在城市的天气信息。</string>
+
     <!-- 可执行文件名 -->
     <key>CFBundleExecutable</key>
     <string>DesktopPetForMacApp</string>

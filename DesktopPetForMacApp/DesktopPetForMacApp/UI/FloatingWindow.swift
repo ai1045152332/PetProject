@@ -574,7 +574,9 @@ class CatView: NSView {
             if let input = cityInput {
                 forecast = WeatherService.fetchWeatherForecast(forCity: input)
             } else {
-                forecast = WeatherService.fetchWeatherForecastWithLocation()
+                // 默认城市：GPS/Wi-Fi 定位优先（准确），权限拒绝或超时回退 IP 定位（可能偏到别处）
+                forecast = WeatherService.fetchWeatherForecastWithGPS()
+                    ?? WeatherService.fetchWeatherForecastWithLocation()
             }
             DispatchQueue.main.async {
                 self.hideLoadingToast()
@@ -599,7 +601,7 @@ class CatView: NSView {
             ("抚摸 🐾", #selector(petAction(_:)), false),
             ("玩小游戏 🎮", #selector(playGameAction(_:)), false),
             ("背单词 📚", #selector(wordLearningAction(_:)), true),
-            ("我要做题 🧩", #selector(problemAction(_:)), true),
+            ("苦练基本功 🧩", #selector(problemAction(_:)), true),
             ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
             ("查看天气 ☀️", #selector(showWeatherAction(_:)), true),
             ("Todo 清单 📝", #selector(todoAction(_:)), false),
@@ -658,7 +660,7 @@ class CatView: NSView {
         )
     }
 
-    // MARK: - 我要做题（LeetCode 热题 100）
+    // MARK: - 苦练基本功（LeetCode 热题 100）
 
     /// 当前做题弹窗引用
     private var problemWindow: HTMLAlertWindow?
@@ -668,7 +670,7 @@ class CatView: NSView {
     private func showRandomProblem() {
         guard let problem = ProblemBankManager.randomProblem() else {
             FileLogger.log("[ProblemBank] 题库未加载，无法出题")
-            problemWindow = HTMLAlertWindow.showProblem(title: "我要做题 🧩", htmlBody: """
+            problemWindow = HTMLAlertWindow.showProblem(title: "苦练基本功 🧩", htmlBody: """
             <div style="text-align:center;padding:40px 20px;">
                 <div style="font-size:48px;margin-bottom:16px;">📭</div>
                 <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">题库加载失败</div>
@@ -689,7 +691,7 @@ class CatView: NSView {
                 let htmlBody = Self.problemCardHTML(problem: problem, detail: detail)
                 self.problemWindow?.close()
                 self.problemWindow = HTMLAlertWindow.showProblem(
-                    title: "我要做题 🧩",
+                    title: "苦练基本功 🧩",
                     htmlBody: htmlBody,
                     width: 520
                 ) { [weak self] in

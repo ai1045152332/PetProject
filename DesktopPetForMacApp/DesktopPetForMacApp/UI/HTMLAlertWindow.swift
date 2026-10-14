@@ -31,7 +31,7 @@ class HTMLAlertWindow: NSWindow {
     private var onRetryLearning: (() -> Void)?
     private var nextQuizHandler: WordNextQuizHandler?
     private var retryLearningHandler: WordRetryLearningHandler?
-    // 我要做题：「换一题」回调
+    // 苦练基本功：「换一题」回调
     private var onProblemNext: (() -> Void)?
     private var problemNextHandler: WordRetryLearningHandler?
     private var playAudioHandler: WordPlayAudioHandler?
@@ -671,7 +671,7 @@ class HTMLAlertWindow: NSWindow {
         return window
     }
 
-    /// 显示「我要做题」弹窗（LeetCode 热题 100 随机抽题，风格与背单词一致）
+    /// 显示「苦练基本功」弹窗（LeetCode 热题 100 随机抽题，风格与背单词一致）
     @discardableResult
     static func showProblem(title: String, htmlBody: String, width: CGFloat = 360, onNext: (() -> Void)? = nil) -> HTMLAlertWindow {
         let window = HTMLAlertWindow(

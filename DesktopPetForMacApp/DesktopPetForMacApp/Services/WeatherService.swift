@@ -34,6 +34,13 @@ struct WeatherService {
     private static var cachedLocation: (city: String, lat: Double, lon: Double)?
     private static let locationLock = NSLock()
 
+    /// 通过 GPS/Wi-Fi 定位获取天气（CoreLocation + 反地理编码，精度远高于 IP 定位）
+    /// 失败（权限拒绝/超时）返回 nil，由调用方回退 IP 定位
+    static func fetchWeatherForecastWithGPS() -> WeatherForecast? {
+        guard let loc = LocationService.fetchGPSLocation() else { return nil }
+        return fetchWeatherForecast(city: loc.city, lat: loc.lat, lon: loc.lon)
+    }
+
     /// 通过定位获取天气（带缓存）
     static func fetchWeatherForecastWithLocation() -> WeatherForecast? {
         locationLock.lock()

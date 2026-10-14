@@ -864,6 +864,9 @@ class HTMLAlertWindow: NSWindow {
         } else {
             // 普通弹窗 / 输入弹窗 / 可缩放卡片窗口：渐变标题栏卡片，统一由标题栏右上角 ✕ 关闭
             frameConfig.showHeader = true
+            // 卡片宽度基准须跟随窗口宽度：否则用默认 420 时，宽窗口（如做题 520）里卡片居中变窄，
+            // ✕ 按钮左移进入顶部拖动条覆盖区（0 ~ width-60），点击变成拖窗口而无法关闭
+            frameConfig.cardWidth = targetWidth
             if isInputMode {
                 // 输入弹窗：底部为功能性确认按钮（如「查询天气」），保留
                 frameConfig.showFooter = true

@@ -184,7 +184,8 @@ class HTMLAlertWindow: NSWindow {
             title: title,
             htmlBody: htmlBody,
             isInputMode: true,
-            okLabel: "æ¥è¯¢å¤©æ° ð",            onCityQuery: onQuery
+            okLabel: "查询天气 🔍",
+            onCityQuery: onQuery
         )
         currentWeatherWindow = window
         window.alphaValue = 0
@@ -928,6 +929,7 @@ class HTMLAlertWindow: NSWindow {
 
 extension HTMLAlertWindow: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        isPageLoaded = true
         // 可缩放窗口（resizable）：容器 height:100% 撑满时 scrollHeight 会返回窗口高度，
         // 需临时把容器高度改为 auto 读取真实内容高度，读完恢复撑满（Todo 用估算值，不受影响）
         let measureJS = """
@@ -971,7 +973,9 @@ extension HTMLAlertWindow: WKNavigationDelegate {
             // 所有无边框窗口（非可缩放）：sizing 完成后添加原生拖动条（此时 frame 已正确）
             // 可缩放标准窗口（热点新闻）的渐变标题栏已启用 -webkit-app-region: drag，无需原生拖动条
             if self.todoEstimatedHeight == nil && self.webWindowSize == nil && !self.styleMask.contains(.resizable) {
-                let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 48, width: self.frame.width - 40, height: 48))
+                // 右侧须给标题栏 ✕ 按钮让位（窗口 padding 8 + 卡片内边距 18 + 按钮 26，共约 52px），
+                // 否则拖动条盖住 ✕ 左半部分，点击变成拖窗口（点好几次才能关掉）
+                let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 48, width: self.frame.width - 60, height: 48))
                 dragView.autoresizingMask = [.width, .minYMargin]
                 self.contentView?.addSubview(dragView)
             }
@@ -980,6 +984,12 @@ extension HTMLAlertWindow: WKNavigationDelegate {
                 context.duration = 0.15
                 self.animator().alphaValue = 1.0
             })
+
+            // 页面加载完成前到达的天气内容：此时刷新注入
+            if let pending = self.pendingWeatherLiteral {
+                self.pendingWeatherLiteral = nil
+                self.applyWeatherLiteral(pending)
+            }
         }
     }
 

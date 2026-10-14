@@ -304,111 +304,6 @@ class CatView: NSView {
         HTMLAlertWindow.showResizable(title: "今日热点新闻 Top10", htmlBody: htmlBody, width: 480, maxHeight: 640)
     }
     
-    // MARK: - Weather Display
-
-    private func showWeatherAlert(_ forecast: WeatherForecast) {
-        let htmlBody = buildWeatherCardHTML(forecast: forecast)
-        HTMLAlertWindow.show(title: "小猫天气预报", htmlBody: htmlBody, width: 380)
-    }
-
-    private func showWeatherAlertSimple(_ message: String) {
-        let htmlBody = "<div style=\"text-align:center;padding:20px 0;color:#c0c0d0;\">\(message)</div>"
-        HTMLAlertWindow.show(title: "小猫天气预报", htmlBody: htmlBody, width: 340)
-    }
-
-    private func buildWeatherCardHTML(forecast: WeatherForecast) -> String {
-        let hourlyItems = forecast.hourly.prefix(6).map { h in
-            """
-            <div class="hw-item">
-                <div class="hw-time">\(h.time)</div>
-                <div class="hw-icon">\(h.icon)</div>
-                <div class="hw-temp">\(h.temp)°</div>
-            </div>
-            """
-        }.joined(separator: "\n")
-
-        // 计算全局温度范围用于温度条
-        let allTemps = forecast.daily.flatMap { [Int($0.tempMin) ?? 0, Int($0.tempMax) ?? 0] }
-        let globalMin = allTemps.min() ?? 0
-        let globalMax = allTemps.max() ?? 1
-        let globalRange = max(globalMax - globalMin, 1)
-
-        let dailyRows = forecast.daily.map { d in
-            let minT = Int(d.tempMin) ?? 0
-            let maxT = Int(d.tempMax) ?? 0
-            let leftP = Double(minT - globalMin) / Double(globalRange) * 100.0
-            let widthP = Double(maxT - minT) / Double(globalRange) * 100.0
-            let barColor = maxT >= 30 ? "linear-gradient(90deg, #f6d365, #ff6b6b)" : "linear-gradient(90deg, #4facfe, #00f2fe)"
-            return """
-            <div class="dw-row">
-                <div class="dw-day">\(d.dayName)</div>
-                <div class="dw-icon">\(d.icon)</div>
-                <div class="dw-min">\(d.tempMin)°</div>
-                <div class="dw-bar-track">
-                    <div class="dw-bar" style="left:\(String(format: "%.1f", leftP))%;width:\(String(format: "%.1f", widthP))%;background:\(barColor);"></div>
-                </div>
-                <div class="dw-max">\(d.tempMax)°</div>
-            </div>
-            """
-        }.joined(separator: "\n")
-
-        return """
-        <style>
-        .w-card { background: linear-gradient(180deg, #5a6a7a 0%, #4a5568 100%); border-radius: 20px; padding: 18px; color: white; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-        .w-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-        .w-loc { font-size: 16px; font-weight: 600; opacity: 0.9; }
-        .w-main { display: flex; align-items: center; gap: 12px; }
-        .w-temp-big { font-size: 48px; font-weight: 300; line-height: 1; }
-        .w-meta { text-align: right; }
-        .w-desc { font-size: 16px; margin-bottom: 4px; }
-        .w-hl { font-size: 13px; opacity: 0.8; }
-        .w-divider { height: 1px; background: rgba(255,255,255,0.15); margin: 12px 0; }
-        .w-hourly { display: flex; justify-content: space-between; margin-bottom: 12px; }
-        .hw-item { text-align: center; flex: 1; }
-        .hw-time { font-size: 11px; opacity: 0.7; margin-bottom: 6px; }
-        .hw-icon { font-size: 20px; margin-bottom: 4px; }
-        .hw-temp { font-size: 13px; font-weight: 500; }
-        .w-daily { display: flex; flex-direction: column; gap: 10px; }
-        .dw-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-        .dw-day { width: 36px; font-weight: 500; }
-        .dw-icon { width: 24px; text-align: center; font-size: 18px; }
-        .dw-min { width: 30px; text-align: right; opacity: 0.7; font-size: 13px; }
-        .dw-max { width: 30px; text-align: left; font-weight: 500; font-size: 13px; }
-        .dw-bar-track { flex: 1; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; position: relative; }
-        .dw-bar { position: absolute; height: 100%; border-radius: 2px; }
-        </style>
-        <div class="w-card">
-            <div class="w-top">
-                <div>
-                    <div class="w-loc">📍 \(forecast.city)</div>
-                    <div class="w-temp-big">\(forecast.nowTemp)°</div>
-                </div>
-                <div class="w-meta">
-                    <div class="w-desc">\(forecast.nowText)</div>
-                    <div class="w-hl">最高 \(forecast.todayMax)° 最低 \(forecast.todayMin)°</div>
-                </div>
-            </div>
-            <div class="w-divider"></div>
-            <div class="w-hourly">
-                \(hourlyItems)
-            </div>
-            <div class="w-divider"></div>
-            <div class="w-daily">
-                \(dailyRows)
-            </div>
-        </div>
-        """
-    }
-
-    /// 显示输入城市弹窗
-    func showLocationWeatherInput() {
-        HTMLAlertWindow.showInput(title: "输入城市查天气", placeholder: "如：北京、上海、广州", okLabel: "查询天气 🔍") { [weak self] input in
-            let trimmed = input.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { return }
-            self?.fetchWeatherAndShow(for: trimmed)
-        }
-    }
-    
     /// 显示 Todo 清单弹窗
     func showTodoList() {
         let todos = TodoManager.shared.load()
@@ -563,13 +458,10 @@ class CatView: NSView {
         HTMLAlertWindow.show(title: "\(info.name) \(info.code.uppercased())", htmlBody: body + "<style>\(extraCSS)</style>", width: 340, maxHeight: 520)
     }
 
-    /// 双击/右键调用：获取天气并展示（支持指定城市）
+    /// 获取天气并渲染进当前天气窗口（默认本地 / 指定城市）
     private func fetchWeatherAndShow(for cityInput: String? = nil) {
-        let loadingText = cityInput == nil ? "🌤️ 查询天气中..." : "🌤️ 查询 \"\(cityInput!)\" 天气..."
-        showLoadingToast(loadingText)
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        HTMLAlertWindow.showWeatherLoading(cityInput == nil ? "🌤️ 正在加载本地天气..." : "🌤️ 正在查询 \"\(cityInput!)\" 天气...")
+        DispatchQueue.global(qos: .userInitiated).async {
             let forecast: WeatherForecast?
             if let input = cityInput {
                 forecast = WeatherService.fetchWeatherForecast(forCity: input)
@@ -579,11 +471,12 @@ class CatView: NSView {
                     ?? WeatherService.fetchWeatherForecastWithLocation()
             }
             DispatchQueue.main.async {
-                self.hideLoadingToast()
                 if let f = forecast {
-                    self.showWeatherAlert(f)
+                    HTMLAlertWindow.renderWeatherCard(f)
+                } else if let input = cityInput {
+                    HTMLAlertWindow.showWeatherMessage("未找到城市 \"\(input)\"<br>请尝试其他名称")
                 } else {
-                    self.showWeatherAlertSimple(cityInput == nil ? "定位失败，无法获取当前位置<br>请尝试其他城市名" : "未找到城市 \"\(cityInput!)\"，请尝试其他名称")
+                    HTMLAlertWindow.showWeatherMessage("定位失败，无法获取当前位置<br>请在上方输入城市名查询")
                 }
             }
         }
@@ -648,16 +541,18 @@ class CatView: NSView {
 
     // MARK: - 天气查询
 
-    /// 显示天气查询弹窗（输入城市 → 展示结果，共用同一窗口切换内容）
+    /// 显示天气查询弹窗（默认本地天气，输入城市后同窗口切换）
     private func showWeatherInput() {
-        // 打开窗口后立即加载当前位置天气
-        fetchWeatherAndShow(for: nil)
         HTMLAlertWindow.showWeatherInput(title: "查看天气 ☀️", width: 380, maxHeight: 640,
             onQuery: { [weak self] city in
-                self?.fetchWeatherAndShow(for: city)
+                let trimmed = city.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return }
+                self?.fetchWeatherAndShow(for: trimmed)
             },
             onClose: nil
         )
+        // 打开窗口后立即加载本地天气
+        fetchWeatherAndShow(for: nil)
     }
 
     // MARK: - 苦练基本功（LeetCode 热题 100）

@@ -32,3 +32,5 @@ Sprites_backup_old_*/
 # PetServer 编译产物与本地心跳数据
 PetServer/petserver
 PetServer/data/
+# Go 测试性能分析产物
+PetServer/*.out

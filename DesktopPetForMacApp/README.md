@@ -66,11 +66,13 @@ swiftc -O -o /tmp/DesktopPetForMacApp \
   -framework AppKit -framework Foundation -framework SwiftUI -framework WebKit -framework Cocoa
 ```
 
-### 打包成 .app（生成桌面 `DesktopPetForMacApp.app`）
+### 打包成 .app（生成桌面 `cute pet.app`）
 
 ```bash
 bash package.sh
 ```
+
+> 一键「编译 → 打包 → 重启应用」可直接运行 `bash rebuild.sh`。
 
 `package.sh` 会依次：Release 编译 → 拼装 `.app` 目录结构（可执行文件 + Info.plist + AppIcon + MenuBarIcon + Sprites 资源）→ 拷贝到桌面 → 重新签名（`codesign --force --deep --sign -`）→ 移除隔离属性（`xattr -cr`）。
 
@@ -84,7 +86,9 @@ bash package.sh
 DesktopPetForMacApp/
 ├── Package.swift                          # SPM 工程配置（macOS 13+ / 可执行目标）
 ├── package.sh                             # .app 打包脚本
-├── DesktopPetForMacApp.app                # 打包产物（可由脚本重新生成）
+├── rebuild.sh                             # 一键编译 + 打包 + 重启
+├── gen_wordbanks.py                       # 词库生成脚本（四级 / 六级 / 雅思 / 旅行，自动去重）
+├── cute pet.app                           # 打包产物（可由脚本重新生成）
 └── DesktopPetForMacApp/                   # 源码
     ├── DesktopPetForMacAppApp.swift       # @main 入口 + AppDelegate + 菜单栏
     ├── FloatingWindow.swift               # 浮动窗口 + CatView 绘制 + 右键菜单 + 各弹窗入口
@@ -104,6 +108,7 @@ DesktopPetForMacApp/
     └── Resources/
         ├── AppIcon.icns / AppIcon.png     # 应用图标
         ├── MenuBarIcon.png                # 菜单栏图标
+        ├── WordBank/                      # 单词词库（cet4 / cet6 / ielts / travel）
         └── Sprites/                       # 动画帧资源（按状态分目录）
             ├── focus/                     # 专注（15 帧）
             ├── idel/                      # 休闲（1 帧，预留）

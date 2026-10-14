@@ -3,13 +3,11 @@
 
 import Foundation
 
-/// 单词数据模型（本地词库，释义由 DictionaryService 从 API 获取）
+/// 单词数据模型（本地词库，紧凑格式：只存单词 + 中文释义）
+/// 音标 / 例句 / 发音等详情不落盘，由 DictionaryService 在学习阶段从 API 预取并缓存
 struct Word: Codable {
     let word: String
-    let phonetic: String?  // 音标（本地备用）
-    let meaning: String    // 中文释义（本地备用，API 优先）
-    let example: String?   // 例句（本地备用）
-    let category: String   // 分类
+    let meaning: String    // 中文释义（本地，考试选项用）
 }
 
 /// 单词分类

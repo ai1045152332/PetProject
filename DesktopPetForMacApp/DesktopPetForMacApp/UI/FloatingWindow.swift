@@ -642,37 +642,50 @@ class CatView: NSView {
     
     // MARK: - 背单词功能
         
-    /// 当前答题序号
+    /// 当前学习/答题序号
     private var quizIndex: Int = 0
+    /// 当前学习卡片序号（学习阶段）
+    private var learningIndex: Int = 0
+    /// 本轮学习的单词（学习 + 考试共用）
+    private var learningWords: [Word] = []
     /// 总答题数
-    private var quizTotal: Int = 5
+    private var quizTotal: Int = 3
     /// 得分
     private var quizScore: Int = 0
     /// 当前背单词弹窗引用
     private var wordLearningWindow: HTMLAlertWindow?
         
-    /// 开始背单词：逐题答题模式
+    /// 开始背单词：先学 3 个，再考 3 个
     func startWordLearning() {
         let category = WordService.shared.currentCategory
         let words = WordService.shared.getWords(for: category)
             
-        guard !words.isEmpty else {
-            FileLogger.log("[DesktopPet] 词库为空: \(category.rawValue)")
+        guard words.count >= 3 else {
+            FileLogger.log("[DesktopPet] 词库不足 3 个单词: \(category.rawValue)，共 \(words.count) 个")
             let htmlBody = """
             <div style="text-align:center;padding:40px 20px;">
                 <div style="font-size:48px;margin-bottom:16px;">📭</div>
-                <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">词库为空</div>
-                <div style="font-size:14px;color:#888;">请在设置中切换其他分类，或添加单词到词库</div>
+                <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">词库单词不足</div>
+                <div style="font-size:14px;color:#888;">至少需要 3 个单词才能开始学习<br>请在设置中切换其他分类，或添加单词到词库</div>
             </div>
             """
             wordLearningWindow = HTMLAlertWindow.showWordLearning(title: "背单词 📚", htmlBody: htmlBody, width: 360)
             return
         }
             
+        // 随机选 3 个单词用于学习和考试
+        learningWords = Array(words.shuffled().prefix(3))
+        learningIndex = 0
         quizIndex = 0
         quizScore = 0
-        quizTotal = min(5, words.count)
-        fetchAndShowQuiz()
+        quizTotal = learningWords.count
+        
+        // 学习开始即后台并行预取本轮单词详情（音标/例句/发音），
+        // 用户看学习卡片时数据陆续就绪，考试阶段全部命中缓存、0 网络等待
+        DictionaryService.shared.prefetch(words: learningWords.map { $0.word })
+
+        // 开始学习阶段
+        showLearningCard(index: 0)
     }
         
     /// 关闭当前背单词弹窗
@@ -681,84 +694,154 @@ class CatView: NSView {
         wordLearningWindow?.close()
         wordLearningWindow = nil
     }
+    
+    // MARK: - 学习阶段（先学 3 个）
+    
+    /// 显示学习卡片
+    /// 音标/例句优先读预取缓存；未就绪时先隐藏占位，数据到达后通过 JS 热更新
+    private func showLearningCard(index: Int) {
+        guard index < learningWords.count else {
+            // 学习完成，进入考试阶段
+            fetchAndShowQuiz()
+            return
+        }
         
-    /// 异步获取单词详情并显示答题界面
+        let word = learningWords[index]
+        learningIndex = index
+        
+        // 预取缓存中的详情（命中则直接展示，未命中由下方热更新补上）
+        let detail = DictionaryService.shared.cachedDetail(for: word.word)
+
+        // 音标
+        let phoneticHTML: String
+        if let ph = detail?.phonetic {
+            phoneticHTML = "<span id=\"card-phonetic\" class=\"word-phonetic\">\(ph)</span>"
+        } else {
+            phoneticHTML = "<span id=\"card-phonetic\" class=\"word-phonetic\" style=\"display:none\"></span>"
+        }
+        
+        // 例句
+        let exampleHTML: String
+        if let ex = detail?.firstExample {
+            exampleHTML = "<div id=\"card-example\" class=\"word-example\">\"\(ex)\"</div>"
+        } else {
+            exampleHTML = "<div id=\"card-example\" class=\"word-example\" style=\"display:none\"></div>"
+        }
+        
+        let isLast = index == learningWords.count - 1
+        let btnText = isLast ? "开始考试 📝" : "下一个单词 →"
+        
+        let htmlBody = """
+        <div class="quiz-progress-bar">
+            <div class="quiz-progress-fill" style="width:\(Double(index + 1) / Double(learningWords.count) * 100)%"></div>
+        </div>
+        <div class="quiz-meta">
+            <span>学习 \(index + 1) / \(learningWords.count)</span>
+            <span>📖 记忆模式</span>
+        </div>
+        <div class="word-card">
+            <div class="word-row">
+                <span class="word-text">\(word.word)</span>
+                \(phoneticHTML)
+                <button class="audio-btn" onclick="playAudio('\(word.word)')">🔊</button>
+            </div>
+            <div class="word-meaning">\(word.meaning)</div>
+            \(exampleHTML)
+        </div>
+        <button class="btn-next" onclick="nextLearning()">\(btnText)</button>
+        <style>
+            .quiz-progress-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-bottom: 12px; }
+            .quiz-progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 2px; transition: width 0.3s; }
+            .quiz-meta { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 16px; padding: 0 2px; }
+            .word-card { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 22px; margin-bottom: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
+            .word-row { display: flex; align-items: baseline; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+            .word-text { font-size: 28px; font-weight: 700; color: #a0e8ff; }
+            .word-phonetic { font-size: 14px; color: #888; }
+            .audio-btn { background: rgba(160,232,255,0.15); border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; cursor: pointer; transition: all 0.2s; }
+            .audio-btn:hover { background: rgba(160,232,255,0.3); transform: scale(1.1); }
+            .word-meaning { font-size: 18px; color: #e0e0e8; line-height: 1.6; }
+            .word-example { font-size: 12px; color: #777; font-style: italic; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); }
+            .btn-next { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 32px; border-radius: 20px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; }
+            .btn-next:hover { transform: scale(1.02); opacity: 0.95; }
+        </style>
+        <script>
+            function playAudio(word) {
+                if (window.webkit && window.webkit.messageHandlers.playAudio) {
+                    window.webkit.messageHandlers.playAudio.postMessage(word);
+                }
+            }
+            function nextLearning() {
+                if (window.webkit && window.webkit.messageHandlers.nextQuiz) {
+                    window.webkit.messageHandlers.nextQuiz.postMessage('next');
+                }
+            }
+        </script>
+        """
+        
+        let window = HTMLAlertWindow.showWordLearning(
+            title: "背单词 📚",
+            htmlBody: htmlBody,
+            width: 380,
+            onNextQuiz: { [weak self] _ in
+                self?.closeWordLearningWindow()
+                self?.showLearningCard(index: index + 1)
+            }
+        )
+        wordLearningWindow = window
+
+        // 详情尚未就绪：API 数据到达后热更新当前卡片；
+        // 若用户已翻页（wordLearningWindow 换成了新窗口），weak 引用比对会自动跳过
+        if detail == nil {
+            let targetWord = word.word
+            Task { [weak self, weak window] in
+                guard let fetched = await DictionaryService.shared.fetchWordDetail(word: targetWord) else { return }
+                guard let self = self, let win = window, self.wordLearningWindow === win else { return }
+
+                var js = ""
+                if let ph = fetched.phonetic {
+                    js += "var p=document.getElementById('card-phonetic');"
+                    js += "if(p){p.textContent='\(Self.jsEscaped(ph))';p.style.display='inline';}"
+                }
+                if let ex = fetched.firstExample {
+                    js += "var e=document.getElementById('card-example');"
+                    js += "if(e){e.textContent='\"\(Self.jsEscaped(ex))\"';e.style.display='block';}"
+                }
+                guard !js.isEmpty else { return }
+                win.evaluateScript(js)
+            }
+        }
+    }
+    
+    /// JS 字符串字面量转义（防止单词/例句中的引号破坏注入的脚本）
+    private static func jsEscaped(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    // MARK: - 考试阶段（再考 3 个）
+        
+    /// 生成选择题并显示考试界面（纯本地，无需网络）
     private func fetchAndShowQuiz() {
         guard quizIndex < quizTotal else {
             showQuizResult()
             return
         }
-            
+        
         let category = WordService.shared.currentCategory
-            
-        // 显示加载状态
-        let loadingHTML = """
-        <div style="text-align:center;padding:60px 20px;">
-            <div style="font-size:36px;margin-bottom:16px;animation:spin 1.5s linear infinite;">🔄</div>
-            <div style="font-size:15px;color:#888;">正在加载单词...</div>
-        </div>
-        <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
-        """
-        let loadingWindow = HTMLAlertWindow.showWordLearning(
-            title: "背单词 📚",
-            htmlBody: loadingHTML,
-            width: 380
-        )
-        wordLearningWindow = loadingWindow
-            
-        // 使用 Task 异步获取单词 + 生成选择题（避免 semaphore 死锁）
-        Task {
-            do {
-                FileLogger.log("[DesktopPet] 开始获取单词...")
-                let words = WordService.shared.getWords(for: category)
-                FileLogger.log("[DesktopPet] 词库单词数: \(words.count)")
-                
-                guard let word = words.shuffled().first else {
-                    FileLogger.log("[DesktopPet] 词库为空，无法获取单词")
-                    await MainActor.run {
-                        self.closeWordLearningWindow()
-                        self.showEmptyWordBankError()
-                    }
-                    return
-                }
-                
-                FileLogger.log("[DesktopPet] 选中单词: \(word.word)，开始生成选择题...")
-                let quiz = await DictionaryService.shared.generateQuiz(word: word, category: category)
-                FileLogger.log("[DesktopPet] 选择题生成\(quiz != nil ? "成功" : "失败")")
-                
-                await MainActor.run {
-                    self.closeWordLearningWindow()
-                    if let q = quiz {
-                        self.showQuizCard(quiz: q)
-                    } else {
-                        // API 失败，跳过此题
-                        FileLogger.log("[DesktopPet] 生成选择题失败，跳过: \(word.word)")
-                        self.quizIndex += 1
-                        self.fetchAndShowQuiz()
-                    }
-                }
-            } catch {
-                FileLogger.log("[DesktopPet] 获取单词时发生错误: \(error)")
-                await MainActor.run {
-                    self.closeWordLearningWindow()
-                    self.showEmptyWordBankError()
-                }
-            }
+        let word = learningWords[quizIndex]
+        
+        // 生成选择题（纯本地，同步完成）
+        let quiz = DictionaryService.shared.generateQuiz(word: word, category: category)
+        if let q = quiz {
+            showQuizCard(quiz: q)
+        } else {
+            FileLogger.log("[DesktopPet] 生成选择题失败，跳过: \(word.word)")
+            quizIndex += 1
+            fetchAndShowQuiz()
         }
     }
     
-    /// 显示词库为空错误
-    private func showEmptyWordBankError() {
-        let htmlBody = """
-        <div style="text-align:center;padding:40px 20px;">
-            <div style="font-size:48px;margin-bottom:16px;">📭</div>
-            <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">词库加载失败</div>
-            <div style="font-size:14px;color:#888;">请检查资源文件或切换其他分类</div>
-        </div>
-        """
-        wordLearningWindow = HTMLAlertWindow.showWordLearning(title: "背单词 📚", htmlBody: htmlBody, width: 360)
-    }
-        
     /// 显示答题卡片
     private func showQuizCard(quiz: QuizData) {
         let options = quiz.shuffledOptions
@@ -794,13 +877,8 @@ class CatView: NSView {
             phoneticHTML = ""
         }
             
-        // 音频按钮
-        let audioHTML: String
-        if let audio = quiz.audioURL {
-            audioHTML = "<button class=\"audio-btn\" onclick=\"playAudio('\(audio)')\">🔊</button>"
-        } else {
-            audioHTML = ""
-        }
+        // 音频按钮（点击时按需调 API 获取发音）
+        let audioHTML = "<button class=\"audio-btn\" onclick=\"playAudio('\(quiz.word)')\">🔊</button>"
             
         let htmlBody = """
         <div class="quiz-progress-bar">
@@ -845,9 +923,10 @@ class CatView: NSView {
             .quiz-option.wrong .option-label { background: #ff4d4f; color: white; }
         </style>
         <script>
-            function playAudio(url) {
-                var audio = new Audio(url);
-                audio.play().catch(function(){});
+            function playAudio(word) {
+                if (window.webkit && window.webkit.messageHandlers.playAudio) {
+                    window.webkit.messageHandlers.playAudio.postMessage(word);
+                }
             }
             function selectAnswer(selected, correct) {
                 var buttons = document.querySelectorAll('.quiz-option');

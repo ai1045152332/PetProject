@@ -1,72 +1,1746 @@
 [
   {
     "word": "abandon",
-    "phonetic": "/əˈbændən/",
-    "meaning": "v. 放弃，抛弃",
-    "example": "He abandoned his old car.",
-    "category": "四级"
+    "meaning": "v. 放弃，抛弃"
   },
   {
     "word": "ability",
-    "phonetic": "/əˈbɪləti/",
-    "meaning": "n. 能力，才能",
-    "example": "She has the ability to solve problems.",
-    "category": "四级"
+    "meaning": "n. 能力，才能"
   },
   {
     "word": "absorb",
-    "phonetic": "/əbˈzɔːrb/",
-    "meaning": "v. 吸收；使全神贯注",
-    "example": "Plants absorb water from the soil.",
-    "category": "四级"
+    "meaning": "v. 吸收；使全神贯注"
   },
   {
     "word": "achieve",
-    "phonetic": "/əˈtʃiːv/",
-    "meaning": "v. 达到，完成",
-    "example": "He achieved his goal.",
-    "category": "四级"
+    "meaning": "v. 达到，完成"
+  },
+  {
+    "word": "acquire",
+    "meaning": "v. 获得，学到"
+  },
+  {
+    "word": "adapt",
+    "meaning": "v. 适应，改编"
+  },
+  {
+    "word": "adequate",
+    "meaning": "adj. 足够的"
+  },
+  {
+    "word": "adjust",
+    "meaning": "v. 调整"
+  },
+  {
+    "word": "admire",
+    "meaning": "v. 钦佩"
+  },
+  {
+    "word": "admit",
+    "meaning": "v. 承认"
+  },
+  {
+    "word": "adopt",
+    "meaning": "v. 采用，收养"
+  },
+  {
+    "word": "advance",
+    "meaning": "v./n. 前进，进步"
+  },
+  {
+    "word": "advantage",
+    "meaning": "n. 优势"
+  },
+  {
+    "word": "affect",
+    "meaning": "v. 影响"
+  },
+  {
+    "word": "afford",
+    "meaning": "v. 负担得起"
+  },
+  {
+    "word": "aggressive",
+    "meaning": "adj. 好斗的"
+  },
+  {
+    "word": "allocate",
+    "meaning": "v. 分配"
+  },
+  {
+    "word": "alternative",
+    "meaning": "n. 替代品"
+  },
+  {
+    "word": "ambition",
+    "meaning": "n. 雄心"
+  },
+  {
+    "word": "analyze",
+    "meaning": "v. 分析"
+  },
+  {
+    "word": "annual",
+    "meaning": "adj. 每年的"
+  },
+  {
+    "word": "anticipate",
+    "meaning": "v. 预期"
+  },
+  {
+    "word": "anxiety",
+    "meaning": "n. 焦虑"
+  },
+  {
+    "word": "apparent",
+    "meaning": "adj. 明显的"
+  },
+  {
+    "word": "appeal",
+    "meaning": "v./n. 呼吁，吸引力"
+  },
+  {
+    "word": "appetite",
+    "meaning": "n. 食欲"
+  },
+  {
+    "word": "application",
+    "meaning": "n. 应用，申请"
+  },
+  {
+    "word": "appoint",
+    "meaning": "v. 任命"
+  },
+  {
+    "word": "appreciate",
+    "meaning": "v. 欣赏，感激"
+  },
+  {
+    "word": "approach",
+    "meaning": "v./n. 接近，方法"
+  },
+  {
+    "word": "appropriate",
+    "meaning": "adj. 适当的"
+  },
+  {
+    "word": "approve",
+    "meaning": "v. 批准"
+  },
+  {
+    "word": "arise",
+    "meaning": "v. 出现"
+  },
+  {
+    "word": "arrange",
+    "meaning": "v. 安排"
+  },
+  {
+    "word": "aspect",
+    "meaning": "n. 方面"
+  },
+  {
+    "word": "assert",
+    "meaning": "v. 断言"
+  },
+  {
+    "word": "assess",
+    "meaning": "v. 评估"
+  },
+  {
+    "word": "assign",
+    "meaning": "v. 分配"
+  },
+  {
+    "word": "assist",
+    "meaning": "v. 帮助"
+  },
+  {
+    "word": "associate",
+    "meaning": "v. 联想"
+  },
+  {
+    "word": "assume",
+    "meaning": "v. 假设"
+  },
+  {
+    "word": "assure",
+    "meaning": "v. 保证"
+  },
+  {
+    "word": "atmosphere",
+    "meaning": "n. 大气，气氛"
+  },
+  {
+    "word": "attach",
+    "meaning": "v. 附上"
+  },
+  {
+    "word": "attain",
+    "meaning": "v. 达到"
+  },
+  {
+    "word": "attempt",
+    "meaning": "v./n. 尝试"
+  },
+  {
+    "word": "attribute",
+    "meaning": "v. 归因于"
+  },
+  {
+    "word": "authority",
+    "meaning": "n. 权威"
+  },
+  {
+    "word": "available",
+    "meaning": "adj. 可用的"
+  },
+  {
+    "word": "aware",
+    "meaning": "adj. 意识到的"
+  },
+  {
+    "word": "balance",
+    "meaning": "v./n. 平衡"
+  },
+  {
+    "word": "barrier",
+    "meaning": "n. 障碍"
   },
   {
     "word": "benefit",
-    "phonetic": "/ˈbenɪfɪt/",
-    "meaning": "n. 利益，好处 v. 有益于",
-    "example": "Exercise benefits your health.",
-    "category": "四级"
+    "meaning": "n. 利益 v. 有益于"
+  },
+  {
+    "word": "blame",
+    "meaning": "v./n. 责备"
+  },
+  {
+    "word": "boost",
+    "meaning": "v./n. 推动"
+  },
+  {
+    "word": "border",
+    "meaning": "n. 边界"
+  },
+  {
+    "word": "bore",
+    "meaning": "v. 使厌烦"
+  },
+  {
+    "word": "brief",
+    "meaning": "adj. 简短的"
+  },
+  {
+    "word": "brilliant",
+    "meaning": "adj. 杰出的"
+  },
+  {
+    "word": "budget",
+    "meaning": "n. 预算"
+  },
+  {
+    "word": "burden",
+    "meaning": "n. 负担"
   },
   {
     "word": "calculate",
-    "phonetic": "/ˈkælkjuleɪt/",
-    "meaning": "v. 计算，估计",
-    "example": "Calculate the total cost.",
-    "category": "四级"
+    "meaning": "v. 计算"
+  },
+  {
+    "word": "campaign",
+    "meaning": "n. 运动"
+  },
+  {
+    "word": "candidate",
+    "meaning": "n. 候选人"
+  },
+  {
+    "word": "capable",
+    "meaning": "adj. 有能力的"
+  },
+  {
+    "word": "capture",
+    "meaning": "v. 捕获"
+  },
+  {
+    "word": "career",
+    "meaning": "n. 职业"
+  },
+  {
+    "word": "casual",
+    "meaning": "adj. 随意的"
+  },
+  {
+    "word": "category",
+    "meaning": "n. 种类"
+  },
+  {
+    "word": "celebrate",
+    "meaning": "v. 庆祝"
   },
   {
     "word": "challenge",
-    "phonetic": "/ˈtʃælɪndʒ/",
-    "meaning": "n. 挑战 v. 向...挑战",
-    "example": "This is a big challenge for me.",
-    "category": "四级"
+    "meaning": "n. 挑战"
+  },
+  {
+    "word": "channel",
+    "meaning": "n. 频道，渠道"
+  },
+  {
+    "word": "character",
+    "meaning": "n. 性格，角色"
+  },
+  {
+    "word": "charge",
+    "meaning": "v. 收费"
+  },
+  {
+    "word": "chemical",
+    "meaning": "adj. 化学的"
+  },
+  {
+    "word": "circumstance",
+    "meaning": "n. 环境"
+  },
+  {
+    "word": "claim",
+    "meaning": "v./n. 声称"
+  },
+  {
+    "word": "climate",
+    "meaning": "n. 气候"
+  },
+  {
+    "word": "collapse",
+    "meaning": "v./n. 倒塌"
+  },
+  {
+    "word": "colleague",
+    "meaning": "n. 同事"
+  },
+  {
+    "word": "combine",
+    "meaning": "v. 结合"
+  },
+  {
+    "word": "comfort",
+    "meaning": "n./v. 安慰"
+  },
+  {
+    "word": "command",
+    "meaning": "v./n. 命令"
+  },
+  {
+    "word": "comment",
+    "meaning": "n./v. 评论"
+  },
+  {
+    "word": "commercial",
+    "meaning": "adj. 商业的"
+  },
+  {
+    "word": "commit",
+    "meaning": "v. 承诺"
   },
   {
     "word": "communicate",
-    "phonetic": "/kəˈmjuːnɪkeɪt/",
-    "meaning": "v. 交流，沟通",
-    "example": "We communicate by email.",
-    "category": "四级"
+    "meaning": "v. 交流"
   },
   {
-    "word": "confident",
-    "phonetic": "/ˈkɒnfɪdənt/",
-    "meaning": "adj. 自信的，确信的",
-    "example": "She is confident of success.",
-    "category": "四级"
+    "word": "community",
+    "meaning": "n. 社区"
+  },
+  {
+    "word": "companion",
+    "meaning": "n. 同伴"
+  },
+  {
+    "word": "compare",
+    "meaning": "v. 比较"
+  },
+  {
+    "word": "compete",
+    "meaning": "v. 竞争"
+  },
+  {
+    "word": "complex",
+    "meaning": "adj. 复杂的"
+  },
+  {
+    "word": "component",
+    "meaning": "n. 组成部分"
+  },
+  {
+    "word": "concentrate",
+    "meaning": "v. 集中"
+  },
+  {
+    "word": "concept",
+    "meaning": "n. 概念"
+  },
+  {
+    "word": "concern",
+    "meaning": "v./n. 关心"
+  },
+  {
+    "word": "conclude",
+    "meaning": "v. 结束"
+  },
+  {
+    "word": "concrete",
+    "meaning": "adj. 具体的"
+  },
+  {
+    "word": "conduct",
+    "meaning": "v./n. 行为"
+  },
+  {
+    "word": "confidence",
+    "meaning": "n. 信心"
+  },
+  {
+    "word": "confirm",
+    "meaning": "v. 确认"
+  },
+  {
+    "word": "conflict",
+    "meaning": "n. 冲突"
+  },
+  {
+    "word": "confuse",
+    "meaning": "v. 使困惑"
+  },
+  {
+    "word": "conscious",
+    "meaning": "adj. 有意识的"
+  },
+  {
+    "word": "consequence",
+    "meaning": "n. 结果"
+  },
+  {
+    "word": "consider",
+    "meaning": "v. 考虑"
+  },
+  {
+    "word": "consist",
+    "meaning": "v. 由…组成"
+  },
+  {
+    "word": "constant",
+    "meaning": "adj. 不断的"
+  },
+  {
+    "word": "construct",
+    "meaning": "v. 建造"
+  },
+  {
+    "word": "consult",
+    "meaning": "v. 咨询"
+  },
+  {
+    "word": "consume",
+    "meaning": "v. 消耗"
+  },
+  {
+    "word": "contact",
+    "meaning": "n./v. 联系"
+  },
+  {
+    "word": "content",
+    "meaning": "n. 内容"
+  },
+  {
+    "word": "context",
+    "meaning": "n. 语境"
+  },
+  {
+    "word": "contribute",
+    "meaning": "v. 贡献"
+  },
+  {
+    "word": "convenient",
+    "meaning": "adj. 方便的"
+  },
+  {
+    "word": "convince",
+    "meaning": "v. 说服"
+  },
+  {
+    "word": "cooperate",
+    "meaning": "v. 合作"
+  },
+  {
+    "word": "creative",
+    "meaning": "adj. 创造性的"
+  },
+  {
+    "word": "critical",
+    "meaning": "adj. 批评的"
+  },
+  {
+    "word": "cultivate",
+    "meaning": "v. 培养"
+  },
+  {
+    "word": "curiosity",
+    "meaning": "n. 好奇心"
+  },
+  {
+    "word": "current",
+    "meaning": "adj. 当前的"
+  },
+  {
+    "word": "database",
+    "meaning": "n. 数据库"
+  },
+  {
+    "word": "deadline",
+    "meaning": "n. 截止日期"
+  },
+  {
+    "word": "debate",
+    "meaning": "n./v. 辩论"
+  },
+  {
+    "word": "decade",
+    "meaning": "n. 十年"
+  },
+  {
+    "word": "decline",
+    "meaning": "v./n. 下降"
+  },
+  {
+    "word": "definite",
+    "meaning": "adj. 明确的"
+  },
+  {
+    "word": "delay",
+    "meaning": "v./n. 推迟"
+  },
+  {
+    "word": "deliver",
+    "meaning": "v. 递送"
+  },
+  {
+    "word": "demand",
+    "meaning": "v./n. 要求"
   },
   {
     "word": "demonstrate",
-    "phonetic": "/ˈdemənstreɪt/",
-    "meaning": "v. 展示，证明",
-    "example": "Let me demonstrate how it works.",
-    "category": "四级"
+    "meaning": "v. 展示"
+  },
+  {
+    "word": "depression",
+    "meaning": "n. 抑郁"
+  },
+  {
+    "word": "derive",
+    "meaning": "v. 源于"
+  },
+  {
+    "word": "desperate",
+    "meaning": "adj. 绝望的"
+  },
+  {
+    "word": "despite",
+    "meaning": "prep. 尽管"
+  },
+  {
+    "word": "detect",
+    "meaning": "v. 检测"
+  },
+  {
+    "word": "determine",
+    "meaning": "v. 决定"
+  },
+  {
+    "word": "device",
+    "meaning": "n. 设备"
+  },
+  {
+    "word": "devote",
+    "meaning": "v. 奉献"
+  },
+  {
+    "word": "dilemma",
+    "meaning": "n. 困境"
+  },
+  {
+    "word": "dimension",
+    "meaning": "n. 维度"
+  },
+  {
+    "word": "discipline",
+    "meaning": "n. 纪律"
+  },
+  {
+    "word": "distinguish",
+    "meaning": "v. 区分"
+  },
+  {
+    "word": "distribute",
+    "meaning": "v. 分配"
+  },
+  {
+    "word": "diverse",
+    "meaning": "adj. 多样的"
+  },
+  {
+    "word": "domestic",
+    "meaning": "adj. 国内的"
+  },
+  {
+    "word": "dominate",
+    "meaning": "v. 支配"
+  },
+  {
+    "word": "dramatic",
+    "meaning": "adj. 戏剧性的"
+  },
+  {
+    "word": "dynamic",
+    "meaning": "adj. 动态的"
+  },
+  {
+    "word": "economy",
+    "meaning": "n. 经济"
+  },
+  {
+    "word": "efficient",
+    "meaning": "adj. 高效的"
+  },
+  {
+    "word": "eliminate",
+    "meaning": "v. 消除"
+  },
+  {
+    "word": "embrace",
+    "meaning": "v./n. 拥抱"
+  },
+  {
+    "word": "emerge",
+    "meaning": "v. 出现"
+  },
+  {
+    "word": "emotion",
+    "meaning": "n. 情感"
+  },
+  {
+    "word": "emphasis",
+    "meaning": "n. 强调"
+  },
+  {
+    "word": "encounter",
+    "meaning": "v./n. 遭遇"
+  },
+  {
+    "word": "encourage",
+    "meaning": "v. 鼓励"
+  },
+  {
+    "word": "endure",
+    "meaning": "v. 忍受"
+  },
+  {
+    "word": "enhance",
+    "meaning": "v. 增强"
+  },
+  {
+    "word": "enormous",
+    "meaning": "adj. 巨大的"
+  },
+  {
+    "word": "enterprise",
+    "meaning": "n. 企业"
+  },
+  {
+    "word": "environment",
+    "meaning": "n. 环境"
+  },
+  {
+    "word": "essential",
+    "meaning": "adj. 必要的"
+  },
+  {
+    "word": "establish",
+    "meaning": "v. 建立"
+  },
+  {
+    "word": "evaluate",
+    "meaning": "v. 评价"
+  },
+  {
+    "word": "evidence",
+    "meaning": "n. 证据"
+  },
+  {
+    "word": "evolve",
+    "meaning": "v. 进化"
+  },
+  {
+    "word": "exaggerate",
+    "meaning": "v. 夸张"
+  },
+  {
+    "word": "exceed",
+    "meaning": "v. 超过"
+  },
+  {
+    "word": "exchange",
+    "meaning": "v./n. 交换"
+  },
+  {
+    "word": "exclude",
+    "meaning": "v. 排除"
+  },
+  {
+    "word": "expand",
+    "meaning": "v. 扩大"
+  },
+  {
+    "word": "expense",
+    "meaning": "n. 费用"
+  },
+  {
+    "word": "exploit",
+    "meaning": "v. 利用"
+  },
+  {
+    "word": "explore",
+    "meaning": "v. 探索"
+  },
+  {
+    "word": "expose",
+    "meaning": "v. 暴露"
+  },
+  {
+    "word": "extend",
+    "meaning": "v. 延伸"
+  },
+  {
+    "word": "external",
+    "meaning": "adj. 外部的"
+  },
+  {
+    "word": "extraordinary",
+    "meaning": "adj. 非凡的"
+  },
+  {
+    "word": "extreme",
+    "meaning": "adj. 极端的"
+  },
+  {
+    "word": "facility",
+    "meaning": "n. 设施"
+  },
+  {
+    "word": "failure",
+    "meaning": "n. 失败"
+  },
+  {
+    "word": "fascinate",
+    "meaning": "v. 使着迷"
+  },
+  {
+    "word": "feature",
+    "meaning": "n. 特征"
+  },
+  {
+    "word": "financial",
+    "meaning": "adj. 金融的"
+  },
+  {
+    "word": "flexible",
+    "meaning": "adj. 灵活的"
+  },
+  {
+    "word": "forbid",
+    "meaning": "v. 禁止"
+  },
+  {
+    "word": "forecast",
+    "meaning": "v./n. 预测"
+  },
+  {
+    "word": "formal",
+    "meaning": "adj. 正式的"
+  },
+  {
+    "word": "formula",
+    "meaning": "n. 公式"
+  },
+  {
+    "word": "fortune",
+    "meaning": "n. 财富"
+  },
+  {
+    "word": "foundation",
+    "meaning": "n. 基础"
+  },
+  {
+    "word": "frustrate",
+    "meaning": "v. 使沮丧"
+  },
+  {
+    "word": "fundamental",
+    "meaning": "adj. 基本的"
+  },
+  {
+    "word": "generate",
+    "meaning": "v. 产生"
+  },
+  {
+    "word": "generous",
+    "meaning": "adj. 慷慨的"
+  },
+  {
+    "word": "genuine",
+    "meaning": "adj. 真正的"
+  },
+  {
+    "word": "global",
+    "meaning": "adj. 全球的"
+  },
+  {
+    "word": "govern",
+    "meaning": "v. 统治"
+  },
+  {
+    "word": "gradual",
+    "meaning": "adj. 逐渐的"
+  },
+  {
+    "word": "guarantee",
+    "meaning": "v./n. 保证"
+  },
+  {
+    "word": "guilty",
+    "meaning": "adj. 有罪的"
+  },
+  {
+    "word": "harmony",
+    "meaning": "n. 和谐"
+  },
+  {
+    "word": "hesitate",
+    "meaning": "v. 犹豫"
+  },
+  {
+    "word": "highlight",
+    "meaning": "v. 强调"
+  },
+  {
+    "word": "horizon",
+    "meaning": "n. 地平线"
+  },
+  {
+    "word": "humble",
+    "meaning": "adj. 谦逊的"
+  },
+  {
+    "word": "identical",
+    "meaning": "adj. 相同的"
+  },
+  {
+    "word": "identify",
+    "meaning": "v. 识别"
+  },
+  {
+    "word": "ignore",
+    "meaning": "v. 忽视"
+  },
+  {
+    "word": "illustrate",
+    "meaning": "v. 说明"
+  },
+  {
+    "word": "immense",
+    "meaning": "adj. 巨大的"
+  },
+  {
+    "word": "impact",
+    "meaning": "n./v. 影响"
+  },
+  {
+    "word": "implement",
+    "meaning": "v. 实施"
+  },
+  {
+    "word": "imply",
+    "meaning": "v. 暗示"
+  },
+  {
+    "word": "impose",
+    "meaning": "v. 强加"
+  },
+  {
+    "word": "incredible",
+    "meaning": "adj. 难以置信的"
+  },
+  {
+    "word": "indicate",
+    "meaning": "v. 表明"
+  },
+  {
+    "word": "individual",
+    "meaning": "n. 个人"
+  },
+  {
+    "word": "inevitable",
+    "meaning": "adj. 不可避免的"
+  },
+  {
+    "word": "influence",
+    "meaning": "n./v. 影响"
+  },
+  {
+    "word": "initial",
+    "meaning": "adj. 最初的"
+  },
+  {
+    "word": "innocent",
+    "meaning": "adj. 无辜的"
+  },
+  {
+    "word": "innovation",
+    "meaning": "n. 创新"
+  },
+  {
+    "word": "inspect",
+    "meaning": "v. 检查"
+  },
+  {
+    "word": "inspire",
+    "meaning": "v. 启发"
+  },
+  {
+    "word": "install",
+    "meaning": "v. 安装"
+  },
+  {
+    "word": "instance",
+    "meaning": "n. 实例"
+  },
+  {
+    "word": "integrate",
+    "meaning": "v. 整合"
+  },
+  {
+    "word": "intense",
+    "meaning": "adj. 强烈的"
+  },
+  {
+    "word": "intention",
+    "meaning": "n. 意图"
+  },
+  {
+    "word": "invest",
+    "meaning": "v. 投资"
+  },
+  {
+    "word": "investigate",
+    "meaning": "v. 调查"
+  },
+  {
+    "word": "involve",
+    "meaning": "v. 涉及"
+  },
+  {
+    "word": "isolate",
+    "meaning": "v. 隔离"
+  },
+  {
+    "word": "justify",
+    "meaning": "v. 证明正当"
+  },
+  {
+    "word": "label",
+    "meaning": "n. 标签"
+  },
+  {
+    "word": "launch",
+    "meaning": "v./n. 发射"
+  },
+  {
+    "word": "layer",
+    "meaning": "n. 层"
+  },
+  {
+    "word": "lean",
+    "meaning": "v. 倾斜"
+  },
+  {
+    "word": "legacy",
+    "meaning": "n. 遗产"
+  },
+  {
+    "word": "legislation",
+    "meaning": "n. 法律"
+  },
+  {
+    "word": "leisure",
+    "meaning": "n. 休闲"
+  },
+  {
+    "word": "liberal",
+    "meaning": "adj. 自由的"
+  },
+  {
+    "word": "limitation",
+    "meaning": "n. 限制"
+  },
+  {
+    "word": "literature",
+    "meaning": "n. 文学"
+  },
+  {
+    "word": "locate",
+    "meaning": "v. 位于"
+  },
+  {
+    "word": "magnificent",
+    "meaning": "adj. 壮丽的"
+  },
+  {
+    "word": "maintain",
+    "meaning": "v. 维持"
+  },
+  {
+    "word": "manufacture",
+    "meaning": "v./n. 制造"
+  },
+  {
+    "word": "margin",
+    "meaning": "n. 边缘"
+  },
+  {
+    "word": "massive",
+    "meaning": "adj. 大量的"
+  },
+  {
+    "word": "mature",
+    "meaning": "adj. 成熟的"
+  },
+  {
+    "word": "measure",
+    "meaning": "v./n. 测量"
+  },
+  {
+    "word": "mechanism",
+    "meaning": "n. 机制"
+  },
+  {
+    "word": "modify",
+    "meaning": "v. 修改"
+  },
+  {
+    "word": "monitor",
+    "meaning": "v. 监控"
+  },
+  {
+    "word": "motive",
+    "meaning": "n. 动机"
+  },
+  {
+    "word": "mutual",
+    "meaning": "adj. 相互的"
+  },
+  {
+    "word": "negotiate",
+    "meaning": "v. 谈判"
+  },
+  {
+    "word": "notion",
+    "meaning": "n. 概念"
+  },
+  {
+    "word": "nuclear",
+    "meaning": "adj. 核的"
+  },
+  {
+    "word": "obligation",
+    "meaning": "n. 义务"
+  },
+  {
+    "word": "obstacle",
+    "meaning": "n. 障碍"
+  },
+  {
+    "word": "occupy",
+    "meaning": "v. 占据"
+  },
+  {
+    "word": "offend",
+    "meaning": "v. 冒犯"
+  },
+  {
+    "word": "operate",
+    "meaning": "v. 操作"
+  },
+  {
+    "word": "opponent",
+    "meaning": "n. 对手"
+  },
+  {
+    "word": "opportunity",
+    "meaning": "n. 机会"
+  },
+  {
+    "word": "option",
+    "meaning": "n. 选择"
+  },
+  {
+    "word": "origin",
+    "meaning": "n. 起源"
+  },
+  {
+    "word": "outcome",
+    "meaning": "n. 结果"
+  },
+  {
+    "word": "outline",
+    "meaning": "n. 轮廓"
+  },
+  {
+    "word": "overcome",
+    "meaning": "v. 克服"
+  },
+  {
+    "word": "overlook",
+    "meaning": "v. 忽视"
+  },
+  {
+    "word": "parallel",
+    "meaning": "adj. 平行的"
+  },
+  {
+    "word": "participate",
+    "meaning": "v. 参加"
+  },
+  {
+    "word": "perceive",
+    "meaning": "v. 察觉"
+  },
+  {
+    "word": "permanent",
+    "meaning": "adj. 永久的"
+  },
+  {
+    "word": "permit",
+    "meaning": "v. 允许"
+  },
+  {
+    "word": "perspective",
+    "meaning": "n. 观点"
+  },
+  {
+    "word": "phenomenon",
+    "meaning": "n. 现象"
+  },
+  {
+    "word": "physical",
+    "meaning": "adj. 身体的"
+  },
+  {
+    "word": "policy",
+    "meaning": "n. 政策"
+  },
+  {
+    "word": "portion",
+    "meaning": "n. 部分"
+  },
+  {
+    "word": "possess",
+    "meaning": "v. 拥有"
+  },
+  {
+    "word": "potential",
+    "meaning": "adj. 潜在的"
+  },
+  {
+    "word": "poverty",
+    "meaning": "n. 贫穷"
+  },
+  {
+    "word": "practical",
+    "meaning": "adj. 实际的"
+  },
+  {
+    "word": "predict",
+    "meaning": "v. 预测"
+  },
+  {
+    "word": "prejudice",
+    "meaning": "n. 偏见"
+  },
+  {
+    "word": "previous",
+    "meaning": "adj. 以前的"
+  },
+  {
+    "word": "principal",
+    "meaning": "adj. 主要的"
+  },
+  {
+    "word": "principle",
+    "meaning": "n. 原则"
+  },
+  {
+    "word": "priority",
+    "meaning": "n. 优先"
+  },
+  {
+    "word": "privilege",
+    "meaning": "n. 特权"
+  },
+  {
+    "word": "procedure",
+    "meaning": "n. 程序"
+  },
+  {
+    "word": "process",
+    "meaning": "n. 过程"
+  },
+  {
+    "word": "profound",
+    "meaning": "adj. 深刻的"
+  },
+  {
+    "word": "prohibit",
+    "meaning": "v. 禁止"
+  },
+  {
+    "word": "promote",
+    "meaning": "v. 促进"
+  },
+  {
+    "word": "proportion",
+    "meaning": "n. 比例"
+  },
+  {
+    "word": "propose",
+    "meaning": "v. 建议"
+  },
+  {
+    "word": "prospect",
+    "meaning": "n. 前景"
+  },
+  {
+    "word": "prosper",
+    "meaning": "v. 繁荣"
+  },
+  {
+    "word": "pursue",
+    "meaning": "v. 追求"
+  },
+  {
+    "word": "radical",
+    "meaning": "adj. 根本的"
+  },
+  {
+    "word": "random",
+    "meaning": "adj. 随机的"
+  },
+  {
+    "word": "range",
+    "meaning": "n. 范围"
+  },
+  {
+    "word": "rational",
+    "meaning": "adj. 理性的"
+  },
+  {
+    "word": "react",
+    "meaning": "v. 反应"
+  },
+  {
+    "word": "recover",
+    "meaning": "v. 恢复"
+  },
+  {
+    "word": "reform",
+    "meaning": "v./n. 改革"
+  },
+  {
+    "word": "region",
+    "meaning": "n. 地区"
+  },
+  {
+    "word": "register",
+    "meaning": "v. 登记"
+  },
+  {
+    "word": "regulate",
+    "meaning": "v. 管理"
+  },
+  {
+    "word": "reinforce",
+    "meaning": "v. 加强"
+  },
+  {
+    "word": "release",
+    "meaning": "v./n. 释放"
+  },
+  {
+    "word": "relevant",
+    "meaning": "adj. 相关的"
+  },
+  {
+    "word": "reluctant",
+    "meaning": "adj. 不情愿的"
+  },
+  {
+    "word": "remark",
+    "meaning": "v./n. 评论"
+  },
+  {
+    "word": "remove",
+    "meaning": "v. 移除"
+  },
+  {
+    "word": "render",
+    "meaning": "v. 使得"
+  },
+  {
+    "word": "represent",
+    "meaning": "v. 代表"
+  },
+  {
+    "word": "reputation",
+    "meaning": "n. 名声"
+  },
+  {
+    "word": "request",
+    "meaning": "v./n. 请求"
+  },
+  {
+    "word": "require",
+    "meaning": "v. 需要"
+  },
+  {
+    "word": "research",
+    "meaning": "n./v. 研究"
+  },
+  {
+    "word": "reserve",
+    "meaning": "v. 保留"
+  },
+  {
+    "word": "resident",
+    "meaning": "n. 居民"
+  },
+  {
+    "word": "resist",
+    "meaning": "v. 抵抗"
+  },
+  {
+    "word": "resolve",
+    "meaning": "v. 解决"
+  },
+  {
+    "word": "resource",
+    "meaning": "n. 资源"
+  },
+  {
+    "word": "respond",
+    "meaning": "v. 回应"
+  },
+  {
+    "word": "restore",
+    "meaning": "v. 恢复"
+  },
+  {
+    "word": "restrict",
+    "meaning": "v. 限制"
+  },
+  {
+    "word": "retain",
+    "meaning": "v. 保持"
+  },
+  {
+    "word": "retreat",
+    "meaning": "v./n. 撤退"
+  },
+  {
+    "word": "reveal",
+    "meaning": "v. 揭示"
+  },
+  {
+    "word": "revenue",
+    "meaning": "n. 收入"
+  },
+  {
+    "word": "reverse",
+    "meaning": "v. 颠倒"
+  },
+  {
+    "word": "routine",
+    "meaning": "n. 常规"
+  },
+  {
+    "word": "sacrifice",
+    "meaning": "v./n. 牺牲"
+  },
+  {
+    "word": "sample",
+    "meaning": "n. 样本"
+  },
+  {
+    "word": "satellite",
+    "meaning": "n. 卫星"
+  },
+  {
+    "word": "schedule",
+    "meaning": "n. 时间表"
+  },
+  {
+    "word": "scheme",
+    "meaning": "n. 方案"
+  },
+  {
+    "word": "security",
+    "meaning": "n. 安全"
+  },
+  {
+    "word": "seek",
+    "meaning": "v. 寻找"
+  },
+  {
+    "word": "select",
+    "meaning": "v. 选择"
+  },
+  {
+    "word": "senior",
+    "meaning": "adj. 高级的"
+  },
+  {
+    "word": "sequence",
+    "meaning": "n. 顺序"
+  },
+  {
+    "word": "session",
+    "meaning": "n. 会议"
+  },
+  {
+    "word": "severe",
+    "meaning": "adj. 严重的"
+  },
+  {
+    "word": "shelter",
+    "meaning": "n. 庇护所"
+  },
+  {
+    "word": "shift",
+    "meaning": "v./n. 转变"
+  },
+  {
+    "word": "significance",
+    "meaning": "n. 重要性"
+  },
+  {
+    "word": "similar",
+    "meaning": "adj. 相似的"
+  },
+  {
+    "word": "simplify",
+    "meaning": "v. 简化"
+  },
+  {
+    "word": "slight",
+    "meaning": "adj. 轻微的"
+  },
+  {
+    "word": "solar",
+    "meaning": "adj. 太阳的"
+  },
+  {
+    "word": "sophisticated",
+    "meaning": "adj. 复杂的"
+  },
+  {
+    "word": "source",
+    "meaning": "n. 来源"
+  },
+  {
+    "word": "specific",
+    "meaning": "adj. 具体的"
+  },
+  {
+    "word": "sponsor",
+    "meaning": "n./v. 赞助"
+  },
+  {
+    "word": "stable",
+    "meaning": "adj. 稳定的"
+  },
+  {
+    "word": "statistics",
+    "meaning": "n. 统计"
+  },
+  {
+    "word": "status",
+    "meaning": "n. 地位"
+  },
+  {
+    "word": "strategy",
+    "meaning": "n. 策略"
+  },
+  {
+    "word": "stress",
+    "meaning": "n./v. 压力"
+  },
+  {
+    "word": "structure",
+    "meaning": "n. 结构"
+  },
+  {
+    "word": "submit",
+    "meaning": "v. 提交"
+  },
+  {
+    "word": "substance",
+    "meaning": "n. 物质"
+  },
+  {
+    "word": "substitute",
+    "meaning": "n. 替代品"
+  },
+  {
+    "word": "subtle",
+    "meaning": "adj. 微妙的"
+  },
+  {
+    "word": "sufficient",
+    "meaning": "adj. 足够的"
+  },
+  {
+    "word": "summarize",
+    "meaning": "v. 总结"
+  },
+  {
+    "word": "superior",
+    "meaning": "adj. 优越的"
+  },
+  {
+    "word": "surge",
+    "meaning": "n./v. 激增"
+  },
+  {
+    "word": "surplus",
+    "meaning": "n. 过剩"
+  },
+  {
+    "word": "surrender",
+    "meaning": "v. 投降"
+  },
+  {
+    "word": "survive",
+    "meaning": "v. 幸存"
+  },
+  {
+    "word": "suspect",
+    "meaning": "v. 怀疑"
+  },
+  {
+    "word": "suspend",
+    "meaning": "v. 暂停"
+  },
+  {
+    "word": "sustain",
+    "meaning": "v. 维持"
+  },
+  {
+    "word": "symbol",
+    "meaning": "n. 象征"
+  },
+  {
+    "word": "target",
+    "meaning": "n. 目标"
+  },
+  {
+    "word": "technique",
+    "meaning": "n. 技术"
+  },
+  {
+    "word": "technology",
+    "meaning": "n. 技术"
+  },
+  {
+    "word": "temporary",
+    "meaning": "adj. 暂时的"
+  },
+  {
+    "word": "tendency",
+    "meaning": "n. 趋势"
+  },
+  {
+    "word": "terminal",
+    "meaning": "n. 终端"
+  },
+  {
+    "word": "theme",
+    "meaning": "n. 主题"
+  },
+  {
+    "word": "theory",
+    "meaning": "n. 理论"
+  },
+  {
+    "word": "threat",
+    "meaning": "n. 威胁"
+  },
+  {
+    "word": "thrive",
+    "meaning": "v. 繁荣"
+  },
+  {
+    "word": "tolerance",
+    "meaning": "n. 容忍"
+  },
+  {
+    "word": "trace",
+    "meaning": "n. 痕迹"
+  },
+  {
+    "word": "transform",
+    "meaning": "v. 转变"
+  },
+  {
+    "word": "transmit",
+    "meaning": "v. 传播"
+  },
+  {
+    "word": "transparent",
+    "meaning": "adj. 透明的"
+  },
+  {
+    "word": "trend",
+    "meaning": "n. 趋势"
+  },
+  {
+    "word": "trigger",
+    "meaning": "v. 触发"
+  },
+  {
+    "word": "triumph",
+    "meaning": "n. 胜利"
+  },
+  {
+    "word": "tropical",
+    "meaning": "adj. 热带的"
+  },
+  {
+    "word": "ultimate",
+    "meaning": "adj. 最终的"
+  },
+  {
+    "word": "undergo",
+    "meaning": "v. 经历"
+  },
+  {
+    "word": "undermine",
+    "meaning": "v. 削弱"
+  },
+  {
+    "word": "uniform",
+    "meaning": "n. 制服"
+  },
+  {
+    "word": "unique",
+    "meaning": "adj. 独特的"
+  },
+  {
+    "word": "utilize",
+    "meaning": "v. 利用"
+  },
+  {
+    "word": "vague",
+    "meaning": "adj. 模糊的"
+  },
+  {
+    "word": "value",
+    "meaning": "n. 价值"
+  },
+  {
+    "word": "variety",
+    "meaning": "n. 多样性"
+  },
+  {
+    "word": "vehicle",
+    "meaning": "n. 车辆"
+  },
+  {
+    "word": "venture",
+    "meaning": "n. 冒险"
+  },
+  {
+    "word": "version",
+    "meaning": "n. 版本"
+  },
+  {
+    "word": "via",
+    "meaning": "prep. 通过"
+  },
+  {
+    "word": "violate",
+    "meaning": "v. 违反"
+  },
+  {
+    "word": "virtual",
+    "meaning": "adj. 虚拟的"
+  },
+  {
+    "word": "visible",
+    "meaning": "adj. 可见的"
+  },
+  {
+    "word": "vision",
+    "meaning": "n. 视力"
+  },
+  {
+    "word": "vital",
+    "meaning": "adj. 至关重要的"
+  },
+  {
+    "word": "vivid",
+    "meaning": "adj. 生动的"
+  },
+  {
+    "word": "volume",
+    "meaning": "n. 体积"
+  },
+  {
+    "word": "voluntary",
+    "meaning": "adj. 自愿的"
+  },
+  {
+    "word": "vulnerable",
+    "meaning": "adj. 脆弱的"
+  },
+  {
+    "word": "wealth",
+    "meaning": "n. 财富"
+  },
+  {
+    "word": "welfare",
+    "meaning": "n. 福利"
+  },
+  {
+    "word": "whereas",
+    "meaning": "conj. 然而"
+  },
+  {
+    "word": "witness",
+    "meaning": "n. 目击者"
+  },
+  {
+    "word": "worthwhile",
+    "meaning": "adj. 值得的"
+  },
+  {
+    "word": "zone",
+    "meaning": "n. 地区"
   }
 ]

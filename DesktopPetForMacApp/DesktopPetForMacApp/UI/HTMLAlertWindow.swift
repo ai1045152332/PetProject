@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import WebKit
 
 /// 基于 WKWebView 的自定义弹窗窗口（支持自适应高度 + 输入模式）
@@ -14,6 +15,8 @@ class HTMLAlertWindow: NSWindow {
     private var targetMaxHeight: CGFloat = 640
     private var hasSized = false
     private var dragOffset: NSPoint = .zero
+    /// 附加业务 CSS（Todo 列表 / 热点新闻表格 / 喝水文案等），经 CardFrame 基类渲染
+    private var extraCSS: String = ""
     /// Todo 模式窗口初始高度（按待办数量估算，放大后由 CSS height:100% 撑满）
     private var todoEstimatedHeight: CGFloat?
     
@@ -28,6 +31,9 @@ class HTMLAlertWindow: NSWindow {
     private var onRetryLearning: (() -> Void)?
     private var nextQuizHandler: WordNextQuizHandler?
     private var retryLearningHandler: WordRetryLearningHandler?
+    private var playAudioHandler: WordPlayAudioHandler?
+    private var audioPlayer: AVAudioPlayer?
+    private var isWordLearningMode = false
 
     /// 显示 HTML 弹窗（高度自适应内容）
     static func show(title: String, htmlBody: String, width: CGFloat = 420, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
@@ -40,7 +46,7 @@ class HTMLAlertWindow: NSWindow {
         window.targetWidth = width
         window.targetMaxHeight = maxHeight
         window.onClose = onClose
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false)
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -64,11 +70,158 @@ class HTMLAlertWindow: NSWindow {
         </div>
         \(extraHTML)
         """
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: true, isTodoMode: false, okLabel: okLabel)
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: true, okLabel: okLabel)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
     }
+
+    // MARK: - 共享业务 CSS（附加到边框基类，供各弹窗内容使用）
+
+    /// 业务内容样式：热点新闻表格、喝水文案、输入框、Todo 列表等（与边框基类分离）
+    private static let sharedBusinessCSS = """
+        .news-table {
+            width: 100%;
+            border-collapse: collapse;
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .news-table thead th {
+            background: linear-gradient(135deg, rgba(102,126,234,0.3) 0%, rgba(118,75,162,0.3) 100%);
+            color: #a5b4fc;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 10px 12px;
+            text-align: left;
+        }
+        .news-table tbody td {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #e0e0e8;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            vertical-align: top;
+        }
+        .news-table tbody tr:first-child td { border-top: none; }
+        .news-rank {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            line-height: 24px;
+            text-align: center;
+            border-radius: 8px;
+            background: rgba(102, 126, 234, 0.25);
+            color: #a5b4fc;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .news-link {
+            color: #c0c0d0;
+            text-decoration: none;
+            transition: color 0.2s;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+        .news-link:hover { color: #a5b4fc; text-decoration: underline; }
+        .water-icon { text-align: center; font-size: 48px; margin: 8px 0; }
+        .water-text { text-align: center; font-size: 15px; color: #c0c0d0; margin-bottom: 8px; font-weight: 500; }
+        .water-tips { text-align: center; font-size: 13px; color: #8888a0; line-height: 1.7; }
+        .input-group { padding: 8px 0; }
+        .input-group label {
+            display: block;
+            font-size: 12px;
+            color: #8888a0;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .input-group input {
+            width: 100%;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: #f0f0f5;
+            font-size: 15px;
+            outline: none;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .input-group input:focus {
+            border-color: rgba(102, 126, 234, 0.6);
+            background: rgba(255,255,255,0.08);
+        }
+        .input-group input::placeholder { color: #666680; }
+        .todo-input-group { display: flex; gap: 8px; margin-bottom: 14px; }
+        .todo-input-group input {
+            flex: 1;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            padding: 10px 12px;
+            color: #f0f0f5;
+            font-size: 14px;
+            outline: none;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .todo-input-group input:focus {
+            border-color: rgba(102, 126, 234, 0.6);
+            background: rgba(255,255,255,0.08);
+        }
+        .todo-input-group button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .todo-input-group button:hover { opacity: 0.92; transform: translateY(-1px); }
+        .todo-list { display: flex; flex-direction: column; gap: 6px; }
+        .todo-empty { text-align: center; color: #666680; font-size: 13px; padding: 20px 0; }
+        .todo-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid rgba(255,255,255,0.07);
+        }
+        .todo-item:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,100,100,0.3);
+        }
+        .todo-item:hover .todo-delete { opacity: 1; }
+        .todo-item-confirm {
+            background: rgba(255,80,80,0.12) !important;
+            border-color: rgba(255,80,80,0.5) !important;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,80,80,0.3); }
+            50% { box-shadow: 0 0 8px 2px rgba(255,80,80,0.2); }
+        }
+        .todo-dot { color: #667eea; font-size: 8px; flex-shrink: 0; }
+        .todo-text { flex: 1; font-size: 14px; color: #e0e0e8; word-break: break-all; }
+        .todo-delete {
+            color: #ff6b6b;
+            font-size: 12px;
+            opacity: 0.4;
+            transition: opacity 0.2s;
+            flex-shrink: 0;
+        }
+    """
 
     /// 显示 Todo 清单弹窗
     static func showTodo(title: String, todos: [TodoItem], width: CGFloat = 440, maxHeight: CGFloat = 640, onAdd: @escaping (String) -> Void, onDelete: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
@@ -209,22 +362,25 @@ class HTMLAlertWindow: NSWindow {
         window.orderFrontRegardless()
     }
 
-    /// 显示可缩放标准窗口（深色标题栏 + 内容铺满，如热点新闻），复用 Todo 的渲染路径
+    /// 显示可缩放标准窗口（热点新闻等）：复用背单词边框基类，透明系统标题栏 + 渐变卡片，
+    /// 保留系统红绿灯与边缘缩放，与背单词弹窗形式完全一致
     static func showResizable(title: String, htmlBody: String, width: CGFloat = 480, maxHeight: CGFloat = 640, onClose: (() -> Void)? = nil) {
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.hasShadow = false  // 去阴影
         window.title = title
-        // 强制深色外观：标题栏与深色内容同色调
+        // 透明标题栏：系统标题栏不显示文字，让内部渐变标题栏卡片作为视觉标题栏（与背单词一致）
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.appearance = NSAppearance(named: .darkAqua)
         window.targetWidth = width
         window.targetMaxHeight = maxHeight
         window.onClose = onClose
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: true)
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, okLabel: "关闭 ❌")
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -244,11 +400,20 @@ class HTMLAlertWindow: NSWindow {
         window.targetMaxHeight = 700
         window.onNextQuiz = onNextQuiz
         window.onRetryLearning = onRetryLearning
+        window.isWordLearningMode = true
         window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, isWordLearningMode: true)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         return window
+    }
+
+    /// 在当前窗口 WebView 中执行 JS（用于背单词卡片在 API 数据到达后的热更新）
+    func evaluateScript(_ script: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.isVisible else { return }
+            self.webView?.evaluateJavaScript(script, completionHandler: nil)
+        }
     }
 
     private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false) {
@@ -316,6 +481,22 @@ class HTMLAlertWindow: NSWindow {
             }
             self.retryLearningHandler = retryHandler
             config.userContentController.add(retryHandler, name: "retryLearning")
+            
+            let playAudioHandler = WordPlayAudioHandler { [weak self] word in
+                guard let self = self else { return }
+                Task {
+                    if let audioURL = await DictionaryService.shared.fetchAudioURL(word: word) {
+                        await MainActor.run {
+                            if let url = URL(string: audioURL) {
+                                self.audioPlayer = try? AVAudioPlayer(contentsOf: url)
+                                self.audioPlayer?.play()
+                            }
+                        }
+                    }
+                }
+            }
+            self.playAudioHandler = playAudioHandler
+            config.userContentController.add(playAudioHandler, name: "playAudio")
         }
 
         // 注入 JS：拦截所有链接点击，阻止默认导航，通过 message handler 打开外部浏览器
@@ -337,365 +518,49 @@ class HTMLAlertWindow: NSWindow {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
 
-        let html = buildHTML(title: title, body: htmlBody, isInputMode: isInputMode, isTodoMode: isTodoMode, okLabel: okLabel, isWordLearningMode: isWordLearningMode)
+        // 统一经 CardFrame 边框基类渲染：所有弹窗共享同一套「渐变标题栏 + 深色卡片」骨架
+        var frameConfig = CardFrame.Config(title: title, body: htmlBody)
+        if isTodoMode {
+            // Todo：标准系统标题栏窗口，内部隐藏渐变标题栏，全出血铺满
+            frameConfig.showHeader = false
+            frameConfig.showFooter = true
+            frameConfig.footerLabel = okLabel ?? "关闭 ❌"
+            frameConfig.fullBleed = true
+            frameConfig.maxContentHeight = nil
+            frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
+        } else if isWordLearningMode {
+            // 背单词：无边框窗口 + 渐变标题栏卡片 + 无底部按钮 + 标题栏可拖动
+            frameConfig.showHeader = true
+            frameConfig.showFooter = false
+            frameConfig.maxContentHeight = 600
+            frameConfig.headerDraggable = true
+            frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
+        } else {
+            // 普通弹窗 / 输入弹窗 / 可缩放卡片窗口：渐变标题栏卡片 + 底部按钮
+            frameConfig.showHeader = true
+            frameConfig.showFooter = true
+            if isInputMode {
+                frameConfig.footerLabel = okLabel ?? "查询天气 🔍"
+                frameConfig.footerAction = "window.webkit.messageHandlers.confirm.postMessage(document.getElementById('locationInput').value)"
+            } else {
+                frameConfig.footerLabel = okLabel ?? "好哒 👌"
+            }
+            frameConfig.maxContentHeight = targetMaxHeight
+            frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
+            // 可缩放标准窗口（热点新闻）：内部渐变标题栏作为视觉标题栏，启用拖动，左侧为红绿灯让位
+            if styleMask.contains(.resizable) {
+                frameConfig.headerDraggable = true
+                frameConfig.headerLeftInset = 78
+            }
+        }
+        let html = CardFrame.render(frameConfig)
         webView.loadHTMLString(html, baseURL: nil)
 
         self.contentView?.addSubview(webView)
 
-        // Todo 模式用系统标题栏拖动（自带红绿灯与缩放柄），无需自定义拖动条
-        // 背单词模式通过 CSS -webkit-app-region: drag 让 header 可拖动
-        if !isTodoMode && !isWordLearningMode {
-            let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 44, width: targetWidth - 60, height: 44))
-            dragView.autoresizingMask = [.width, .maxYMargin]
-            self.contentView?.addSubview(dragView)
-        }
+        // 无边框窗口统一在 didFinish 中添加拖动条（此时 frame 已正确）
     }
 
-    private func buildHTML(title: String, body: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false) -> String {
-        let okAction = isInputMode
-            ? "window.webkit.messageHandlers.confirm.postMessage(document.getElementById('locationInput').value)"
-            : "window.webkit.messageHandlers.close.postMessage('')"
-        let defaultLabel: String
-        if isInputMode {
-            defaultLabel = "查询天气 🔍"
-        } else if isTodoMode {
-            defaultLabel = "关闭 ❌"
-        } else {
-            defaultLabel = "好哒 👌"
-        }
-        let finalLabel = okLabel ?? defaultLabel
-
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
-                background: transparent;
-                color: #f0f0f5;
-                height: 100%;
-            }
-            body {
-                padding: \(isTodoMode ? 0 : 8)px;
-                display: flex;
-                justify-content: center;
-                align-items: flex-start;
-            }
-            .container {
-                background: \(isTodoMode ? "rgba(30, 30, 40, 1)" : "rgba(30, 30, 40, 0.94)");
-                backdrop-filter: blur(24px);
-                -webkit-backdrop-filter: blur(24px);
-                border-radius: \(isTodoMode ? 0 : 18)px;
-                overflow: hidden;
-                box-shadow: \(isTodoMode || isWordLearningMode ? "none" : "0 24px 70px rgba(0,0,0,0.55)");
-                border: \(isTodoMode || isWordLearningMode ? "none" : "1px solid rgba(255,255,255,0.08)");
-                width: 100%;
-                max-width: \(isTodoMode ? "100%" : "\(targetWidth - 16)px");
-                height: \(isTodoMode ? "100%" : "auto");
-                display: flex;
-                flex-direction: column;
-            }
-            .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 14px 18px;
-                display: \(isTodoMode ? "none" : "flex");
-                align-items: center;
-                justify-content: space-between;
-                flex-shrink: 0;
-                \(isWordLearningMode ? "-webkit-app-region: drag;" : "")
-            }
-            .header-title {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-            .header h1 {
-                font-size: 15px;
-                font-weight: 600;
-                color: white;
-                letter-spacing: 0.5px;
-            }
-            .header .icon {
-                font-size: 20px;
-            }
-            .close-btn {
-                background: rgba(255,255,255,0.2);
-                border: none;
-                color: white;
-                width: 26px;
-                height: 26px;
-                border-radius: 50%;
-                cursor: pointer;
-                font-size: 13px;
-                line-height: 26px;
-                text-align: center;
-                transition: all 0.2s;
-                -webkit-appearance: none;
-                \(isWordLearningMode ? "-webkit-app-region: no-drag;" : "")
-            }
-            .close-btn:hover {
-                background: rgba(255,255,255,0.35);
-            }
-            .content {
-                padding: 14px 16px;
-                line-height: 1.7;
-                font-size: 14px;
-                flex: 1 1 auto;
-                overflow-y: auto;
-                max-height: \(isTodoMode ? "none" : (isWordLearningMode ? "600px" : "420px"));
-                min-height: \(isTodoMode ? 260 : 0)px;
-            }
-            .footer {
-                padding: 10px 16px 14px;
-                text-align: center;
-                flex-shrink: 0;
-            }
-            .ok-btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border: none;
-                color: white;
-                padding: 9px 32px;
-                border-radius: 22px;
-                font-size: 14px;
-                font-weight: 500;
-                cursor: pointer;
-                transition: all 0.2s;
-                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                -webkit-appearance: none;
-            }
-            .ok-btn:hover {
-                opacity: 0.92;
-                transform: translateY(-1px);
-            }
-            .news-table {
-                width: 100%;
-                border-collapse: collapse;
-                border-radius: 12px;
-                overflow: hidden;
-                background: rgba(255,255,255,0.03);
-                border: 1px solid rgba(255,255,255,0.06);
-            }
-            .news-table thead th {
-                background: linear-gradient(135deg, rgba(102,126,234,0.3) 0%, rgba(118,75,162,0.3) 100%);
-                color: #a5b4fc;
-                font-size: 12px;
-                font-weight: 600;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                padding: 10px 12px;
-                text-align: left;
-            }
-            .news-table tbody td {
-                padding: 10px 12px;
-                font-size: 13px;
-                color: #e0e0e8;
-                border-top: 1px solid rgba(255,255,255,0.04);
-                vertical-align: top;
-            }
-            .news-table tbody tr:first-child td {
-                border-top: none;
-            }
-            .news-rank {
-                display: inline-block;
-                width: 24px;
-                height: 24px;
-                line-height: 24px;
-                text-align: center;
-                border-radius: 8px;
-                background: rgba(102, 126, 234, 0.25);
-                color: #a5b4fc;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            .news-link {
-                color: #c0c0d0;
-                text-decoration: none;
-                transition: color 0.2s;
-                line-height: 1.5;
-                cursor: pointer;
-            }
-            .news-link:hover {
-                color: #a5b4fc;
-                text-decoration: underline;
-            }
-            .water-icon {
-                text-align: center;
-                font-size: 48px;
-                margin: 8px 0;
-            }
-            .water-text {
-                text-align: center;
-                font-size: 15px;
-                color: #c0c0d0;
-                margin-bottom: 8px;
-                font-weight: 500;
-            }
-            .water-tips {
-                text-align: center;
-                font-size: 13px;
-                color: #8888a0;
-                line-height: 1.7;
-            }
-            .input-group {
-                padding: 8px 0;
-            }
-            .input-group label {
-                display: block;
-                font-size: 12px;
-                color: #8888a0;
-                margin-bottom: 8px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }
-            .input-group input {
-                width: 100%;
-                background: rgba(255,255,255,0.06);
-                border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 10px;
-                padding: 12px 14px;
-                color: #f0f0f5;
-                font-size: 15px;
-                outline: none;
-                transition: all 0.2s;
-                font-family: inherit;
-            }
-            .input-group input:focus {
-                border-color: rgba(102, 126, 234, 0.6);
-                background: rgba(255,255,255,0.08);
-            }
-            .input-group input::placeholder {
-                color: #666680;
-            }
-            ::-webkit-scrollbar {
-                width: 4px;
-            }
-            ::-webkit-scrollbar-track {
-                background: transparent;
-            }
-            ::-webkit-scrollbar-thumb {
-                background: rgba(255,255,255,0.15);
-                border-radius: 2px;
-            }
-            .todo-input-group {
-                display: flex;
-                gap: 8px;
-                margin-bottom: 14px;
-            }
-            .todo-input-group input {
-                flex: 1;
-                background: rgba(255,255,255,0.07);
-                border: 1px solid rgba(255,255,255,0.12);
-                border-radius: 10px;
-                padding: 10px 12px;
-                color: #f0f0f5;
-                font-size: 14px;
-                outline: none;
-                font-family: inherit;
-                transition: all 0.2s;
-            }
-            .todo-input-group input:focus {
-                border-color: rgba(102, 126, 234, 0.6);
-                background: rgba(255,255,255,0.08);
-            }
-            .todo-input-group button {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border: none;
-                color: white;
-                width: 36px;
-                height: 36px;
-                border-radius: 10px;
-                font-size: 18px;
-                cursor: pointer;
-                flex-shrink: 0;
-                transition: all 0.2s;
-            }
-            .todo-input-group button:hover {
-                opacity: 0.92;
-                transform: translateY(-1px);
-            }
-            .todo-list {
-                display: flex;
-                flex-direction: column;
-                gap: 6px;
-            }
-            .todo-empty {
-                text-align: center;
-                color: #666680;
-                font-size: 13px;
-                padding: 20px 0;
-            }
-            .todo-item {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                padding: 10px 12px;
-                background: rgba(255,255,255,0.06);
-                border-radius: 10px;
-                cursor: pointer;
-                transition: all 0.2s;
-                border: 1px solid rgba(255,255,255,0.07);
-            }
-            .todo-item:hover {
-                background: rgba(255,255,255,0.08);
-                border-color: rgba(255,100,100,0.3);
-            }
-            .todo-item:hover .todo-delete {
-                opacity: 1;
-            }
-            .todo-item-confirm {
-                background: rgba(255,80,80,0.12) !important;
-                border-color: rgba(255,80,80,0.5) !important;
-                animation: pulse 1s infinite;
-            }
-            @keyframes pulse {
-                0%, 100% { box-shadow: 0 0 0 0 rgba(255,80,80,0.3); }
-                50% { box-shadow: 0 0 8px 2px rgba(255,80,80,0.2); }
-            }
-            .todo-dot {
-                color: #667eea;
-                font-size: 8px;
-                flex-shrink: 0;
-            }
-            .todo-text {
-                flex: 1;
-                font-size: 14px;
-                color: #e0e0e8;
-                word-break: break-all;
-            }
-            .todo-delete {
-                color: #ff6b6b;
-                font-size: 12px;
-                opacity: 0.4;
-                transition: opacity 0.2s;
-                flex-shrink: 0;
-            }
-        </style>
-        </head>
-        <body>
-        <div class="container">
-            <div class="header">
-                <div class="header-title">
-                    <span class="icon">🐱</span>
-                    <h1>\(title)</h1>
-                </div>
-                <button class="close-btn" onclick="window.webkit.messageHandlers.close.postMessage('')">✕</button>
-            </div>
-            <div class="content">
-                \(body)
-            </div>
-            \(isWordLearningMode ? "" : """
-            <div class="footer">
-                <button class="ok-btn" onclick="\(okAction)">\(finalLabel)</button>
-            </div>
-            """)
-        </div>
-        </body>
-        </html>
-        """
-    }
 
     /// 移除所有 WKScriptMessageHandler，防止内存泄漏（两种关闭路径共用）
     private func removeScriptMessageHandlers() {
@@ -710,6 +575,7 @@ class HTMLAlertWindow: NSWindow {
         if todoDeleteHandler != nil { ucc.removeScriptMessageHandler(forName: "deleteTodo") }
         if nextQuizHandler != nil { ucc.removeScriptMessageHandler(forName: "nextQuiz") }
         if retryLearningHandler != nil { ucc.removeScriptMessageHandler(forName: "retryLearning") }
+        if playAudioHandler != nil { ucc.removeScriptMessageHandler(forName: "playAudio") }
     }
 
     /// 网页内 ✕ 按钮关闭路径（orderOut 隐藏，与系统红点行为对齐）
@@ -768,7 +634,7 @@ extension HTMLAlertWindow: WKNavigationDelegate {
         // 需临时把容器高度改为 auto 读取真实内容高度，读完恢复撑满（Todo 用估算值，不受影响）
         let measureJS = """
         (function() {
-            var c = document.querySelector('.container');
+            var c = document.querySelector('.card');
             if (c) {
                 c.style.height = 'auto';
                 var h = document.documentElement.scrollHeight;
@@ -803,6 +669,14 @@ extension HTMLAlertWindow: WKNavigationDelegate {
             frame.size.height = targetH
             self.setFrame(frame, display: true)
             self.centerOnScreen()
+
+            // 所有无边框窗口（非可缩放）：sizing 完成后添加原生拖动条（此时 frame 已正确）
+            // 可缩放标准窗口（热点新闻）的渐变标题栏已启用 -webkit-app-region: drag，无需原生拖动条
+            if self.todoEstimatedHeight == nil && !self.styleMask.contains(.resizable) {
+                let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 48, width: self.frame.width - 40, height: 48))
+                dragView.autoresizingMask = [.width, .minYMargin]
+                self.contentView?.addSubview(dragView)
+            }
 
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.15
@@ -893,6 +767,16 @@ class WordRetryLearningHandler: NSObject, WKScriptMessageHandler {
     init(action: @escaping () -> Void) { self.action = action }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         action()
+    }
+}
+
+class WordPlayAudioHandler: NSObject, WKScriptMessageHandler {
+    private let action: (String) -> Void
+    init(action: @escaping (String) -> Void) { self.action = action }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let word = message.body as? String {
+            action(word)
+        }
     }
 }
 

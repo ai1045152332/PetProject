@@ -1,72 +1,42 @@
 [
   {
     "word": "deadline",
-    "phonetic": "/ˈdedlaɪn/",
-    "meaning": "n. 截止日期",
-    "example": "The deadline is tomorrow.",
-    "category": "商务"
+    "meaning": "n. 截止日期"
   },
   {
     "word": "proposal",
-    "phonetic": "/prəˈpoʊzəl/",
-    "meaning": "n. 提案，建议",
-    "example": "I'll send you the proposal.",
-    "category": "商务"
+    "meaning": "n. 提案，建议"
   },
   {
     "word": "negotiate",
-    "phonetic": "/nɪˈɡoʊʃieɪt/",
-    "meaning": "v. 谈判，协商",
-    "example": "We need to negotiate the terms.",
-    "category": "商务"
+    "meaning": "v. 谈判，协商"
   },
   {
     "word": "revenue",
-    "phonetic": "/ˈrevənjuː/",
-    "meaning": "n. 收入，营收",
-    "example": "Revenue increased by 20%.",
-    "category": "商务"
+    "meaning": "n. 收入，营收"
   },
   {
     "word": "stakeholder",
-    "phonetic": "/ˈsteɪkhoʊldə/",
-    "meaning": "n. 利益相关者",
-    "example": "All stakeholders agreed.",
-    "category": "商务"
+    "meaning": "n. 利益相关者"
   },
   {
     "word": "benchmark",
-    "phonetic": "/ˈbentʃmɑːk/",
-    "meaning": "n. 基准，标杆",
-    "example": "This sets a new benchmark.",
-    "category": "商务"
+    "meaning": "n. 基准，标杆"
   },
   {
     "word": "leverage",
-    "phonetic": "/ˈlevərɪdʒ/",
-    "meaning": "v. 利用 n. 影响力",
-    "example": "We can leverage this opportunity.",
-    "category": "商务"
+    "meaning": "v. 利用 n. 影响力"
   },
   {
     "word": "pipeline",
-    "phonetic": "/ˈpaɪplaɪn/",
-    "meaning": "n. 渠道；储备项目",
-    "example": "We have projects in the pipeline.",
-    "category": "商务"
+    "meaning": "n. 渠道；储备项目"
   },
   {
     "word": "scalable",
-    "phonetic": "/ˈskeɪləbəl/",
-    "meaning": "adj. 可扩展的",
-    "example": "We need a scalable solution.",
-    "category": "商务"
+    "meaning": "adj. 可扩展的"
   },
   {
     "word": "synergy",
-    "phonetic": "/ˈsɪnədʒi/",
-    "meaning": "n. 协同效应",
-    "example": "There's synergy between our teams.",
-    "category": "商务"
+    "meaning": "n. 协同效应"
   }
 ]

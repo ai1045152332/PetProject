@@ -666,6 +666,9 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
             cancelFeeding()
             return
         }
+        // 打开菜单时顺带检查更新（内部有 30 分钟节流，不会频繁请求）
+        UpdateService.shared.backgroundCheck()
+
         let menu = NSMenu()
         menu.autoenablesItems = false
 

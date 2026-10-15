@@ -196,6 +196,19 @@
         : '<span class="badge bg-green-lt">有效</span> <span class="text-secondary">' + text + '</span>';
     }
 
+    async function unbind(code) {
+      if (!confirm('解绑激活码 ' + code + ' 的全部已绑定设备？\n解绑后该码可在新设备重新激活。')) return;
+      try {
+        await api('/api/admin/codes/unbind', {
+          method: 'POST',
+          body: JSON.stringify({ code: code })
+        });
+        loadList();
+      } catch (e) {
+        alert('解绑失败：' + e.message);
+      }
+    }
+
     function render(codes) {
       document.getElementById('total').textContent = '共 ' + codes.length + ' 个';
       const tbody = document.getElementById('list');
@@ -215,7 +228,10 @@
             '<td class="text-secondary">' + esc(c.note || '—') + '</td>' +
             '<td class="text-secondary">' + new Date(c.createdAt).toLocaleString('zh-CN') + '</td>' +
             '<td>' + expiryCell(c) + '</td>' +
-            '<td><button class="btn btn-sm btn-outline-primary" onclick="copyCode(\'' + esc(c.code) + '\', this)">复制</button></td>' +
+            '<td class="text-nowrap">' +
+              '<button class="btn btn-sm btn-outline-primary me-1" onclick="copyCode(\'' + esc(c.code) + '\', this)">复制</button>' +
+              (used ? '<button class="btn btn-sm btn-outline-danger" onclick="unbind(\'' + esc(c.code) + '\')">解绑</button>' : '') +
+            '</td>' +
           '</tr>'
         );
       }).join('');

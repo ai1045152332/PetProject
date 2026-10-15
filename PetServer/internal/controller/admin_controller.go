@@ -106,3 +106,42 @@ func (c *AdminController) ListCodes(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{"codes": codes}})
 }
+
+// UnbindRequest 解绑请求
+type UnbindRequest struct {
+	Code     string `json:"code"`     // 激活码
+	DeviceID string `json:"deviceId"` // 设备 ID，留空表示解绑全部设备
+}
+
+// UnbindCodes 处理 POST /api/admin/codes/unbind
+func (c *AdminController) UnbindCodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	var req UnbindRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
+		return
+	}
+	if req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: code"})
+		return
+	}
+
+	found, err := c.accessSvc.Unbind(req.Code, req.DeviceID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "unbind failed: " + err.Error()})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, Response{Code: 404, Msg: "code not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}

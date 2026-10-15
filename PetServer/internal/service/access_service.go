@@ -110,6 +110,41 @@ func (s *AccessService) List() ([]model.ActivationCode, error) {
 	return s.store.Load()
 }
 
+// Unbind 解绑设备：deviceID 为空表示解绑该码的全部设备
+// 返回是否找到该码
+func (s *AccessService) Unbind(code, deviceID string) (bool, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+
+	codes, err := s.store.Load()
+	if err != nil {
+		return false, err
+	}
+
+	for i := range codes {
+		if codes[i].Code != normalized {
+			continue
+		}
+		if deviceID == "" {
+			codes[i].Devices = []string{}
+			log.Printf("[access] 激活码 %s 已解绑全部设备", normalized)
+		} else {
+			kept := make([]string, 0, len(codes[i].Devices))
+			for _, d := range codes[i].Devices {
+				if d != deviceID {
+					kept = append(kept, d)
+				}
+			}
+			codes[i].Devices = kept
+			log.Printf("[access] 激活码 %s 解绑设备 %s，剩余 %d 台", normalized, maskDeviceID(deviceID), len(kept))
+		}
+		if err := s.store.Save(codes); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 // randomCode 生成 XXXX-XXXX-XXXX 格式激活码
 func randomCode() (string, error) {
 	buf := make([]byte, 12)

@@ -356,7 +356,33 @@ curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: 123456"
 
 > `expiresAt` 为 `null` 表示永久有效。
 
-### 3.6 管理接口错误
+### 3.6 解绑设备
+
+用于测试数据清理或用户换机：解绑后该码可在新设备重新激活。
+
+```
+POST /api/admin/codes/unbind
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| code | string | 是 | 激活码 |
+| deviceId | string | 否 | 指定解绑某台设备；留空表示解绑全部设备 |
+
+请求示例（解绑全部）：
+
+```bash
+curl -X POST http://11.0.213.233:8080/api/admin/codes/unbind \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: 123456" \
+  -d '{"code": "TNZW-SFYM-EQCN"}'
+```
+
+响应：`{"code":0,"msg":"ok"}`；激活码不存在返回 `{"code":404,"msg":"code not found"}`。
+
+### 3.7 管理接口错误
 
 | 场景 | HTTP 状态码 | 响应 |
 | --- | --- | --- |

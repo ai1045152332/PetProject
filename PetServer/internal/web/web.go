@@ -8,10 +8,15 @@ import "embed"
 //go:embed online.html
 var OnlinePage []byte
 
-// AdminPage 激活码管理 H5 页面内容
+// AdminPetsPage 后台管理：在线宠物页
 //
-//go:embed admin.html
-var AdminPage []byte
+//go:embed admin_pets.html
+var AdminPetsPage []byte
+
+// AdminCodesPage 后台管理：激活码管理页
+//
+//go:embed admin_codes.html
+var AdminCodesPage []byte
 
 // StaticFS 内置静态资源（Tabler 后台 UI 框架样式等）
 //

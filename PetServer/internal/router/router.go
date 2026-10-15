@@ -29,10 +29,14 @@ func New(
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(web.OnlinePage)
 	})
-	// H5 激活码管理页（页面本身公开，数据接口需 X-Admin-Token 鉴权）
+	// 统一后台管理页：/admin 在线宠物、/admin/codes 激活码管理（数据接口需 X-Admin-Token 鉴权）
 	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(web.AdminPage)
+		w.Write(web.AdminPetsPage)
+	})
+	mux.HandleFunc("/admin/codes", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(web.AdminCodesPage)
 	})
 	// 内置静态资源（Tabler 样式等，与接口同源）
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))

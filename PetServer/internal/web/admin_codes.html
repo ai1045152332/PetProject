@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>激活码管理 · cute pet</title>
+  <title>激活码管理 · cute pet 后台</title>
   <link rel="stylesheet" href="/static/tabler.min.css" />
 </head>
 <body class="antialiased">
@@ -11,8 +11,10 @@
     <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
       <div class="container-xl">
         <span class="navbar-brand">🐾 cute pet 后台管理</span>
-        <div class="navbar-nav flex-row ms-auto">
-          <a class="nav-link" href="/online" target="_blank">在线宠物</a>
+        <div class="navbar-nav flex-row ms-auto align-items-center">
+          <a class="nav-link" href="/admin">在线宠物</a>
+          <a class="nav-link active fw-bold" href="/admin/codes">激活码管理</a>
+          <a class="nav-link" href="/online" target="_blank">手机版</a>
         </div>
       </div>
     </header>
@@ -23,7 +25,7 @@
           <div class="row g-2 align-items-center">
             <div class="col">
               <h2 class="page-title">激活码管理</h2>
-              <div class="text-secondary mt-1" id="status">请输入管理令牌</div>
+              <div class="text-secondary mt-1" id="status">未登录：请填写管理令牌</div>
             </div>
             <div class="col-auto ms-auto">
               <button class="btn" onclick="loadList()">刷新</button>
@@ -39,14 +41,19 @@
             <div class="col-12">
               <div class="card">
                 <div class="card-body">
-                  <div class="row g-2 align-items-center">
+                  <label class="form-label">管理令牌（对应服务端 PETSERVER_ADMIN_TOKEN）</label>
+                  <div class="row g-2">
                     <div class="col">
-                      <input type="password" id="token" class="form-control" placeholder="管理令牌（X-Admin-Token）" />
+                      <input type="password" id="token" class="form-control" placeholder="粘贴管理令牌" />
                     </div>
                     <div class="col-auto">
-                      <button class="btn btn-primary" onclick="saveToken()">保存令牌</button>
+                      <button class="btn btn-primary" onclick="saveToken()">验证并保存</button>
+                    </div>
+                    <div class="col-auto">
+                      <button class="btn" onclick="clearToken()">清除</button>
                     </div>
                   </div>
+                  <div id="tokenMsg" class="mt-2"></div>
                 </div>
               </div>
             </div>
@@ -128,15 +135,16 @@
 
     function token() { return tokenInput.value.trim(); }
 
-    function saveToken() {
-      localStorage.setItem('petAdminToken', token());
-      loadList();
-    }
-
     function esc(s) {
       return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
       ));
+    }
+
+    function setTokenMsg(html, ok) {
+      document.getElementById('tokenMsg').innerHTML = html
+        ? '<div class="alert ' + (ok ? 'alert-success' : 'alert-danger') + ' mb-0 py-2">' + html + '</div>'
+        : '';
     }
 
     function copyCode(text, btn) {
@@ -150,22 +158,47 @@
       const resp = await fetch(path, Object.assign({
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token() }
       }, options));
-      const json = await resp.json();
-      if (json.code !== 0) throw new Error(json.msg || '请求失败');
+      let json = null;
+      try { json = await resp.json(); } catch (e) { json = null; }
+      if (!json) throw new Error('HTTP ' + resp.status + '（服务未响应或返回异常）');
+      if (json.code !== 0) throw new Error('HTTP ' + resp.status + ' · ' + (json.msg || '请求失败'));
       return json.data;
     }
 
     async function loadList() {
       const status = document.getElementById('status');
+      if (!token()) {
+        document.getElementById('panel').style.display = 'none';
+        status.textContent = '未登录：请填写管理令牌';
+        setTokenMsg('');
+        return;
+      }
       try {
         const data = await api('/api/admin/codes');
         document.getElementById('panel').style.display = '';
-        status.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+        status.textContent = '已登录 · 更新于 ' + new Date().toLocaleTimeString('zh-CN');
+        setTokenMsg('令牌有效 ✓', true);
         render(data.codes || []);
       } catch (e) {
         document.getElementById('panel').style.display = 'none';
-        status.textContent = '验证失败：' + e.message;
+        status.textContent = '加载失败：' + e.message;
+        setTokenMsg('验证失败：' + esc(e.message) +
+          '<br>请确认令牌与服务端 PETSERVER_ADMIN_TOKEN 完全一致', false);
       }
+    }
+
+    function saveToken() {
+      localStorage.setItem('petAdminToken', token());
+      setTokenMsg('');
+      loadList();
+    }
+
+    function clearToken() {
+      localStorage.removeItem('petAdminToken');
+      tokenInput.value = '';
+      document.getElementById('panel').style.display = 'none';
+      document.getElementById('status').textContent = '未登录：请填写管理令牌';
+      setTokenMsg('');
     }
 
     async function generate() {

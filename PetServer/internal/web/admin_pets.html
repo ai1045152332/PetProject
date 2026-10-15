@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>在线宠物 · cute pet 后台</title>
+  <link rel="stylesheet" href="/static/tabler.min.css" />
+</head>
+<body class="antialiased">
+  <div class="page">
+    <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
+      <div class="container-xl">
+        <span class="navbar-brand">🐾 cute pet 后台管理</span>
+        <div class="navbar-nav flex-row ms-auto align-items-center">
+          <a class="nav-link active fw-bold" href="/admin">在线宠物</a>
+          <a class="nav-link" href="/admin/codes">激活码管理</a>
+          <a class="nav-link" href="/online" target="_blank">手机版</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <h2 class="page-title">在线宠物</h2>
+              <div class="text-secondary mt-1" id="status">正在连接服务器…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards">
+            <div class="col-sm-6 col-lg-3">
+              <div class="card">
+                <div class="card-body">
+                  <div class="text-secondary">在线</div>
+                  <div class="h1 mb-0" id="onlineCount">-</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="card">
+                <div class="card-body">
+                  <div class="text-secondary">总设备</div>
+                  <div class="h1 mb-0" id="totalCount">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mt-3">
+            <div class="card-header">
+              <h3 class="card-title">设备列表</h3>
+              <span class="ms-auto text-secondary">每 5 秒自动刷新</span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter card-table table-hover">
+                <thead>
+                  <tr>
+                    <th>宠物</th>
+                    <th>状态</th>
+                    <th>主机</th>
+                    <th>版本</th>
+                    <th>系统</th>
+                    <th>架构</th>
+                    <th>最近心跳</th>
+                    <th class="w-1">在线</th>
+                  </tr>
+                </thead>
+                <tbody id="list"></tbody>
+              </table>
+            </div>
+            <div class="card-body text-secondary text-center" id="empty" style="display:none">
+              还没有宠物上报心跳哦～
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer footer-transparent d-print-none">
+        <div class="container-xl text-center text-secondary">
+          cute pet 后端服务 · UI 基于 Tabler（MIT）
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const STATE = {
+      focus: { face: '📚', label: '专注' },
+      idel:  { face: '😸', label: '休闲' },
+      warn:  { face: '⏰', label: '提醒' },
+      sleep: { face: '😴', label: '睡觉' },
+      pet:   { face: '🤗', label: '抚摸' },
+    };
+
+    function stateOf(s) { return STATE[s] || { face: '🐱', label: s || '未知' }; }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      ));
+    }
+
+    function agoText(sec) {
+      if (sec < 60) return sec + ' 秒前';
+      if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
+      if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
+      return Math.floor(sec / 86400) + ' 天前';
+    }
+
+    function render(data) {
+      const devices = (data && data.devices) || [];
+      document.getElementById('onlineCount').textContent = data ? data.online : '-';
+      document.getElementById('totalCount').textContent = data ? data.total : '-';
+      document.getElementById('status').textContent =
+        '更新于 ' + new Date().toLocaleTimeString('zh-CN') +
+        ' · 服务器 ' + (data && data.serverTime ? new Date(data.serverTime).toLocaleTimeString('zh-CN') : '--');
+
+      const tbody = document.getElementById('list');
+      document.getElementById('empty').style.display = devices.length ? 'none' : '';
+      tbody.innerHTML = devices.map(d => {
+        const st = stateOf(d.petState);
+        const badge = d.online
+          ? '<span class="badge bg-green-lt">在线</span>'
+          : '<span class="badge bg-secondary-lt">离线</span>';
+        return '<tr' + (d.online ? '' : ' class="text-secondary"') + '>' +
+          '<td><span class="me-1">' + st.face + '</span><strong>' + esc(d.petName) + '</strong></td>' +
+          '<td>' + esc(st.label) + '</td>' +
+          '<td class="font-monospace">' + esc(d.hostname) + '</td>' +
+          '<td>' + esc(d.version) + '</td>' +
+          '<td>' + esc(d.os) + '</td>' +
+          '<td>' + esc(d.machine) + '</td>' +
+          '<td>' + agoText(d.secondsAgo) + '</td>' +
+          '<td>' + badge + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    async function load() {
+      try {
+        const resp = await fetch('/api/devices', { headers: { 'Accept': 'application/json' } });
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '接口返回异常');
+        render(json.data);
+      } catch (e) {
+        document.getElementById('status').textContent = '加载失败：' + e.message;
+      }
+    }
+
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>

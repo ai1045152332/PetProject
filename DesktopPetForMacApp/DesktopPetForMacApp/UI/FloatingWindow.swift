@@ -117,6 +117,41 @@ final class FloatingWindow {
     }
 }
 
+// MARK: - 投喂期间的全屏拦截视图
+/// 透明全屏视图：投喂期间接住落在桌面/其他 App 区域的鼠标事件，取消投喂且事件不透传
+final class FeedOverlayView: NSView {
+    weak var catView: CatView?
+    private let transparentCursor = NSCursor(
+        image: NSImage(size: NSSize(width: 1, height: 1)),
+        hotSpot: .zero
+    )
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    /// 整个区域使用透明光标（猫条即光标）
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: transparentCursor)
+    }
+
+override func mouseDown(with event: NSEvent) {
+// 左键（单击）取消：猫条掉地上了
+catView?.requestCancelFeeding(byRightClick: false)
+}
+override func rightMouseDown(with event: NSEvent) {
+// 右键（双击）取消：为什么不喂我
+catView?.requestCancelFeeding(byRightClick: true)
+}
+override func otherMouseDown(with event: NSEvent) {
+catView?.requestCancelFeeding(byRightClick: false)
+}
+    /// 拖拽/滚轮在投喂期间直接吞掉（不透传给其他 App）
+    override func mouseDragged(with event: NSEvent) {}
+    override func rightMouseDragged(with event: NSEvent) {}
+    override func otherMouseDragged(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
+}
+
 // MARK: - Cat View (CALayer 渲染 + 鼠标拖拽 + 右键菜单)
 
 class CatView: NSView {
@@ -265,8 +300,18 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
     private var treatWindow: NSWindow?
     /// 猫条跟随鼠标的定时器（1/30s 采样全局鼠标位置）
     private var treatFollowTimer: Timer?
-    /// 投喂成功后的气泡提示
-    private var feedBubble: NSTextField?
+    /// 投喂期间的全屏透明拦截层（每屏一个窗口）：接住投喂中落在桌面/其他 App 的鼠标点击，
+    /// 取消投喂且事件不透传（右键不会再触发桌面/其他 App 的菜单）
+    private var feedOverlayWindows: [NSWindow] = []
+    /// 透明光标（投喂时隐藏系统光标，猫条即光标）
+    private let transparentCursor = NSCursor(
+        image: NSImage(size: NSSize(width: 1, height: 1)),
+        hotSpot: .zero
+    )
+    /// 小猫说话对话框窗口（粉色手绘气泡）：独立于小猫窗口——小猫窗口仅 160pt，宽气泡会被裁剪
+    private var speechBubbleWindow: NSWindow?
+    /// 气泡跟随定时器（1/30s）：拖动小猫时气泡同步跟随，悬浮期间轻微上下浮动
+    private var speechBubbleFollowTimer: Timer?
 
     /// 进入投喂模式：猫条跟随鼠标，点击小猫完成喂食
     func startFeeding() {
@@ -284,7 +329,8 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
         treat.backgroundColor = .clear
         treat.isOpaque = false
         treat.hasShadow = false
-        treat.level = .floating
+        // 层级必须高于小猫窗口（.popUpMenu），投喂时猫条悬浮在小猫图层之上
+        treat.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
         treat.ignoresMouseEvents = true
         treat.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         treat.isReleasedWhenClosed = false
@@ -297,7 +343,7 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
         emoji.frame = NSRect(x: 0, y: 36, width: 132, height: 56)
         container.addSubview(emoji)
 
-        let hint = NSTextField(labelWithString: "点小猫投喂 · 右键取消")
+        let hint = NSTextField(labelWithString: "点小猫投喂 · 点击取消")
         hint.font = .systemFont(ofSize: 11, weight: .medium)
         hint.textColor = .white
         hint.alignment = .center
@@ -319,6 +365,34 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
             }
         }
 
+        // 投喂期间的全屏透明拦截层：层级在小猫窗口之下、其他 App 窗口之上，
+        // 接住落在桌面/其他 App 的鼠标点击（取消投喂且不透传，右键不会弹出桌面菜单）
+        for screen in NSScreen.screens {
+            let overlay = NSWindow(
+                contentRect: screen.frame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            overlay.backgroundColor = .clear
+            overlay.isOpaque = false
+            overlay.hasShadow = false
+            overlay.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
+            overlay.ignoresMouseEvents = false
+            overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            overlay.isReleasedWhenClosed = false
+            overlay.hidesOnDeactivate = false
+            let v = FeedOverlayView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            v.catView = self
+            overlay.contentView = v
+            overlay.orderFrontRegardless()
+            feedOverlayWindows.append(overlay)
+        }
+
+        // 投喂期间隐藏系统光标（猫条即光标）
+        transparentCursor.set()
+        windowRef?.invalidateCursorRects(for: self)
+
         // 兜底：60 秒未投喂自动取消，避免猫条永远跟着鼠标
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
             if self?.isFeeding == true {
@@ -327,16 +401,39 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
         }
     }
 
-    /// 猫条窗口贴着光标（水平居中于光标上方）
+    /// 猫条窗口贴着光标（猫条主体居中于光标，提示文字在下方）
     private func updateTreatPosition() {
         guard let treat = treatWindow else { return }
         let loc = NSEvent.mouseLocation
-        treat.setFrameOrigin(NSPoint(x: loc.x - 66, y: loc.y + 6))
+        // 猫条 emoji 位于窗口顶部（y 36~92，中心约在 64pt 处），对准光标位置
+        treat.setFrameOrigin(NSPoint(x: loc.x - 66, y: loc.y - 64))
     }
 
-    /// 退出投喂模式（取消喂食）：移除猫条窗口和跟随定时器
-    private func cancelFeeding() {
-        isFeeding = false
+    /// 当前全局鼠标是否在小猫窗口内
+    private func mouseOverCat() -> Bool {
+        guard let win = windowRef else { return false }
+        return NSMouseInRect(NSEvent.mouseLocation, win.frame, false)
+    }
+
+    /// 投喂期间在小猫区域也隐藏系统光标
+    override func resetCursorRects() {
+        if isFeeding {
+            addCursorRect(bounds, cursor: transparentCursor)
+        }
+    }
+
+    /// 退出投喂模式（取消喂食）：移除猫条窗口与全屏拦截层，恢复系统光标
+func cancelFeeding() {
+guard isFeeding || treatWindow != nil || !feedOverlayWindows.isEmpty else { return }
+isFeeding = false
+        // 移除全屏拦截层（恢复其他 App 的鼠标交互）
+        for overlay in feedOverlayWindows {
+            overlay.orderOut(nil)
+            overlay.close()
+        }
+        feedOverlayWindows = []
+        // 恢复系统箭头光标
+        NSCursor.arrow.set()
         treatFollowTimer?.invalidate()
         treatFollowTimer = nil
         treatWindow?.orderOut(nil)
@@ -361,33 +458,131 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
         spawnHearts()
     }
 
-    /// 在小猫头顶展示气泡提示（2.2 秒后淡出移除）
-    private func showFeedBubble(text: String) {
-        feedBubble?.removeFromSuperview()
+    /// 在小猫头顶展示对话框（粉色手绘风气泡，所有和小猫的对话台词都走这里）：
+    /// 弹入（70%→100% 带回弹放大 + 淡入）→ 悬浮 hold 秒（轻微浮动、跟随小猫拖动）→ fade 秒淡出移除
+    private func showFeedBubble(text: String, hold: TimeInterval = 2.2, fade: TimeInterval = 0.5) {
+        // 新气泡替换旧气泡：旧的立即关闭，避免两帧重叠
+        dismissSpeechBubble(animated: false)
+        guard let catWin = windowRef, catWin.isVisible else { return }
 
-        let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .white
-        label.alignment = .center
-        label.wantsLayer = true
-        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        label.layer?.cornerRadius = 10
-        // 气泡稍宽于小猫，居中显示在窗口顶部内侧（窗口会裁剪越界子视图）
-        let w = bounds.width + 60
-        label.frame = NSRect(x: (bounds.width - w) / 2, y: bounds.height - 32, width: w, height: 24)
-        addSubview(label)
-        feedBubble = label
+        let bubbleView = SpeechBubbleView(text: text)
+        let size = bubbleView.frame.size
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self, weak label] in
-            guard let label = label, label.superview != nil else { return }
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.5
-                label.animator().alphaValue = 0
-            }, completionHandler: {
-                label.removeFromSuperview()
-                if self?.feedBubble === label { self?.feedBubble = nil }
-            })
+        let bubbleWin = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        bubbleWin.backgroundColor = .clear
+        bubbleWin.isOpaque = false
+        bubbleWin.hasShadow = false
+        // 层级高于小猫窗口（.popUpMenu），悬浮在小猫头顶；纯展示不挡小猫的点击
+        bubbleWin.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        bubbleWin.ignoresMouseEvents = true
+        bubbleWin.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        bubbleWin.isReleasedWhenClosed = false
+        bubbleWin.hidesOnDeactivate = false
+        bubbleWin.contentView = bubbleView
+
+        speechBubbleWindow = bubbleWin
+        repositionSpeechBubble()
+
+        // 弹入动画：锚定尾巴底部，从 70% 放大到 100%（easeOutBack 过冲回弹），同时淡入
+        bubbleWin.alphaValue = 0
+        bubbleWin.orderFrontRegardless()
+        let finalFrame = bubbleWin.frame
+        let startSize = NSSize(width: size.width * 0.7, height: size.height * 0.7)
+        let startFrame = NSRect(
+            x: finalFrame.midX - startSize.width / 2,
+            y: finalFrame.minY,
+            width: startSize.width,
+            height: startSize.height
+        )
+        bubbleWin.setFrame(startFrame, display: false)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.3
+            // 过冲回弹曲线，营造「啵」地弹出的手感
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1)
+            bubbleWin.animator().alphaValue = 1
+            bubbleWin.animator().setFrame(finalFrame, display: true)
+        }, completionHandler: { [weak self] in
+            // 弹入完成后才开始跟随（避免 follow 的 setFrame 打断弹入动画）
+            self?.startSpeechBubbleFollow()
+        })
+
+        // 悬浮 hold 秒（另加弹入时长）后淡出移除；只关闭当前这颗气泡，防止旧定时器误关新气泡
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold + 0.3) { [weak self, weak bubbleWin] in
+            guard let self, let bubbleWin, self.speechBubbleWindow === bubbleWin else { return }
+            self.dismissSpeechBubble(animated: true, fade: fade)
         }
+    }
+
+    /// 将气泡定位到小猫头顶（水平居中、尾巴尖轻搭猫头），并夹在屏幕可视范围内
+    private func repositionSpeechBubble() {
+        guard let bubbleWin = speechBubbleWindow, let catWin = windowRef else { return }
+        let catFrame = catWin.frame
+        let bubbleSize = bubbleWin.frame.size
+
+        // 悬浮期间轻微上下浮动（±2pt 正弦呼吸）
+        let t = Date().timeIntervalSinceReferenceDate
+        let bob = 2.0 * sin(t * 2.0 * .pi / 1.8)
+
+        let x = catFrame.midX - bubbleSize.width / 2
+        let y = catFrame.maxY - 4 + bob
+
+        // 限制在气泡所在屏幕的可视范围内（不超出屏幕、不顶进菜单栏）
+        let screen = NSScreen.screens.first { $0.frame.intersects(catFrame) } ?? NSScreen.main
+        var px = x
+        var py = y
+        if let vf = screen?.visibleFrame {
+            px = min(max(x, vf.minX + 4), vf.maxX - bubbleSize.width - 4)
+            py = min(y, vf.maxY - bubbleSize.height - 4)
+        }
+        bubbleWin.setFrameOrigin(NSPoint(x: px, y: py))
+    }
+
+    /// 启动气泡跟随定时器：拖动小猫时气泡同步跟随，并保持轻微浮动
+    private func startSpeechBubbleFollow() {
+        guard speechBubbleWindow != nil else { return }
+        speechBubbleFollowTimer?.invalidate()
+        speechBubbleFollowTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.repositionSpeechBubble()
+            }
+        }
+    }
+
+    /// 移除对话气泡（animated=true 时先淡出再关闭窗口）
+    private func dismissSpeechBubble(animated: Bool, fade: TimeInterval = 0.5) {
+        speechBubbleFollowTimer?.invalidate()
+        speechBubbleFollowTimer = nil
+        guard let bubbleWin = speechBubbleWindow else { return }
+        speechBubbleWindow = nil
+        if animated {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = fade
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                bubbleWin.animator().alphaValue = 0
+            }, completionHandler: {
+                bubbleWin.orderOut(nil)
+                bubbleWin.close()
+            })
+        } else {
+            bubbleWin.orderOut(nil)
+            bubbleWin.close()
+        }
+    }
+
+/// 拦截层点击取消投喂：左键（单击）取消说“猫条掉地上啦”，右键（双击）取消说“为什么不喂我～”
+func requestCancelFeeding(byRightClick: Bool) {
+cancelFeeding()
+catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
+}
+
+    /// 小猫说话：统一走粉色对话框（弹入 → 悬浮 2s → 1s 淡出）
+    private func catSay(_ text: String) {
+        showFeedBubble(text: text, hold: 2.0, fade: 1.0)
     }
 
     /// 飘心特效：3 颗爱心从小猫身上缓缓升起并淡出
@@ -1300,4 +1495,147 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
     
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+// MARK: - 小猫说话对话框（粉色手绘风气泡视图）
+
+/// 仿素材风格的对话气泡：粉色圆角底 + 棕色描边 + 左上高光 + 朝下小尾巴，文案居中自动换行
+/// 纯 AppKit draw(_:) 绘制（与 CatView 同一技术方案，避开 layer 渲染坑），尺寸随文案自适应
+final class SpeechBubbleView: NSView {
+    private let text: String
+    /// 文案排版后的实际尺寸（init 时计算，draw 时用于居中）
+    private let textSize: NSSize
+
+    /// 文案字体：系统圆体更贴近素材的手绘感
+    private static var textFont: NSFont {
+        let base = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        if let desc = base.fontDescriptor.withDesign(.rounded),
+           let rounded = NSFont(descriptor: desc, size: 13) {
+            return rounded
+        }
+        return base
+    }
+    /// 配色取自素材：浅粉底 / 暖棕描边 / 深棕文字
+    private static var fillColor: NSColor { NSColor(red: 0.99, green: 0.92, blue: 0.90, alpha: 1) }
+    private static var strokeColor: NSColor { NSColor(red: 0.54, green: 0.42, blue: 0.35, alpha: 1) }
+    private static var textColor: NSColor { NSColor(red: 0.44, green: 0.32, blue: 0.26, alpha: 1) }
+
+    /// 排版度量：文案尺寸 + 气泡整体尺寸（含尾巴高度）
+    private static func metrics(for text: String) -> (bubbleSize: NSSize, textSize: NSSize) {
+        let maxTextWidth: CGFloat = 190
+        let bound = (text as NSString).boundingRect(
+            with: NSSize(width: maxTextWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: textFont]
+        )
+        let ts = NSSize(width: min(max(ceil(bound.width), 40), maxTextWidth),
+                        height: max(ceil(bound.height), 18))
+        let hPadding: CGFloat = 18
+        let vPadding: CGFloat = 13
+        let tailHeight: CGFloat = 15
+        let size = NSSize(width: max(ts.width + hPadding * 2, 76),
+                          height: ts.height + vPadding * 2 + tailHeight)
+        return (size, ts)
+    }
+
+    /// 根据文案计算气泡整体尺寸（含尾巴），供外层窗口定位用
+    static func fittingSize(for text: String) -> NSSize { metrics(for: text).bubbleSize }
+
+    init(text: String) {
+        self.text = text
+        let m = Self.metrics(for: text)
+        self.textSize = m.textSize
+        super.init(frame: NSRect(origin: .zero, size: m.bubbleSize))
+        autoresizingMask = [.width, .height]
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width > 8, bounds.height > 8 else { return }
+
+        let stroke: CGFloat = 2.5
+        let radius: CGFloat = 15
+        let tailHeight: CGFloat = 15
+
+        // 主体圆角矩形（底部给尾巴留空间；四周内收半描边，避免边缘被窗口裁切）
+        let body = NSRect(
+            x: stroke / 2 + 1,
+            y: tailHeight - 2,
+            width: bounds.width - stroke - 2,
+            height: bounds.height - tailHeight + 2 - stroke / 2 - 1
+        )
+        let bodyPath = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
+
+        // 尾巴：主体底边中点偏左处向下收出小尖（仿素材朝左下的小尾巴），顶端伸入主体 2pt 衔接无痕
+        let tipX = bounds.width * 0.42
+        let attachL = bounds.width * 0.32
+        let attachR = bounds.width * 0.56
+        let tailTopY = body.minY + 2
+        let tip = NSPoint(x: tipX, y: 1.5)
+        let tailPath = NSBezierPath()
+        tailPath.move(to: NSPoint(x: attachL, y: tailTopY))
+        tailPath.curve(to: tip,
+                       controlPoint1: NSPoint(x: attachL + 1, y: tailTopY - 9),
+                       controlPoint2: NSPoint(x: tipX - 8, y: 2))
+        tailPath.curve(to: NSPoint(x: attachR, y: tailTopY),
+                       controlPoint1: NSPoint(x: tipX + 9, y: 2),
+                       controlPoint2: NSPoint(x: attachR - 2, y: tailTopY - 8))
+        tailPath.close()
+
+        // 1) 填充主体 + 尾巴
+        Self.fillColor.setFill()
+        bodyPath.fill()
+        tailPath.fill()
+
+        // 2) 描边主体
+        Self.strokeColor.setStroke()
+        bodyPath.lineWidth = stroke
+        bodyPath.stroke()
+
+        // 3) 再填一次尾巴：盖掉主体底边横穿尾巴根部的描边，衔接自然
+        Self.fillColor.setFill()
+        tailPath.fill()
+
+        // 4) 重描尾巴两条侧边（开放路径，根部不压线、尖端自然收拢）
+        Self.strokeColor.setStroke()
+        let tailLeft = NSBezierPath()
+        tailLeft.move(to: NSPoint(x: attachL, y: body.minY))
+        tailLeft.curve(to: tip,
+                       controlPoint1: NSPoint(x: attachL + 1, y: body.minY - 7),
+                       controlPoint2: NSPoint(x: tipX - 8, y: 2))
+        tailLeft.lineWidth = stroke
+        tailLeft.stroke()
+        let tailRight = NSBezierPath()
+        tailRight.move(to: NSPoint(x: attachR, y: body.minY))
+        tailRight.curve(to: tip,
+                        controlPoint1: NSPoint(x: attachR - 2, y: body.minY - 6),
+                        controlPoint2: NSPoint(x: tipX + 9, y: 2))
+        tailRight.lineWidth = stroke
+        tailRight.stroke()
+
+        // 5) 左上高光（仿素材釉面反光：一道长弧 + 一枚小圆点）
+        NSColor.white.withAlphaComponent(0.5).setFill()
+        NSBezierPath(ovalIn: NSRect(x: body.minX + 10, y: body.maxY - 20, width: 32, height: 11)).fill()
+        NSBezierPath(ovalIn: NSRect(x: body.minX + 8, y: body.maxY - 31, width: 9, height: 7)).fill()
+
+        // 6) 文案：居中绘制在主体内
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.lineBreakMode = .byWordWrapping
+        let attr = NSAttributedString(string: text, attributes: [
+            .font: Self.textFont,
+            .foregroundColor: Self.textColor,
+            .paragraphStyle: para
+        ])
+        let textRect = NSRect(
+            x: body.minX,
+            y: body.minY + (body.height - textSize.height) / 2,
+            width: body.width,
+            height: textSize.height
+        )
+        attr.draw(in: textRect)
+    }
 }

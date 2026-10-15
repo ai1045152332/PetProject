@@ -4,7 +4,7 @@
 
 ## 通用说明
 
-- **Base URL**：`http://<host>:8080`（本地开发为 `http://11.0.213.233:8080`）
+- **Base URL**：`http://<host>`（公网部署为 `http://101.96.248.75`，本地开发默认 `:8080`）
 - **请求格式**：除 `GET /api/ping` 外均为 `POST` + `Content-Type: application/json`
 - **统一响应信封**：
 
@@ -61,7 +61,7 @@ GET /api/crypto/pubkey
 
 ```bash
 # 1. 取公钥转 PEM
-curl -s http://127.0.0.1:8080/api/crypto/pubkey | python3 -c "
+curl -s http://101.96.248.75/api/crypto/pubkey | python3 -c "
 import sys, json, base64
 der = base64.b64decode(json.load(sys.stdin)['data']['publicKey'])
 b64 = base64.b64encode(der).decode()
@@ -78,7 +78,7 @@ python3 -c "
 import base64, json
 print(json.dumps({'encrypted': base64.b64encode(open('cipher.bin','rb').read()).decode()}))
 " > envelope.json
-curl -X POST http://127.0.0.1:8080/api/admin/login \
+curl -X POST http://101.96.248.75/api/admin/login \
   -H "Content-Type: application/json" -d @envelope.json
 ```
 
@@ -95,7 +95,7 @@ GET /api/ping
 ### 请求示例
 
 ```bash
-curl http://11.0.213.233:8080/api/ping
+curl http://101.96.248.75/api/ping
 ```
 
 ### 成功响应
@@ -146,7 +146,7 @@ POST /api/heartbeat
 ### 请求示例
 
 ```bash
-curl -X POST http://11.0.213.233:8080/api/heartbeat \
+curl -X POST http://101.96.248.75/api/heartbeat \
   -H "Content-Type: application/json" \
   -d '{
     "version": "v1.0.001.test",
@@ -206,7 +206,7 @@ POST /api/access/verify
 ### 请求示例
 
 ```bash
-curl -X POST http://11.0.213.233:8080/api/access/verify \
+curl -X POST http://101.96.248.75/api/access/verify \
   -H "Content-Type: application/json" \
   -d '{"code": "9MDW-TCZ5-YVD8", "deviceId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"}'
 ```
@@ -263,7 +263,7 @@ POST /api/admin/login
 请求示例：
 
 ```bash
-curl -X POST http://11.0.213.233:8080/api/admin/login \
+curl -X POST http://101.96.248.75/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 ```
@@ -309,7 +309,7 @@ POST /api/admin/codes/generate
 请求示例：
 
 ```bash
-curl -X POST http://11.0.213.233:8080/api/admin/codes/generate \
+curl -X POST http://101.96.248.75/api/admin/codes/generate \
   -H "Content-Type: application/json" \
   -H "X-Admin-Token: 123456" \
   -d '{"count": 5, "maxDevices": 3, "validDays": 365, "note": "面包多订单"}'
@@ -330,7 +330,7 @@ GET /api/admin/codes
 请求示例：
 
 ```bash
-curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: 123456"
+curl http://101.96.248.75/api/admin/codes -H "X-Admin-Token: 123456"
 ```
 
 响应：
@@ -374,7 +374,7 @@ POST /api/admin/codes/unbind
 请求示例（解绑全部）：
 
 ```bash
-curl -X POST http://11.0.213.233:8080/api/admin/codes/unbind \
+curl -X POST http://101.96.248.75/api/admin/codes/unbind \
   -H "Content-Type: application/json" \
   -H "X-Admin-Token: 123456" \
   -d '{"code": "TNZW-SFYM-EQCN"}'
@@ -397,7 +397,7 @@ POST /api/admin/codes/delete
 请求示例：
 
 ```bash
-curl -X POST http://11.0.213.233:8080/api/admin/codes/delete \
+curl -X POST http://101.96.248.75/api/admin/codes/delete \
   -H "Content-Type: application/json" \
   -H "X-Admin-Token: 123456" \
   -d '{"code": "K82M-E7C6-MWZV"}'

@@ -55,5 +55,7 @@ go build -o petserver ./cmd/server && ./petserver
 
 默认监听 `:8080`。
 
-> 注意：App 端后端地址目前写死为 `http://11.0.213.233:8080`，
-> 本机 IP 变化时只需修改 `DesktopPetForMacApp/Services/ServerConfig.swift`。
+> 部署：公网服务器 `101.96.248.75`（监听 80 端口，systemd 管理，数据在 `/opt/petserver/data`）。
+> App 端地址写在 `DesktopPetForMacApp/Services/ServerConfig.swift`，加密公钥写在
+> `PayloadCrypto.swift`；**两者必须与目标后端一致**（每台服务端各自生成密钥对）。
+> 修改后端地址后需重新打包 App。

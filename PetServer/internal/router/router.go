@@ -29,6 +29,13 @@ func New(
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(web.OnlinePage)
 	})
+	// H5 激活码管理页（页面本身公开，数据接口需 X-Admin-Token 鉴权）
+	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(web.AdminPage)
+	})
+	// 内置静态资源（Tabler 样式等，与接口同源）
+	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
 	// 根路径也直接展示列表页，方便手机扫码/输入 IP 访问
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {

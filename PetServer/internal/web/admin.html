@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>激活码管理 · cute pet</title>
+  <link rel="stylesheet" href="/static/tabler.min.css" />
+</head>
+<body class="antialiased">
+  <div class="page">
+    <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
+      <div class="container-xl">
+        <span class="navbar-brand">🐾 cute pet 后台管理</span>
+        <div class="navbar-nav flex-row ms-auto">
+          <a class="nav-link" href="/online" target="_blank">在线宠物</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <h2 class="page-title">激活码管理</h2>
+              <div class="text-secondary mt-1" id="status">请输入管理令牌</div>
+            </div>
+            <div class="col-auto ms-auto">
+              <button class="btn" onclick="loadList()">刷新</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards">
+
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
+                  <div class="row g-2 align-items-center">
+                    <div class="col">
+                      <input type="password" id="token" class="form-control" placeholder="管理令牌（X-Admin-Token）" />
+                    </div>
+                    <div class="col-auto">
+                      <button class="btn btn-primary" onclick="saveToken()">保存令牌</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="panel" style="display:none" class="col-12">
+              <div class="row row-cards">
+
+                <div class="col-12">
+                  <div class="card">
+                    <div class="card-header"><h3 class="card-title">生成激活码</h3></div>
+                    <div class="card-body">
+                      <div class="row g-3">
+                        <div class="col-6 col-md-3">
+                          <label class="form-label">数量（1~100）</label>
+                          <input type="number" id="count" class="form-control" value="5" min="1" max="100" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="form-label">每码设备数（1~10）</label>
+                          <input type="number" id="maxDevices" class="form-control" value="3" min="1" max="10" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                          <label class="form-label">备注</label>
+                          <input type="text" id="note" class="form-control" placeholder="如：面包多订单" />
+                        </div>
+                        <div class="col-12 col-md-2 d-flex align-items-end">
+                          <button class="btn btn-primary w-100" onclick="generate()">生成</button>
+                        </div>
+                      </div>
+                      <div id="newCodes" class="mt-3"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="card">
+                    <div class="card-header">
+                      <h3 class="card-title">全部激活码</h3>
+                      <span class="ms-2 text-secondary" id="total"></span>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-vcenter card-table table-hover">
+                        <thead>
+                          <tr>
+                            <th>激活码</th>
+                            <th>设备绑定</th>
+                            <th>备注</th>
+                            <th>生成时间</th>
+                            <th class="w-1"></th>
+                          </tr>
+                        </thead>
+                        <tbody id="list"></tbody>
+                      </table>
+                    </div>
+                    <div class="card-body text-secondary text-center" id="empty" style="display:none">
+                      还没有激活码，先在上方生成吧
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer footer-transparent d-print-none">
+        <div class="container-xl text-center text-secondary">
+          cute pet 后端服务 · UI 基于 Tabler（MIT）
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const tokenInput = document.getElementById('token');
+    tokenInput.value = localStorage.getItem('petAdminToken') || '';
+    if (tokenInput.value) loadList();
+
+    function token() { return tokenInput.value.trim(); }
+
+    function saveToken() {
+      localStorage.setItem('petAdminToken', token());
+      loadList();
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      ));
+    }
+
+    function copyCode(text, btn) {
+      if (navigator.clipboard) navigator.clipboard.writeText(text);
+      const old = btn.textContent;
+      btn.textContent = '已复制 ✓';
+      setTimeout(() => { btn.textContent = old; }, 800);
+    }
+
+    async function api(path, options) {
+      const resp = await fetch(path, Object.assign({
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token() }
+      }, options));
+      const json = await resp.json();
+      if (json.code !== 0) throw new Error(json.msg || '请求失败');
+      return json.data;
+    }
+
+    async function loadList() {
+      const status = document.getElementById('status');
+      try {
+        const data = await api('/api/admin/codes');
+        document.getElementById('panel').style.display = '';
+        status.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+        render(data.codes || []);
+      } catch (e) {
+        document.getElementById('panel').style.display = 'none';
+        status.textContent = '验证失败：' + e.message;
+      }
+    }
+
+    async function generate() {
+      const box = document.getElementById('newCodes');
+      try {
+        const data = await api('/api/admin/codes/generate', {
+          method: 'POST',
+          body: JSON.stringify({
+            count: parseInt(document.getElementById('count').value, 10),
+            maxDevices: parseInt(document.getElementById('maxDevices').value, 10),
+            note: document.getElementById('note').value.trim()
+          })
+        });
+        box.innerHTML = '<div class="alert alert-success mb-0"><div class="fw-bold mb-2">生成成功（点击复制）：</div>' +
+          (data.codes || []).map(c =>
+            '<button class="btn btn-sm btn-outline-success me-2 mb-2 font-monospace" onclick="copyCode(\'' + c + '\', this)">' + esc(c) + '</button>'
+          ).join('') + '</div>';
+        loadList();
+      } catch (e) {
+        box.innerHTML = '<div class="alert alert-danger mb-0">' + esc(e.message) + '</div>';
+      }
+    }
+
+    function render(codes) {
+      document.getElementById('total').textContent = '共 ' + codes.length + ' 个';
+      const tbody = document.getElementById('list');
+      document.getElementById('empty').style.display = codes.length ? 'none' : '';
+      tbody.innerHTML = codes.slice().reverse().map(c => {
+        const devices = c.devices || [];
+        const used = devices.length;
+        const full = used >= c.maxDevices;
+        const badge = full
+          ? '<span class="badge bg-red-lt">' + used + ' / ' + c.maxDevices + ' 台</span>'
+          : '<span class="badge bg-green-lt">' + used + ' / ' + c.maxDevices + ' 台</span>';
+        const devTitle = devices.map(esc).join('&#10;');
+        return (
+          '<tr>' +
+            '<td class="font-monospace fw-bold">' + esc(c.code) + '</td>' +
+            '<td><span title="' + (devTitle || '暂无绑定') + '">' + badge + '</span></td>' +
+            '<td class="text-secondary">' + esc(c.note || '—') + '</td>' +
+            '<td class="text-secondary">' + new Date(c.createdAt).toLocaleString('zh-CN') + '</td>' +
+            '<td><button class="btn btn-sm btn-outline-primary" onclick="copyCode(\'' + esc(c.code) + '\', this)">复制</button></td>' +
+          '</tr>'
+        );
+      }).join('');
+    }
+  </script>
+</body>
+</html>

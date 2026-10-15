@@ -29,6 +29,7 @@ enum AccessControl {
         case deviceLimit    // 该码绑定设备数已达上限
         case networkError   // 网络/服务异常
         case localError     // 本地加密或请求构造失败（非网络问题）
+        case badFormat      // 输入格式不是激活码（如误粘了其它文本）
         case serverError    // 服务端返回异常
     }
 
@@ -69,6 +70,12 @@ enum AccessControl {
             completion(.success)
             return
         }
+        // 格式预检：激活码为 12 位字母数字（可含横线/空格），避免误粘其它文本时只报「校验码错误」
+        if !isPlausibleActivationCode(trimmed) {
+            FileLogger.log("[Access] 输入格式不像激活码，已阻止请求")
+            completion(.badFormat)
+            return
+        }
         // 否则走后端接口校验（激活码 + 设备绑定）
         verifyRemote(code: trimmed) { result in
             if result == .success { persistFullAccess() }
@@ -82,6 +89,20 @@ enum AccessControl {
     }
 
     // MARK: - 私有
+
+    /// 归一化：大写、去掉非字母数字（与后端 normalizeCode 对齐）
+    static func normalizedCode(_ code: String) -> String {
+        let upper = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let filtered = upper.unicodeScalars.filter { scalar in
+            (scalar.value >= 65 && scalar.value <= 90) || (scalar.value >= 48 && scalar.value <= 57)
+        }
+        return String(String.UnicodeScalarView(filtered))
+    }
+
+    /// 格式预检：归一化后应为 12 位（激活码 XXXX-XXXX-XXXX）
+    private static func isPlausibleActivationCode(_ code: String) -> Bool {
+        normalizedCode(code).count == 12
+    }
 
     private static func persistFullAccess() {
         UserDefaults.standard.set(fullLevel, forKey: prefsKey)
@@ -100,7 +121,7 @@ enum AccessControl {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // 激活码与设备 ID 用服务端公钥加密后传输，不发明文
         let plain = try? JSONSerialization.data(withJSONObject: [
-            "code": code.uppercased(),
+            "code": normalizedCode(code),
             "deviceId": deviceID
         ])
         guard let plain, let body = PayloadCrypto.encryptedEnvelope(plain) else {

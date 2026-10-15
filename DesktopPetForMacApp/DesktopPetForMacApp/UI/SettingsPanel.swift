@@ -693,6 +693,9 @@ let arw = accessRow.bounds.width
             case .networkError:
                 alert.messageText = "网络异常"
                 alert.informativeText = "无法连接校验服务，请检查网络后重试"
+            case .badFormat:
+                alert.messageText = "激活码格式不正确"
+                alert.informativeText = "激活码是 12 位字母数字（形如 XXXX-XXXX-XXXX）\n请检查是否误粘贴了其它内容"
             case .localError:
                 alert.messageText = "本地处理失败"
                 alert.informativeText = "校验码加密失败，请重试；若持续出现请反馈日志"

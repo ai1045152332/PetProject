@@ -24,9 +24,26 @@ func NewAccessService(store *storage.ActivationStore) *AccessService {
 	return &AccessService{store: store}
 }
 
+// normalizeCode 归一化激活码：大写、去除非字母数字字符，12 位自动按 XXXX-XXXX-XXXX 分组
+// 这样 "tnzw sfym eqcn"、"tnzw-sfym-eqcn"、"TNZWSFYMEQCN" 都能识别为同一个码
+func normalizeCode(code string) string {
+	upper := strings.ToUpper(strings.TrimSpace(code))
+	var sb strings.Builder
+	for _, r := range upper {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		}
+	}
+	flat := sb.String()
+	if len(flat) == 12 {
+		return flat[0:4] + "-" + flat[4:8] + "-" + flat[8:12]
+	}
+	return upper
+}
+
 // Verify 校验激活码并绑定设备，返回是否通过及原因（ok / invalid_code / device_limit / expired）
 func (s *AccessService) Verify(code, deviceID string) (bool, string) {
-	normalized := strings.ToUpper(strings.TrimSpace(code))
+	normalized := normalizeCode(code)
 
 	codes, err := s.store.Load()
 	if err != nil {
@@ -112,7 +129,7 @@ func (s *AccessService) List() ([]model.ActivationCode, error) {
 
 // Delete 删除激活码（含其设备绑定），返回是否找到该码
 func (s *AccessService) Delete(code string) (bool, error) {
-	normalized := strings.ToUpper(strings.TrimSpace(code))
+	normalized := normalizeCode(code)
 
 	codes, err := s.store.Load()
 	if err != nil {
@@ -142,7 +159,7 @@ func (s *AccessService) Delete(code string) (bool, error) {
 // Unbind 解绑设备：deviceID 为空表示解绑该码的全部设备
 // 返回是否找到该码
 func (s *AccessService) Unbind(code, deviceID string) (bool, error) {
-	normalized := strings.ToUpper(strings.TrimSpace(code))
+	normalized := normalizeCode(code)
 
 	codes, err := s.store.Load()
 	if err != nil {

@@ -49,7 +49,7 @@
                   <div class="row g-3">
                     <div class="col-6 col-md-2">
                       <label class="form-label">数量（1~100）</label>
-                      <input type="number" id="count" class="form-control" value="5" min="1" max="100" />
+                      <input type="number" id="count" class="form-control" value="1" min="1" max="100" />
                     </div>
                     <div class="col-6 col-md-2">
                       <label class="form-label">每码设备数</label>
@@ -131,11 +131,64 @@
       location.href = '/admin/login';
     }
 
-    function copyCode(text, btn) {
-      if (navigator.clipboard) navigator.clipboard.writeText(text);
+    // 复制到剪贴板：HTTP 页面下 navigator.clipboard 不可用（仅 HTTPS/localhost），
+    // 因此回退到 execCommand 方案；两者都失败时如实提示，不假装成功。
+    async function copyText(text) {
+      if (window.isSecureContext && navigator.clipboard) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (e) { /* 继续回退 */ }
+      }
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // 兜底：把激活码文本选中，用户可直接 ⌘C
+    function selectCodeText(text) {
+      const cells = document.querySelectorAll('.code-cell');
+      for (const cell of cells) {
+        if (cell.textContent.trim() === text) {
+          const range = document.createRange();
+          range.selectNodeContents(cell);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    async function copyCode(text, btn) {
       const old = btn.textContent;
-      btn.textContent = '已复制 ✓';
-      setTimeout(() => { btn.textContent = old; }, 800);
+      const ok = await copyText(text);
+      if (ok) {
+        btn.textContent = '已复制 ✓';
+      } else {
+        // 复制受限（如非安全上下文）：选中文本让用户 ⌘C，并如实提示
+        const selected = selectCodeText(text);
+        btn.textContent = selected ? '已选中，⌘C' : '请手动复制';
+        btn.classList.add('btn-outline-danger');
+      }
+      setTimeout(() => {
+        btn.textContent = old;
+        btn.classList.remove('btn-outline-danger');
+      }, 1600);
     }
 
     async function api(path, options) {
@@ -236,7 +289,7 @@
         const devTitle = devices.map(esc).join('&#10;');
         return (
           '<tr>' +
-            '<td class="font-monospace fw-bold">' + esc(c.code) + '</td>' +
+            '<td class="font-monospace fw-bold code-cell" style="user-select:text">' + esc(c.code) + '</td>' +
             '<td><span title="' + (devTitle || '暂无绑定') + '">' + badge + '</span></td>' +
             '<td class="text-secondary">' + esc(c.note || '—') + '</td>' +
             '<td class="text-secondary">' + new Date(c.createdAt).toLocaleString('zh-CN') + '</td>' +

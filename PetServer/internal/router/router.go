@@ -41,16 +41,25 @@ func New(
 		w.Write(web.OnlinePage)
 	})
 	// 统一后台管理页：/admin/login 登录页、/admin 在线宠物、/admin/codes 激活码管理
+	// 页面不缓存：避免部署新版本后浏览器仍展示旧 HTML
+	noCache := func(w http.ResponseWriter) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+	}
+	_ = noCache
 	mux.HandleFunc("/admin/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		noCache(w)
 		w.Write(web.AdminLoginPage)
 	})
 	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		noCache(w)
 		w.Write(web.AdminPetsPage)
 	})
 	mux.HandleFunc("/admin/codes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		noCache(w)
 		w.Write(web.AdminCodesPage)
 	})
 	// 内置静态资源（Tabler 样式等，与接口同源）

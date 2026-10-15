@@ -22,7 +22,11 @@ const (
 )
 
 func main() {
-	addr := ":8080"
+	// 监听地址可用 PETSERVER_LISTEN_ADDR 配置（公网部署常直接监听 :80，本地开发用默认 :8080）
+	addr := os.Getenv("PETSERVER_LISTEN_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
 
 	// 先占住端口，再初始化存储/后台任务：
 	// 若端口已被占用，直接失败退出，绝不会执行清理任务，

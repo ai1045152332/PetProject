@@ -196,6 +196,19 @@
         : '<span class="badge bg-green-lt">有效</span> <span class="text-secondary">' + text + '</span>';
     }
 
+    async function deleteCode(code) {
+      if (!confirm('确认删除激活码 ' + code + '？\n删除后不可恢复，已绑定的设备也会一并清除。')) return;
+      try {
+        await api('/api/admin/codes/delete', {
+          method: 'POST',
+          body: JSON.stringify({ code: code })
+        });
+        loadList();
+      } catch (e) {
+        alert('删除失败：' + e.message);
+      }
+    }
+
     async function unbind(code) {
       if (!confirm('解绑激活码 ' + code + ' 的全部已绑定设备？\n解绑后该码可在新设备重新激活。')) return;
       try {
@@ -230,7 +243,8 @@
             '<td>' + expiryCell(c) + '</td>' +
             '<td class="text-nowrap">' +
               '<button class="btn btn-sm btn-outline-primary me-1" onclick="copyCode(\'' + esc(c.code) + '\', this)">复制</button>' +
-              (used ? '<button class="btn btn-sm btn-outline-danger" onclick="unbind(\'' + esc(c.code) + '\')">解绑</button>' : '') +
+              (used ? '<button class="btn btn-sm btn-outline-danger me-1" onclick="unbind(\'' + esc(c.code) + '\')">解绑</button>' : '') +
+              '<button class="btn btn-sm btn-outline-danger" onclick="deleteCode(\'' + esc(c.code) + '\')">删除</button>' +
             '</td>' +
           '</tr>'
         );

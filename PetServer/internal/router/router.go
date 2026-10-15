@@ -26,6 +26,7 @@ func New(
 	mux.HandleFunc("/api/admin/codes", adminCtrl.ListCodes)
 	mux.HandleFunc("/api/admin/codes/generate", adminCtrl.GenerateCodes)
 	mux.HandleFunc("/api/admin/codes/unbind", adminCtrl.UnbindCodes)
+	mux.HandleFunc("/api/admin/codes/delete", adminCtrl.DeleteCodes)
 	mux.HandleFunc("/api/admin/login", authCtrl.Login)
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)

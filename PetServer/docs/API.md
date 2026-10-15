@@ -382,7 +382,34 @@ curl -X POST http://11.0.213.233:8080/api/admin/codes/unbind \
 
 响应：`{"code":0,"msg":"ok"}`；激活码不存在返回 `{"code":404,"msg":"code not found"}`。
 
-### 3.7 管理接口错误
+### 3.7 删除激活码
+
+```
+POST /api/admin/codes/delete
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| code | string | 是 | 要删除的激活码 |
+
+请求示例：
+
+```bash
+curl -X POST http://11.0.213.233:8080/api/admin/codes/delete \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: 123456" \
+  -d '{"code": "K82M-E7C6-MWZV"}'
+```
+
+响应：`{"code":0,"msg":"ok"}`；激活码不存在返回 `{"code":404,"msg":"code not found"}`。
+
+> 删除不可恢复，已绑定的设备记录会一并清除。
+
+### 3.8 管理接口错误
+
+
 
 | 场景 | HTTP 状态码 | 响应 |
 | --- | --- | --- |

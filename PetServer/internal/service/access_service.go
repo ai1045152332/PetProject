@@ -110,6 +110,35 @@ func (s *AccessService) List() ([]model.ActivationCode, error) {
 	return s.store.Load()
 }
 
+// Delete 删除激活码（含其设备绑定），返回是否找到该码
+func (s *AccessService) Delete(code string) (bool, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+
+	codes, err := s.store.Load()
+	if err != nil {
+		return false, err
+	}
+
+	kept := make([]model.ActivationCode, 0, len(codes))
+	found := false
+	for _, c := range codes {
+		if c.Code == normalized {
+			found = true
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if !found {
+		return false, nil
+	}
+
+	if err := s.store.Save(kept); err != nil {
+		return true, err
+	}
+	log.Printf("[access] 已删除激活码 %s", normalized)
+	return true, nil
+}
+
 // Unbind 解绑设备：deviceID 为空表示解绑该码的全部设备
 // 返回是否找到该码
 func (s *AccessService) Unbind(code, deviceID string) (bool, error) {

@@ -145,3 +145,41 @@ func (c *AdminController) UnbindCodes(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
 }
+
+// DeleteRequest 删除激活码请求
+type DeleteRequest struct {
+	Code string `json:"code"`
+}
+
+// DeleteCodes 处理 POST /api/admin/codes/delete
+func (c *AdminController) DeleteCodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	var req DeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
+		return
+	}
+	if req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: code"})
+		return
+	}
+
+	found, err := c.accessSvc.Delete(req.Code)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "delete failed: " + err.Error()})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, Response{Code: 404, Msg: "code not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}

@@ -465,58 +465,98 @@ let arw = accessRow.bounds.width
         divider.autoresizingMask = .width
         container.addSubview(divider)
         
-        // 预设时间间隔按钮
+        // ── 垂直堆栈：各行间距自动管理，避免手算坐标导致重叠 ──
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 66 + 14),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16)
+        ])
+
+        /// 堆栈内行容器：固定高度、自动铺满堆栈宽度
+        func makeStackRow(height: CGFloat) -> NSView {
+            let row = NSView(frame: NSRect(x: 0, y: 0, width: cw - 32, height: height))
+            row.wantsLayer = true
+            row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+            row.layer?.cornerRadius = 10
+            row.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(row)
+            NSLayoutConstraint.activate([
+                row.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+                row.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+                row.heightAnchor.constraint(equalToConstant: height)
+            ])
+            return row
+        }
+
         let presets = [15, 30, 45, 60]
         let currentInterval = viewModel?.reminderInterval ?? PetViewModel.defaultReminderInterval
+
+        // 条目 1：提醒间隔标题行（左标题 + 右当前值）
+        let intervalRow = makeStackRow(height: 48)
 
         let presetLabel = NSTextField(labelWithString: "提醒间隔")
         presetLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         presetLabel.textColor = .labelColor
-        presetLabel.frame = NSRect(x: 16, y: ch - 96, width: 100, height: 18)
-        container.addSubview(presetLabel)
+        presetLabel.frame = NSRect(x: 14, y: 24, width: 120, height: 18)
+        intervalRow.addSubview(presetLabel)
+
+        let presetDesc = NSTextField(labelWithString: "选择或输入喝水提醒频率")
+        presetDesc.font = .systemFont(ofSize: 11)
+        presetDesc.textColor = .tertiaryLabelColor
+        presetDesc.frame = NSRect(x: 14, y: 6, width: 200, height: 15)
+        intervalRow.addSubview(presetDesc)
 
         // 当前生效的提醒间隔（预设高亮不直观，自定义间隔时更需显示）
+        let irw = intervalRow.bounds.width
         let currentLabel = NSTextField(labelWithString: "当前：\(currentInterval) 分钟")
         currentLabel.font = .systemFont(ofSize: 12, weight: .medium)
         currentLabel.textColor = .controlAccentColor
         currentLabel.alignment = .right
-        currentLabel.frame = NSRect(x: cw - 16 - 140, y: ch - 96, width: 140, height: 18)
+        currentLabel.frame = NSRect(x: irw - 16 - 140, y: 15, width: 140, height: 18)
         currentLabel.autoresizingMask = .minXMargin
-        container.addSubview(currentLabel)
+        intervalRow.addSubview(currentLabel)
         currentIntervalLabel = currentLabel
 
-        // 间隔按钮容器（使用居中容器，按钮在 layout 时自动居中）
-        let btnW: CGFloat = 68
+        // 条目 2：预设按钮行（按钮在 layout 时自动居中）
+        let btnW: CGFloat = 56
         let btnH: CGFloat = 32
         let btnGap: CGFloat = 10
-        let btnY = ch - 96 - 6
         let totalBtnsW = CGFloat(presets.count) * btnW + CGFloat(presets.count - 1) * btnGap
 
-        let btnContainer = CenteredButtonContainer(frame: NSRect(x: 16, y: btnY - btnH, width: cw - 32, height: btnH + 4))
-        btnContainer.autoresizingMask = .width
-        container.addSubview(btnContainer)
+        let btnRow = CenteredButtonContainer(frame: NSRect(x: 0, y: 0, width: cw - 32, height: 44))
+        btnRow.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(btnRow)
+        NSLayoutConstraint.activate([
+            btnRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            btnRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            btnRow.heightAnchor.constraint(equalToConstant: 44)
+        ])
 
         var intervalBtns: [NSButton] = []
         for minutes in presets {
-            let btn = NSButton(frame: NSRect(x: 0, y: 2, width: btnW, height: btnH))
-            btn.title = "\(minutes) 分钟"
+            let btn = NSButton(frame: NSRect(x: 0, y: 6, width: btnW, height: btnH))
+            btn.title = "\(minutes)"
             btn.bezelStyle = .rounded
             btn.target = self
             btn.action = #selector(intervalButtonClicked(_:))
             btn.tag = minutes
             btn.wantsLayer = true
             btn.layer?.cornerRadius = 8
-            btnContainer.addSubview(btn)
+            btnRow.addSubview(btn)
             intervalButtons.append((minutes, btn))
             intervalBtns.append(btn)
         }
-        btnContainer.configureButtons(intervalBtns, gap: btnGap, totalWidth: totalBtnsW)
+        btnRow.configureButtons(intervalBtns, gap: btnGap, totalWidth: totalBtnsW, drawBackground: true)
 
         refreshIntervalButtons(currentInterval: currentInterval)
 
-        // 自定义时间输入行
-        let customY = btnY - 58
-        let customRow = makeSettingRow(frame: NSRect(x: 16, y: customY, width: cw - 32, height: 48), in: container)
+        // 条目 3：自定义时间输入行
+        let customRow = makeStackRow(height: 48)
 
         let customLabel = NSTextField(labelWithString: "自定义间隔")
         customLabel.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -556,10 +596,18 @@ let arw = accessRow.bounds.width
 
     @objc private func intervalButtonClicked(_ sender: NSButton) {
         let minutes = sender.tag
+        // 点击预设立即生效，无需再点「应用」
         viewModel?.reminderInterval = minutes
         viewModel?.restartDrinkWaterReminder()
         refreshIntervalButtons(currentInterval: minutes)
-        customIntervalField?.stringValue = ""
+        // 清空自定义输入并取消其焦点，避免残留高亮闪烁的输入光标
+        if let field = customIntervalField {
+            field.stringValue = ""
+            if field.window?.firstResponder is NSTextView {
+                _ = field.resignFirstResponder()
+            }
+            field.window?.makeFirstResponder(nil)
+        }
     }
 
     @objc private func applyCustomInterval(_ sender: Any?) {
@@ -570,6 +618,7 @@ let arw = accessRow.bounds.width
         refreshIntervalButtons(currentInterval: value)
         field.stringValue = ""
         field.resignFirstResponder()
+        field.window?.makeFirstResponder(nil)
     }
 
     private func refreshIntervalButtons(currentInterval: Int) {
@@ -726,6 +775,10 @@ return row
     // MARK: - 左侧导航
 
     @objc private func selectSection(_ sender: NSButton) {
+        // 切换分区时取消文本编辑焦点，避免输入框残留高亮闪烁光标
+        if firstResponder is NSTextView {
+            makeFirstResponder(nil)
+        }
         currentSection = sender.tag
         for (i, v) in contentViews.enumerated() {
             v.isHidden = (i != currentSection)

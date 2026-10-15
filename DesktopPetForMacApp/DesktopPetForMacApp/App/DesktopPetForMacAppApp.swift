@@ -61,6 +61,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 新版本安装后启动：清除旧版本通过的校验权限，需重新输入校验码
         AccessControl.resetIfVersionChanged()
 
+        // 首次启动随机分配宠物名称（已设置过的不变）
+        PetName.ensureAssigned()
+
         // 后台初始化词库并打印加载诊断（避免阻塞主线程，利于排查「背单词找不到单词」）
         DispatchQueue.global(qos: .utility).async {
             WordBankManager.shared.printAllWordBankInfo()

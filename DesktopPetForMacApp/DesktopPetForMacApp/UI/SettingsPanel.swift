@@ -3,10 +3,29 @@
 
 import AppKit
 
-/// 宠物名称管理（默认「毛豆」）
+/// 宠物名称管理（首次启动随机分配，用户可自行修改）
 enum PetName {
     static let prefsKey = "settings.petName"
     static let defaultName = "毛豆"
+
+    /// 首次启动随机取名池（避免所有设备都叫「毛豆」）
+    private static let namePool = [
+        "毛豆", "汤圆", "布丁", "年糕", "豆花", "芝麻", "团子", "糯米",
+        "花生", "桃酥", "奶糖", "橘子", "曲奇", "面条", "鱼丸", "芋圆"
+    ]
+
+    /// 首次启动分配名字（已设置过名字的设备不受影响）
+    @discardableResult
+    static func ensureAssigned() -> String {
+        let saved = UserDefaults.standard.string(forKey: prefsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !saved.isEmpty { return saved }
+
+        let picked = namePool.randomElement() ?? defaultName
+        UserDefaults.standard.set(picked, forKey: prefsKey)
+        FileLogger.log("[DesktopPet] 首次启动分配宠物名称: \(picked)")
+        return picked
+    }
 
     /// 当前宠物名称（未设置或为空时回退默认）
     static func currentName() -> String {

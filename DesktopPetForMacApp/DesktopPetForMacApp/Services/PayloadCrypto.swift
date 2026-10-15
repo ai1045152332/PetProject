@@ -10,7 +10,7 @@ enum PayloadCrypto {
 
     /// 服务端公钥（PKCS#1 DER 的 base64，与 ServerConfig.baseURL 指向的后端对应）
     /// 获取方式：GET {后端}/api/crypto/pubkey → data.publicKeyPkcs1
-    static let serverPublicKeyPKCS1 = "MIIBCgKCAQEAuVCckmM0mI7zp1Lssmgxk9pfrHN7upK/IHF+apmEADSc96d4J4u4XrOVDk0Gx6usER+SaMI14jGJteOspr8Dcb1bJO0684YMN/leS6L6kR/kcxGVfdNuEnq9vuWDYpx2omOuijui9owwZ9Eovlpdgpnv8TN/WPk7IUI0Sh6a1rhe6BdVlWK6MXN2SQo0V1sVRJcpvUQ3dGAkZkQt3wgeTdHWmhuc0lSEplsP5DnZdkL/ZBUYY4CLC/vmXN9Km92pUASU4OxjnmtphVFcO6cg/VhfvhqjYYnM74BKO8vfRjz5wvZEEUa1GDRCzgaI7hgOWClVOJyCei9MujYSKreUIQIDAQAB"
+    static let serverPublicKeyPKCS1 = "MIIBCgKCAQEA3slpi18syIxHbqgBajFDsmXVx0HOeCpxNxGY5OM1Ph4/rP41mZVcSXC1KzKIfVR9RWDKqEwJTd4ihBguHq/6f81IJFlzq7aBHKrMypCireDQ+Hk57mUNxW+FGHKCsHlaXF1Qzi4ni8giFZrizdbOyQfBkPhFyrZUJ0PYaGETnkH7m3C6qaMfuHm3S/In50DxO3D5xnDXCYITzHScCmEt/DCaZ8sn7SjI2ScznhwOKR4WwQXYHoPIvaJUW2Q82aeop7/lxLNN6JAgg0cJCTfsoFrYo6S2dqzsnPTb40wJe1LddyCF1zjxV+P5a+I6fVa3jLeQQNvT0m4e1IqpZm0YOQIDAQAB"
 
     private static let publicKey: SecKey? = {
         guard let der = Data(base64Encoded: serverPublicKeyPKCS1) else {

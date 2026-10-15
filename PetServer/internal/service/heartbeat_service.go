@@ -3,12 +3,16 @@ package service
 
 import (
 	"log"
+	"sort"
 	"sync"
 	"time"
 
 	"petserver/internal/model"
 	"petserver/internal/storage"
 )
+
+// onlineThreshold 心跳每 1 分钟上报一次，最近 3 分钟内有心跳视为在线
+const onlineThreshold = 3 * time.Minute
 
 // HeartbeatService 处理心跳相关业务：登记设备最近心跳
 type HeartbeatService struct {
@@ -57,4 +61,28 @@ func (s *HeartbeatService) ListDevices() []model.Device {
 		devices = append(devices, d)
 	}
 	return devices
+}
+
+// ListOnlineDevices 返回带在线状态的设备视图，按最近心跳时间倒序（最新的在前）
+func (s *HeartbeatService) ListOnlineDevices() []model.DeviceView {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	views := make([]model.DeviceView, 0, len(s.devices))
+	for _, d := range s.devices {
+		since := now.Sub(d.LastSeenAt)
+		views = append(views, model.DeviceView{
+			Heartbeat:  d.Heartbeat,
+			LastSeenAt: d.LastSeenAt.Format(time.RFC3339),
+			SecondsAgo: int64(since.Seconds()),
+			Online:     since <= onlineThreshold,
+		})
+	}
+
+	// 距今秒数越小越靠前（即最近心跳优先）
+	sort.Slice(views, func(i, j int) bool {
+		return views[i].SecondsAgo < views[j].SecondsAgo
+	})
+	return views
 }

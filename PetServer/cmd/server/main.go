@@ -41,10 +41,11 @@ func main() {
 
 	heartbeatSvc := service.NewHeartbeatService(store)
 	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc)
+	devicesCtrl := controller.NewDevicesController(heartbeatSvc)
 	accessSvc := service.NewAccessService()
 	accessCtrl := controller.NewAccessController(accessSvc)
 	pingCtrl := controller.NewPingController()
-	handler := router.New(heartbeatCtrl, accessCtrl, pingCtrl)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

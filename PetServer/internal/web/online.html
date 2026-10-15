@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#ff9a5a" />
+  <title>在线宠物 🐾</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg: #fff6ee;
+      --card: #ffffff;
+      --ink: #3a2e2a;
+      --sub: #9a8c85;
+      --line: #f0e4d8;
+      --accent: #ff8a4c;
+      --online: #34c759;
+      --offline: #c7bfb8;
+    }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      padding-bottom: 40px;
+    }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: linear-gradient(135deg, #ffb077, #ff8a4c);
+      color: #fff;
+      padding: 20px 18px 22px;
+      border-radius: 0 0 22px 22px;
+      box-shadow: 0 6px 18px rgba(255, 138, 76, .28);
+    }
+    header h1 { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+    header .sub { margin-top: 6px; font-size: 13px; opacity: .92; }
+    .stats { display: flex; gap: 10px; margin-top: 14px; }
+    .stat {
+      flex: 1; background: rgba(255,255,255,.2); border-radius: 14px;
+      padding: 10px 12px; text-align: center;
+    }
+    .stat .n { font-size: 22px; font-weight: 700; line-height: 1.1; }
+    .stat .l { font-size: 12px; opacity: .9; margin-top: 2px; }
+    main { padding: 16px; max-width: 680px; margin: 0 auto; }
+    .card {
+      background: var(--card); border-radius: 18px; padding: 14px 16px;
+      margin-bottom: 14px; box-shadow: 0 4px 14px rgba(58,46,42,.06);
+      border: 1px solid var(--line);
+    }
+    .card.offline { opacity: .62; }
+    .card .top { display: flex; align-items: center; justify-content: space-between; }
+    .pet { display: flex; align-items: center; gap: 10px; }
+    .pet .face { font-size: 30px; line-height: 1; }
+    .pet .name { font-size: 17px; font-weight: 700; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    }
+    .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .badge.on { color: var(--online); background: rgba(52,199,89,.12); }
+    .badge.on .dot { background: var(--online); box-shadow: 0 0 0 0 rgba(52,199,89,.5); animation: pulse 1.6s infinite; }
+    .badge.off { color: var(--offline); background: rgba(199,191,184,.16); }
+    .badge.off .dot { background: var(--offline); }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(52,199,89,.5); }
+      70% { box-shadow: 0 0 0 7px rgba(52,199,89,0); }
+      100% { box-shadow: 0 0 0 0 rgba(52,199,89,0); }
+    }
+    .state { margin-left: 6px; font-size: 12px; color: var(--sub); }
+    .meta { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    .meta .row { font-size: 13px; }
+    .meta .k { color: var(--sub); margin-right: 6px; }
+    .meta .v { color: var(--ink); word-break: break-all; }
+    .seen { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--sub); }
+    .empty { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 15px; }
+    .empty .big { font-size: 48px; display: block; margin-bottom: 12px; }
+    .err { text-align:center; color:#e0533d; padding: 20px; font-size: 14px; }
+    footer { text-align: center; color: var(--sub); font-size: 12px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🐾 在线宠物</h1>
+    <div class="sub" id="updatedAt">正在连接服务器…</div>
+    <div class="stats">
+      <div class="stat"><div class="n" id="onlineCount">-</div><div class="l">在线</div></div>
+      <div class="stat"><div class="n" id="totalCount">-</div><div class="l">总设备</div></div>
+    </div>
+  </header>
+  <main>
+    <div id="list"></div>
+    <footer>每 5 秒自动刷新 · cute pet 后端服务</footer>
+  </main>
+
+  <script>
+    // 宠物状态 → emoji + 中文名
+    const STATE = {
+      focus:  { face: '📚', label: '专注' },
+      idel:   { face: '😸', label: '休闲' },
+      warn:   { face: '⏰', label: '提醒' },
+      sleep:  { face: '😴', label: '睡觉' },
+      pet:    { face: '🤗', label: '抚摸' },
+      _:      { face: '🐱', label: '' },
+    };
+
+    function stateOf(s) { return STATE[s] || { face: '🐱', label: s || '未知' }; }
+
+    // 距今秒数 → 友好文案
+    function agoText(sec) {
+      if (sec < 60) return sec + ' 秒前';
+      if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
+      if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
+      return Math.floor(sec / 86400) + ' 天前';
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      ));
+    }
+
+    function row(k, v) {
+      if (!v) return '';
+      return '<div class="row"><span class="k">' + k + '</span><span class="v">' + esc(v) + '</span></div>';
+    }
+
+    function render(data) {
+      const list = document.getElementById('list');
+      const devices = (data && data.devices) || [];
+      document.getElementById('onlineCount').textContent = data ? data.online : '-';
+      document.getElementById('totalCount').textContent = data ? data.total : '-';
+      document.getElementById('updatedAt').textContent =
+        '更新于 ' + new Date().toLocaleTimeString('zh-CN') + ' · 服务器 ' +
+        (data && data.serverTime ? new Date(data.serverTime).toLocaleTimeString('zh-CN') : '--');
+
+      if (!devices.length) {
+        list.innerHTML = '<div class="empty"><span class="big">🐾</span>还没有宠物上报心跳哦～</div>';
+        return;
+      }
+
+      list.innerHTML = devices.map(d => {
+        const st = stateOf(d.petState);
+        const badge = d.online
+          ? '<span class="badge on"><span class="dot"></span>在线</span>'
+          : '<span class="badge off"><span class="dot"></span>离线</span>';
+        return (
+          '<div class="card' + (d.online ? '' : ' offline') + '">' +
+            '<div class="top">' +
+              '<div class="pet">' +
+                '<span class="face">' + st.face + '</span>' +
+                '<span class="name">' + esc(d.petName) + '</span>' +
+                '<span class="state">' + esc(st.label) + '</span>' +
+              '</div>' + badge +
+            '</div>' +
+            '<div class="meta">' +
+              row('主机', d.hostname) +
+              row('版本', d.version) +
+              row('系统', d.os) +
+              row('架构', d.machine) +
+            '</div>' +
+            '<div class="seen">最近心跳：' + agoText(d.secondsAgo) + '</div>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    async function load() {
+      try {
+        const resp = await fetch('/api/devices', { headers: { 'Accept': 'application/json' } });
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '接口返回异常');
+        render(json.data);
+      } catch (e) {
+        document.getElementById('updatedAt').textContent = '加载失败：' + e.message;
+        const list = document.getElementById('list');
+        if (!list.innerHTML) {
+          list.innerHTML = '<div class="err">无法连接服务器，请确认 PetServer 已启动。<br>(' + esc(e.message) + ')</div>';
+        }
+      }
+    }
+
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>

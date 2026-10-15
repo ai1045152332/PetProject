@@ -167,3 +167,63 @@ curl -X POST http://11.0.213.233:8080/api/access/verify \
 | 缺少 code 字段 | 400 | `{"code":400,"msg":"missing field: code"}` |
 
 > 注意：校验码错误（`valid: false`）属于正常业务结果，HTTP 状态码仍为 200。
+
+---
+
+## 3. 在线宠物列表
+
+返回所有登记过的设备及其在线状态，供 H5 页面展示。
+心跳每 1 分钟上报一次，最近 3 分钟内有心跳视为在线。
+
+```
+GET /api/devices
+```
+
+### 成功响应
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "serverTime": "2026-10-14T20:09:00+08:00",
+    "total": 2,
+    "online": 1,
+    "devices": [
+      {
+        "version": "v1.0.001.test",
+        "hostname": "MacBook-Pro.local",
+        "os": "macOS Version 15.6.1",
+        "machine": "arm64",
+        "petName": "毛豆",
+        "petState": "idel",
+        "lastSeenAt": "2026-10-14T20:09:00+08:00",
+        "secondsAgo": 0,
+        "online": true
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data.total | int | 设备总数 |
+| data.online | int | 在线设备数 |
+| data.devices | array | 设备列表，按最近心跳时间倒序 |
+| devices[].lastSeenAt | string | 最近心跳时间（RFC3339） |
+| devices[].secondsAgo | int | 距最近心跳的秒数 |
+| devices[].online | bool | 是否在线（阈值 3 分钟） |
+
+---
+
+## 4. H5 在线列表页
+
+内置静态页面，与接口同源（无需处理跨域），页面内每 5 秒自动拉取 `GET /api/devices`。
+
+```
+GET /online      # 专用路径
+GET /            # 根路径同样展示列表页，方便手机输入 IP 直达
+```
+
+> 页面通过 `go:embed` 随二进制打包（`internal/web/online.html`），无需外部文件。

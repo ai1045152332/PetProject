@@ -14,6 +14,7 @@ PetServer/
     ├── service/                        # 业务：登记心跳、校验码验证
     ├── controller/                     # 控制器：解析请求、统一响应
     ├── router/router.go                # 路由注册
+    ├── web/                            # 内置 H5 页面（go:embed）
     └── storage/heartbeat_store.go      # 存储：心跳 JSON Lines 落盘
 ```
 
@@ -30,7 +31,12 @@ launchd 运行时为 `PetServer/`）。同时内存中按主机名维护每台�
 | --- | --- |
 | `GET /api/ping` | 连通性测试（浏览器可直接打开） |
 | `POST /api/heartbeat` | 心跳上报：版本号 + 本机信息 + 宠物名/状态 |
+| `GET /api/devices` | 在线宠物列表：返回所有设备及在线状态 |
 | `POST /api/access/verify` | 校验码远程验证（远程码写死 123） |
+| `GET /online`（或 `/`） | H5 在线宠物列表页，手机浏览器直接访问 |
+
+> 在线判定：App 每 1 分钟上报一次心跳，最近 3 分钟内有心跳视为在线。
+> H5 页面通过 `go:embed` 内置在二进制中，与 `/api/devices` 同源，无需额外部署或处理跨域。
 
 ## 运行
 

@@ -38,3 +38,11 @@ type Device struct {
 	Heartbeat
 	LastSeenAt time.Time `json:"lastSeenAt"`
 }
+
+// DeviceView 设备在线视图：附带在线状态、距今秒数，供 H5 列表展示
+type DeviceView struct {
+	Heartbeat
+	LastSeenAt string `json:"lastSeenAt"` // 最近心跳时间（RFC3339）
+	SecondsAgo int64  `json:"secondsAgo"` // 距最近心跳的秒数
+	Online     bool   `json:"online"`     // 是否在在线阈值内
+}

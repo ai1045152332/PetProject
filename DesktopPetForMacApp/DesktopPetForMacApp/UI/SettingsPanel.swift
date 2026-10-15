@@ -103,7 +103,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         contentView.addSubview(navBg)
 
         // 左侧导航项：固定从上往下顺序排列（不随高度自适应）
-        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置", "📚 背单词"]
+        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置"]
         let itemH: CGFloat = 44
         let itemGap: CGFloat = 10
         let navTopPad: CGFloat = 12
@@ -130,16 +130,13 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let section0 = makeContentContainer(frame: contentFrame, in: contentView)
         let section1 = makeContentContainer(frame: contentFrame, in: contentView)
         let section2 = makeContentContainer(frame: contentFrame, in: contentView)
-        let section3 = makeContentContainer(frame: contentFrame, in: contentView)
         section1.isHidden = true
         section2.isHidden = true
-        section3.isHidden = true
-        contentViews = [section0, section1, section2, section3]
+        contentViews = [section0, section1, section2]
 
         fillStateSection(section0)
         fillGeneralSection(section1)
         fillReminderSection(section2)
-        fillWordLearningSection(section3)
 
         applyNavStyle()
     }
@@ -646,15 +643,15 @@ let arw = accessRow.bounds.width
         let code = field.stringValue
         // 远程校验需等待网络，期间禁用解锁按钮防重复提交
         unlockBtn?.isEnabled = false
-        AccessControl.unlock(with: code) { [weak self] success in
+        AccessControl.unlock(with: code) { [weak self] result in
             guard let self else { return }
             self.unlockBtn?.isEnabled = true
-            self.handleUnlockResult(success, field: field)
+            self.handleUnlockResult(result, field: field)
         }
     }
 
-    private func handleUnlockResult(_ success: Bool, field: NSSecureTextField) {
-        if success {
+    private func handleUnlockResult(_ result: AccessControl.UnlockResult, field: NSSecureTextField) {
+        if result == .success {
             field.stringValue = ""
             refreshAccessUI()
             onAccessLevelChanged?()
@@ -667,8 +664,17 @@ let arw = accessRow.bounds.width
             alert.runModal()
         } else {
             let alert = NSAlert()
-            alert.messageText = "校验码错误"
-            alert.informativeText = "请输入正确的校验码"
+            switch result {
+            case .deviceLimit:
+                alert.messageText = "激活码已达设备上限"
+                alert.informativeText = "该激活码绑定的设备数量已达上限，无法在新设备上使用"
+            case .networkError:
+                alert.messageText = "网络异常"
+                alert.informativeText = "无法连接校验服务，请检查网络后重试"
+            default:
+                alert.messageText = "校验码错误"
+                alert.informativeText = "请输入正确的校验码"
+            }
             alert.alertStyle = .warning
             alert.addButton(withTitle: "好")
             NSApp.activate(ignoringOtherApps: true)
@@ -947,161 +953,6 @@ return row
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    // MARK: - 分区 4：背单词设置
-    
-    private func fillWordLearningSection(_ container: NSView) {
-        let cw = container.bounds.width
-        let ch = container.bounds.height
-        
-        let titleLbl = NSTextField(labelWithString: "背单词设置")
-        titleLbl.font = .systemFont(ofSize: 16, weight: .bold)
-        titleLbl.textColor = .labelColor
-        titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
-        container.addSubview(titleLbl)
-        
-        let descLbl = NSTextField(labelWithString: "选择单词分类，右键小猫即可开始学习")
-        descLbl.font = .systemFont(ofSize: 11)
-        descLbl.textColor = .tertiaryLabelColor
-        descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
-        container.addSubview(descLbl)
-        
-        let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
-        divider.boxType = .separator
-        divider.autoresizingMask = .width
-        container.addSubview(divider)
-        
-        // 分类选择
-        let rowY = ch - 66 - 20 - 160
-        let row = NSView(frame: NSRect(x: 16, y: rowY, width: cw - 32, height: 160))
-        row.autoresizingMask = [.width, .minYMargin]
-        row.wantsLayer = true
-        row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
-        row.layer?.cornerRadius = 10
-        container.addSubview(row)
-        
-        let rowTitle = NSTextField(labelWithString: "单词分类")
-        rowTitle.font = .systemFont(ofSize: 13, weight: .semibold)
-        rowTitle.textColor = .labelColor
-        rowTitle.frame = NSRect(x: 14, y: 136, width: 200, height: 18)
-        row.addSubview(rowTitle)
-        
-        let rowDesc = NSTextField(labelWithString: "选择要学习的单词分类")
-        rowDesc.font = .systemFont(ofSize: 11)
-        rowDesc.textColor = .tertiaryLabelColor
-        rowDesc.frame = NSRect(x: 14, y: 118, width: 220, height: 15)
-        row.addSubview(rowDesc)
-        
-        // 分类按钮
-        let categories = WordCategory.allCases
-        let rowW = row.bounds.width
-        let margin: CGFloat = 14
-        let gap: CGFloat = 8
-        let btnH: CGFloat = 32
-        let minBtnW: CGFloat = 80
-        let maxBtnW: CGFloat = 120
-        
-        // 计算单行能否放下
-        let totalGap = gap * CGFloat(categories.count - 1)
-        let idealBtnW = (rowW - margin * 2 - totalGap) / CGFloat(categories.count)
-        let useTwoRows = (idealBtnW < minBtnW)
-        
-        let currentCategory = WordService.shared.currentCategory
-        var buttons: [NSButton] = []
-        
-        if useTwoRows {
-            // 两行：3 + 2
-            let colsPerRow = [3, 2]
-            let btnW = min(maxBtnW, (rowW - margin * 2 - gap) / 2)
-            var idx = 0
-            for (rowIdx, colCount) in colsPerRow.enumerated() {
-                let y = 66 - CGFloat(rowIdx) * (btnH + 6)
-                let rowTotalW = CGFloat(colCount) * btnW + CGFloat(colCount - 1) * gap
-                let startX = (rowW - rowTotalW) / 2
-                for c in 0..<colCount {
-                    if idx >= categories.count { break }
-                    let category = categories[idx]
-                    let x = startX + CGFloat(c) * (btnW + gap)
-                    let btn = makeCategoryButton(frame: NSRect(x: x, y: y, width: btnW, height: btnH),
-                                                 category: category, index: idx,
-                                                 isSelected: category == currentCategory)
-                    row.addSubview(btn)
-                    buttons.append(btn)
-                    idx += 1
-                }
-            }
-        } else {
-            // 单行：均分宽度
-            let btnW = min(maxBtnW, idealBtnW)
-            let totalW = CGFloat(categories.count) * btnW + totalGap
-            let startX = (rowW - totalW) / 2
-            let y: CGFloat = 56
-            for (i, category) in categories.enumerated() {
-                let x = startX + CGFloat(i) * (btnW + gap)
-                let btn = makeCategoryButton(frame: NSRect(x: x, y: y, width: btnW, height: btnH),
-                                             category: category, index: i,
-                                             isSelected: category == currentCategory)
-                row.addSubview(btn)
-                buttons.append(btn)
-            }
-        }
-    }
-    
-    private func makeCategoryButton(frame: NSRect, category: WordCategory, index: Int, isSelected: Bool) -> NSButton {
-        let btn = NSButton(frame: frame)
-        btn.title = category.displayName
-        btn.bezelStyle = .rounded
-        btn.isBordered = false
-        btn.wantsLayer = true
-        btn.tag = index
-        btn.target = self
-        btn.action = #selector(wordCategoryChanged(_:))
-        applyCategoryStyle(btn, isSelected: isSelected)
-        return btn
-    }
-    
-    @objc private func wordCategoryChanged(_ sender: NSButton) {
-        let index = sender.tag
-        guard index >= 0 && index < WordCategory.allCases.count else { return }
-        let category = WordCategory.allCases[index]
-        WordService.shared.currentCategory = category
-        
-        if let row = sender.superview {
-            for subview in row.subviews {
-                if let btn = subview as? NSButton, btn.tag >= 0 && btn.tag < WordCategory.allCases.count {
-                    applyCategoryStyle(btn, isSelected: btn.tag == index)
-                }
-            }
-        }
-    }
-    
-    private func applyCategoryStyle(_ btn: NSButton, isSelected: Bool) {
-        if isSelected {
-            btn.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-            btn.layer?.cornerRadius = 8
-            btn.layer?.shadowOpacity = 0.3
-            btn.layer?.shadowRadius = 4
-            btn.layer?.shadowOffset = NSSize(width: 0, height: -2)
-            btn.layer?.shadowColor = NSColor.controlAccentColor.cgColor
-            btn.attributedTitle = NSAttributedString(
-                string: btn.title,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-                    .foregroundColor: NSColor.white
-                ]
-            )
-        } else {
-            btn.layer?.backgroundColor = NSColor(white: 0, alpha: 0.06).cgColor
-            btn.layer?.cornerRadius = 8
-            btn.layer?.shadowOpacity = 0
-            btn.attributedTitle = NSAttributedString(
-                string: btn.title,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 11),
-                    .foregroundColor: NSColor.secondaryLabelColor
-                ]
-            )
-        }
-    }
 }
 
 // MARK: - 通用居中按钮容器（按钮在 layout 时自动居中）

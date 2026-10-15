@@ -118,11 +118,11 @@ curl -X POST http://11.0.213.233:8080/api/heartbeat \
 
 ---
 
-## 2. 校验码验证
+## 2. 激活码验证
 
 设置面板「权限」解锁的远程校验。App 端先比对本地校验码（456），
-不匹配时再调用本接口；远程校验码当前在服务端写死为 `123`
-（`internal/service/access_service.go`）。
+不匹配时再调用本接口。激活码由服务端生成并持久化在 `data/activation_codes.json`，
+每个码最多绑定 `maxDevices` 台设备（按设备 ID 去重，同一设备重复激活不占用名额）。
 
 ```
 POST /api/access/verify
@@ -132,14 +132,15 @@ POST /api/access/verify
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| code | string | 是 | 用户输入的校验码 |
+| code | string | 是 | 用户输入的激活码（不区分大小写），格式 `XXXX-XXXX-XXXX` |
+| deviceId | string | 是 | 设备唯一标识（macOS IOPlatformUUID） |
 
 ### 请求示例
 
 ```bash
 curl -X POST http://11.0.213.233:8080/api/access/verify \
   -H "Content-Type: application/json" \
-  -d '{"code": "123"}'
+  -d '{"code": "9MDW-TCZ5-YVD8", "deviceId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"}'
 ```
 
 ### 成功响应
@@ -149,14 +150,16 @@ curl -X POST http://11.0.213.233:8080/api/access/verify \
   "code": 0,
   "msg": "ok",
   "data": {
-    "valid": true
+    "valid": true,
+    "reason": "ok"
   }
 }
 ```
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data.valid | bool | 校验码是否正确 |
+| data.valid | bool | 是否激活通过 |
+| data.reason | string | `ok` 通过 / `invalid_code` 激活码不存在 / `device_limit` 设备数达上限 |
 
 ### 失败响应
 
@@ -166,7 +169,84 @@ curl -X POST http://11.0.213.233:8080/api/access/verify \
 | 请求体不是合法 JSON | 400 | `{"code":400,"msg":"invalid json: ..."}` |
 | 缺少 code 字段 | 400 | `{"code":400,"msg":"missing field: code"}` |
 
-> 注意：校验码错误（`valid: false`）属于正常业务结果，HTTP 状态码仍为 200。
+> 注意：激活失败（`valid: false`）属于正常业务结果，HTTP 状态码仍为 200，按 `reason` 区分原因。
+
+---
+
+## 3. 管理接口（激活码生成/查询）
+
+管理接口需要在请求头携带管理令牌：`X-Admin-Token: <token>`。
+令牌通过环境变量 `PETSERVER_ADMIN_TOKEN` 配置（launchd plist 的 `EnvironmentVariables`），
+未配置时管理接口一律返回 403。
+
+### 3.1 生成激活码
+
+```
+POST /api/admin/codes/generate
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| count | int | 是 | 生成数量，1~100 |
+| maxDevices | int | 否 | 每码最多绑定设备数，1~10，默认 3 |
+| note | string | 否 | 备注（购买渠道/买家等） |
+
+请求示例：
+
+```bash
+curl -X POST http://11.0.213.233:8080/api/admin/codes/generate \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: <token>" \
+  -d '{"count": 5, "maxDevices": 3, "note": "面包多订单"}'
+```
+
+响应：
+
+```json
+{"code":0,"msg":"ok","data":{"codes":["9MDW-TCZ5-YVD8","TNZW-SFYM-EQCN"]}}
+```
+
+### 3.2 查询激活码列表
+
+```
+GET /api/admin/codes
+```
+
+请求示例：
+
+```bash
+curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: <token>"
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "codes": [
+      {
+        "code": "9MDW-TCZ5-YVD8",
+        "maxDevices": 3,
+        "devices": ["XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"],
+        "createdAt": "2026-10-15T13:00:00+08:00",
+        "note": "面包多订单"
+      }
+    ]
+  }
+}
+```
+
+### 管理接口错误
+
+| 场景 | HTTP 状态码 | 响应 |
+| --- | --- | --- |
+| 未配置管理令牌 | 403 | `{"code":403,"msg":"admin api disabled (PETSERVER_ADMIN_TOKEN not set)"}` |
+| 令牌错误 | 401 | `{"code":401,"msg":"invalid admin token"}` |
+| 参数非法 | 400 | `{"code":400,"msg":"count must be 1~100"}` |
 
 ---
 

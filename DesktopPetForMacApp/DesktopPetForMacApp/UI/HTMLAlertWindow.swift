@@ -38,6 +38,9 @@ class HTMLAlertWindow: NSWindow {
     private var onRetryLearning: (() -> Void)?
     private var nextQuizHandler: WordNextQuizHandler?
     private var retryLearningHandler: WordRetryLearningHandler?
+    /// 窗口内切换学习分类（传回 WordCategory.rawValue）
+    private var onSwitchCategory: ((String) -> Void)?
+    private var switchCategoryHandler: WordSwitchCategoryHandler?
     // 苦练基本功：「换一题」回调
     private var onProblemNext: (() -> Void)?
     private var problemNextHandler: WordRetryLearningHandler?
@@ -658,7 +661,7 @@ class HTMLAlertWindow: NSWindow {
 
     /// 显示背单词学习弹窗
     @discardableResult
-    static func showWordLearning(title: String, htmlBody: String, width: CGFloat = 420, onNextQuiz: ((Bool) -> Void)? = nil, onRetryLearning: (() -> Void)? = nil) -> HTMLAlertWindow {
+    static func showWordLearning(title: String, htmlBody: String, width: CGFloat = 420, onNextQuiz: ((Bool) -> Void)? = nil, onRetryLearning: (() -> Void)? = nil, onSwitchCategory: ((String) -> Void)? = nil) -> HTMLAlertWindow {
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
             styleMask: [.borderless],
@@ -670,6 +673,7 @@ class HTMLAlertWindow: NSWindow {
         window.targetMaxHeight = 700
         window.onNextQuiz = onNextQuiz
         window.onRetryLearning = onRetryLearning
+        window.onSwitchCategory = onSwitchCategory
         window.isWordLearningMode = true
         window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false, isWordLearningMode: true)
         window.alphaValue = 0
@@ -775,6 +779,14 @@ class HTMLAlertWindow: NSWindow {
             }
             self.retryLearningHandler = retryHandler
             config.userContentController.add(retryHandler, name: "retryLearning")
+
+            let switchCategoryHandler = WordSwitchCategoryHandler { [weak self] raw in
+                DispatchQueue.main.async {
+                    self?.onSwitchCategory?(raw)
+                }
+            }
+            self.switchCategoryHandler = switchCategoryHandler
+            config.userContentController.add(switchCategoryHandler, name: "switchCategory")
             
             let playAudioHandler = WordPlayAudioHandler { word in
                 guard let audioURL = await DictionaryService.shared.fetchAudioURL(word: word),
@@ -916,6 +928,7 @@ class HTMLAlertWindow: NSWindow {
         if todoDeleteHandler != nil { ucc.removeScriptMessageHandler(forName: "deleteTodo") }
         if nextQuizHandler != nil { ucc.removeScriptMessageHandler(forName: "nextQuiz") }
         if retryLearningHandler != nil { ucc.removeScriptMessageHandler(forName: "retryLearning") }
+        if switchCategoryHandler != nil { ucc.removeScriptMessageHandler(forName: "switchCategory") }
         if playAudioHandler != nil { ucc.removeScriptMessageHandler(forName: "playAudio") }
         if problemNextHandler != nil { ucc.removeScriptMessageHandler(forName: "problemNext") }
     }
@@ -1132,6 +1145,16 @@ class WordPlayAudioHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if let word = message.body as? String {
             Task { await action(word) }
+        }
+    }
+}
+
+class WordSwitchCategoryHandler: NSObject, WKScriptMessageHandler {
+    private let action: (String) -> Void
+    init(action: @escaping (String) -> Void) { self.action = action }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let raw = message.body as? String {
+            action(raw)
         }
     }
 }

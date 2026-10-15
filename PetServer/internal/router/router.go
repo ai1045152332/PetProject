@@ -14,12 +14,15 @@ func New(
 	devicesCtrl *controller.DevicesController,
 	accessCtrl *controller.AccessController,
 	pingCtrl *controller.PingController,
+	adminCtrl *controller.AdminController,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
 	mux.HandleFunc("/api/devices", devicesCtrl.List)
 	mux.HandleFunc("/api/access/verify", accessCtrl.Verify)
 	mux.HandleFunc("/api/ping", pingCtrl.Ping)
+	mux.HandleFunc("/api/admin/codes", adminCtrl.ListCodes)
+	mux.HandleFunc("/api/admin/codes/generate", adminCtrl.GenerateCodes)
 
 	// H5 在线宠物列表页（内置静态页面，与接口同源，免跨域）
 	mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {

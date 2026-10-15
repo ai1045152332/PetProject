@@ -32,7 +32,9 @@ launchd 运行时为 `PetServer/`）。同时内存中按主机名维护每台�
 | `GET /api/ping` | 连通性测试（浏览器可直接打开） |
 | `POST /api/heartbeat` | 心跳上报：版本号 + 本机信息 + 宠物名/状态 |
 | `GET /api/devices` | 在线宠物列表：返回所有设备及在线状态 |
-| `POST /api/access/verify` | 校验码远程验证（远程码写死 123） |
+| `POST /api/access/verify` | 激活码验证（码 + 设备 ID，每码限绑定 N 台设备） |
+| `POST /api/admin/codes/generate` | 管理：生成激活码（需 `X-Admin-Token`） |
+| `GET /api/admin/codes` | 管理：激活码列表（需 `X-Admin-Token`） |
 | `GET /online`（或 `/`） | H5 在线宠物列表页，手机浏览器直接访问 |
 
 > 在线判定：App 每 1 分钟上报一次心跳，最近 3 分钟内有心跳视为在线。

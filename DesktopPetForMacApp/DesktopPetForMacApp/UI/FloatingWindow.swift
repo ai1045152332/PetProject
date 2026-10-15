@@ -696,13 +696,19 @@ class CatView: NSView {
         guard words.count >= 3 else {
             FileLogger.log("[DesktopPet] 词库不足 3 个单词: \(category.rawValue)，共 \(words.count) 个")
             let htmlBody = """
-            <div style="text-align:center;padding:40px 20px;">
+            \(categoryBarHTML())
+            <div style="text-align:center;padding:20px;">
                 <div style="font-size:48px;margin-bottom:16px;">📭</div>
                 <div style="font-size:18px;font-weight:600;color:#f0f0f5;margin-bottom:12px;">词库单词不足</div>
-                <div style="font-size:14px;color:#888;">至少需要 3 个单词才能开始学习<br>请在设置中切换其他分类，或添加单词到词库</div>
+                <div style="font-size:14px;color:#888;">至少需要 3 个单词才能开始学习<br>可点击上方其他分类，或添加单词到词库</div>
             </div>
             """
-            wordLearningWindow = HTMLAlertWindow.showWordLearning(title: "背单词 📚", htmlBody: htmlBody, width: 360)
+            wordLearningWindow = HTMLAlertWindow.showWordLearning(
+                title: "背单词 📚",
+                htmlBody: htmlBody,
+                width: 360,
+                onSwitchCategory: { [weak self] raw in self?.handleSwitchCategory(raw) }
+            )
             return
         }
             
@@ -726,6 +732,46 @@ class CatView: NSView {
         wordLearningWindow?.orderOut(nil)
         wordLearningWindow?.close()
         wordLearningWindow = nil
+    }
+
+    /// 背单词弹窗顶部的分类切换栏：点击分类即刻切换并以新词库重新开始本轮学习
+    private func categoryBarHTML() -> String {
+        let current = WordService.shared.currentCategory
+        var chips = ""
+        for cat in WordCategory.allCases {
+            let active = cat == current ? " active" : ""
+            chips += "<button class=\"cat-chip\(active)\" onclick=\"switchCategory('\(cat.rawValue)')\">\(cat.displayName)</button>"
+        }
+        return """
+        <div class="cat-bar">
+            <span class="cat-title">分类</span>
+            \(chips)
+        </div>
+        <style>
+            .cat-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+            .cat-title { font-size: 12px; color: #888; margin-right: 2px; }
+            .cat-chip { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #b0b0c0; font-size: 12px; padding: 5px 10px; border-radius: 14px; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+            .cat-chip:hover { background: rgba(255,255,255,0.12); color: #e0e0e8; }
+            .cat-chip.active { background: linear-gradient(135deg, #667eea, #764ba2); border-color: transparent; color: #fff; font-weight: 600; cursor: default; }
+        </style>
+        <script>
+            function switchCategory(raw) {
+                if (window.webkit && window.webkit.messageHandlers.switchCategory) {
+                    window.webkit.messageHandlers.switchCategory.postMessage(raw);
+                }
+            }
+        </script>
+        """
+    }
+
+    /// 窗口内切换分类：持久化选择，关闭当前卡片并以新词库重新开始
+    private func handleSwitchCategory(_ raw: String) {
+        guard let category = WordCategory(rawValue: raw),
+              category != WordService.shared.currentCategory else { return }
+        FileLogger.log("[DesktopPet] 窗口内切换背单词分类: \(WordService.shared.currentCategory.rawValue) → \(category.rawValue)")
+        WordService.shared.currentCategory = category
+        closeWordLearningWindow()
+        startWordLearning()
     }
     
     // MARK: - 学习阶段（先学 3 个）
@@ -765,6 +811,7 @@ class CatView: NSView {
         let btnText = isLast ? "开始考试 📝" : "下一个单词 →"
         
         let htmlBody = """
+        \(categoryBarHTML())
         <div class="quiz-progress-bar">
             <div class="quiz-progress-fill" style="width:\(Double(index + 1) / Double(learningWords.count) * 100)%"></div>
         </div>
@@ -818,7 +865,8 @@ class CatView: NSView {
             onNextQuiz: { [weak self] _ in
                 self?.closeWordLearningWindow()
                 self?.showLearningCard(index: index + 1)
-            }
+            },
+            onSwitchCategory: { [weak self] raw in self?.handleSwitchCategory(raw) }
         )
         wordLearningWindow = window
 
@@ -914,6 +962,7 @@ class CatView: NSView {
         let audioHTML = "<button class=\"audio-btn\" onclick=\"playAudio('\(quiz.word)')\">🔊</button>"
             
         let htmlBody = """
+        \(categoryBarHTML())
         <div class="quiz-progress-bar">
             <div class="quiz-progress-fill" style="width:\(Double(quizIndex + 1) / Double(quizTotal) * 100)%"></div>
         </div>
@@ -987,7 +1036,8 @@ class CatView: NSView {
                 self?.quizIndex += 1
                 self?.closeWordLearningWindow()
                 self?.fetchAndShowQuiz()
-            }
+            },
+            onSwitchCategory: { [weak self] raw in self?.handleSwitchCategory(raw) }
         )
         wordLearningWindow = window
     }
@@ -1008,6 +1058,7 @@ class CatView: NSView {
         }
             
         let htmlBody = """
+        \(categoryBarHTML())
         <div class="result-container">
             <div class="result-emoji">\(emoji)</div>
             <div class="result-title">\(message)</div>
@@ -1045,7 +1096,8 @@ class CatView: NSView {
             onRetryLearning: { [weak self] in
                 self?.closeWordLearningWindow()
                 self?.startWordLearning()
-            }
+            },
+            onSwitchCategory: { [weak self] raw in self?.handleSwitchCategory(raw) }
         )
         wordLearningWindow = window
     }

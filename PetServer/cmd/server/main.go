@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"petserver/internal/controller"
@@ -42,10 +43,15 @@ func main() {
 	heartbeatSvc := service.NewHeartbeatService(store)
 	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc)
 	devicesCtrl := controller.NewDevicesController(heartbeatSvc)
-	accessSvc := service.NewAccessService()
+	activationStore, err := storage.NewActivationStore("data/activation_codes.json")
+	if err != nil {
+		log.Fatalf("初始化激活码存储失败: %v", err)
+	}
+	accessSvc := service.NewAccessService(activationStore)
 	accessCtrl := controller.NewAccessController(accessSvc)
 	pingCtrl := controller.NewPingController()
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl)
+	adminCtrl := controller.NewAdminController(accessSvc, os.Getenv("PETSERVER_ADMIN_TOKEN"))
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

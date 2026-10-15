@@ -35,10 +35,15 @@ func (c *AccessController) Verify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: code"})
 		return
 	}
+	if req.DeviceID == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: deviceId"})
+		return
+	}
 
+	valid, reason := c.svc.Verify(req.Code, req.DeviceID)
 	writeJSON(w, http.StatusOK, Response{
 		Code: 0,
 		Msg:  "ok",
-		Data: model.AccessVerifyResult{Valid: c.svc.Verify(req.Code)},
+		Data: model.AccessVerifyResult{Valid: valid, Reason: reason},
 	})
 }

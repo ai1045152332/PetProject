@@ -507,16 +507,20 @@ class CatView: NSView {
             ("输入股票代码查询 📈", #selector(stockAction(_:)), true),
         ]
 
-        // 按权限过滤：已解锁显示全部；未解锁隐藏锁定功能（不再置灰），改为「解锁更多功能」引导
-        var ordered = entries
-        if !fullAccess {
-            ordered = entries.filter { !$0.fullOnly }
-        }
+        // 按权限处理：可用功能排最前，待解锁的置灰功能统一排到最后（组内保持原顺序）
+        let ordered = entries.enumerated()
+            .sorted { a, b in
+                if a.element.fullOnly != b.element.fullOnly {
+                    return !a.element.fullOnly
+                }
+                return a.offset < b.offset
+            }
+            .map(\.element)
 
         for entry in ordered {
             let item = NSMenuItem(title: entry.title, action: entry.action, keyEquivalent: "")
             item.target = self
-            item.isEnabled = true
+            item.isEnabled = entry.fullOnly ? fullAccess : true
             menu.addItem(item)
         }
 

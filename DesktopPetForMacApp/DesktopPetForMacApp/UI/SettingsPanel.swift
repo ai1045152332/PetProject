@@ -693,6 +693,12 @@ let arw = accessRow.bounds.width
             case .networkError:
                 alert.messageText = "网络异常"
                 alert.informativeText = "无法连接校验服务，请检查网络后重试"
+            case .localError:
+                alert.messageText = "本地处理失败"
+                alert.informativeText = "校验码加密失败，请重试；若持续出现请反馈日志"
+            case .serverError:
+                alert.messageText = "服务异常"
+                alert.informativeText = "校验服务返回异常，请稍后重试"
             default:
                 alert.messageText = "校验码错误"
                 alert.informativeText = "请输入正确的校验码"

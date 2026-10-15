@@ -3,6 +3,8 @@
 package crypto
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -89,7 +91,78 @@ type EncryptedEnvelope struct {
 	Encrypted string `json:"encrypted"`
 }
 
-// DecryptEnvelope 解开信封并返回明文 JSON
+// HybridEnvelope 混合加密信封：
+// AES-256-GCM 加密业务数据，RSA-OAEP 包裹 AES 密钥（不受 RSA 190 字节上限限制）
+type HybridEnvelope struct {
+	EncryptedKey string `json:"encryptedKey"` // base64(RSA(aesKey))
+	Data         string `json:"data"`         // base64(nonce(12) + ciphertext + tag(16))
+}
+
+// IsHybridEnvelope 判断请求体是否是混合加密信封
+func IsHybridEnvelope(body []byte) bool {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	_, ok := probe["encryptedKey"]
+	return ok
+}
+
+// DecryptHybrid 解开混合加密信封
+func (k *KeyPair) DecryptHybrid(body []byte) ([]byte, error) {
+	var envelope HybridEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("解析混合信封失败: %w", err)
+	}
+
+	wrappedKey, err := base64.StdEncoding.DecodeString(envelope.EncryptedKey)
+	if err != nil {
+		return nil, fmt.Errorf("包裹密钥 base64 解码失败: %w", err)
+	}
+	aesKey, err := k.decryptWithPrivateKey(wrappedKey)
+	if err != nil {
+		return nil, fmt.Errorf("解出 AES 密钥失败: %w", err)
+	}
+	if len(aesKey) != 32 {
+		return nil, fmt.Errorf("AES 密钥长度异常: %d", len(aesKey))
+	}
+
+	payload, err := base64.StdEncoding.DecodeString(envelope.Data)
+	if err != nil {
+		return nil, fmt.Errorf("密文 base64 解码失败: %w", err)
+	}
+	if len(payload) < 12+16 {
+		return nil, fmt.Errorf("密文长度异常")
+	}
+
+	block, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce, ciphertext := payload[:12], payload[12:]
+	plain, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("AES-GCM 解密失败: %w", err)
+	}
+	return plain, nil
+}
+
+// decryptWithPrivateKey RSA 解密（OAEP-SHA256 优先，兼容 PKCS#1 v1.5）
+func (k *KeyPair) decryptWithPrivateKey(ciphertext []byte) ([]byte, error) {
+	if plain, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, k.Private, ciphertext, nil); err == nil {
+		return plain, nil
+	}
+	if plain, err := rsa.DecryptPKCS1v15(rand.Reader, k.Private, ciphertext); err == nil {
+		return plain, nil
+	}
+	return nil, fmt.Errorf("不支持的填充方式或密钥不匹配")
+}
+
+// DecryptEnvelope 解开 RSA 直加密信封并返回明文 JSON
 func (k *KeyPair) DecryptEnvelope(body []byte) ([]byte, error) {
 	var envelope EncryptedEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -102,14 +175,7 @@ func (k *KeyPair) DecryptEnvelope(body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("密文 base64 解码失败: %w", err)
 	}
-	// 优先 OAEP-SHA256（App 使用）；浏览器 JS 库（JSEncrypt）只支持 PKCS#1 v1.5，作为兜底
-	if plain, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, k.Private, cipher, nil); err == nil {
-		return plain, nil
-	}
-	if plain, err := rsa.DecryptPKCS1v15(rand.Reader, k.Private, cipher); err == nil {
-		return plain, nil
-	}
-	return nil, fmt.Errorf("解密失败：不支持的填充方式或密钥不匹配")
+	return k.decryptWithPrivateKey(cipher)
 }
 
 // IsEnvelope 判断请求体是否是加密信封

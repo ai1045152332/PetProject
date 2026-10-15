@@ -28,6 +28,8 @@ enum AccessControl {
         case expired        // 激活码已过期
         case deviceLimit    // 该码绑定设备数已达上限
         case networkError   // 网络/服务异常
+        case localError     // 本地加密或请求构造失败（非网络问题）
+        case serverError    // 服务端返回异常
     }
 
     private static let prefsKey = "settings.accessLevel"
@@ -103,7 +105,7 @@ enum AccessControl {
         ])
         guard let plain, let body = PayloadCrypto.encryptedEnvelope(plain) else {
             FileLogger.log("[Access] 激活码加密失败，取消本次校验")
-            DispatchQueue.main.async { completion(.networkError) }
+            DispatchQueue.main.async { completion(.localError) }
             return
         }
         request.httpBody = body
@@ -127,6 +129,7 @@ enum AccessControl {
                 }
             } else {
                 FileLogger.log("[Access] 校验码远程验证响应解析失败: \(String(data: data ?? Data(), encoding: .utf8) ?? "nil")")
+                result = .serverError
             }
             DispatchQueue.main.async { completion(result) }
         }.resume()

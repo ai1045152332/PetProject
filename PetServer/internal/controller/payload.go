@@ -19,6 +19,9 @@ func ReadPayload(r *http.Request, keyPair *crypto.KeyPair) ([]byte, error) {
 		return nil, err
 	}
 	if !crypto.IsEnvelope(body) {
+		if crypto.IsHybridEnvelope(body) && keyPair != nil {
+			return keyPair.DecryptHybrid(body)
+		}
 		return body, nil
 	}
 	if keyPair == nil {

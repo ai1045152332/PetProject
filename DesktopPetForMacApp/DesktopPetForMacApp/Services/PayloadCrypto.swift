@@ -5,6 +5,7 @@
 
 import Foundation
 import Security
+import CryptoKit
 
 enum PayloadCrypto {
 
@@ -30,15 +31,32 @@ enum PayloadCrypto {
         return key
     }()
 
-    /// 加密明文 JSON，返回请求体（{"encrypted": "..."}）
+    /// 加密明文 JSON，返回请求体
+    /// 采用混合加密：AES-256-GCM 加密数据 + RSA-OAEP 包裹 AES 密钥，
+    /// 不受 RSA 单次加密 190 字节上限限制（长文本/富载荷均可）
     /// 加密失败返回 nil（调用方应放弃本次请求，不发明文）
     static func encryptedEnvelope(_ plain: Data) -> Data? {
         guard let key = publicKey else { return nil }
-        var error: Unmanaged<CFError>?
-        guard let cipher = SecKeyCreateEncryptedData(key, .rsaEncryptionOAEPSHA256, plain as CFData, &error) as Data? else {
-            FileLogger.log("[PayloadCrypto] 加密失败: \(error?.takeRetainedValue().localizedDescription ?? "unknown")")
+
+        // 1) 随机 AES-256 密钥 + GCM 加密（combined = nonce(12) + ciphertext + tag(16)）
+        let aesKey = SymmetricKey(size: .bits256)
+        guard let sealed = try? AES.GCM.seal(plain, using: aesKey),
+              let combined = sealed.combined else {
+            FileLogger.log("[PayloadCrypto] AES-GCM 加密失败")
             return nil
         }
-        return try? JSONSerialization.data(withJSONObject: ["encrypted": cipher.base64EncodedString()])
+
+        // 2) RSA-OAEP 包裹 AES 密钥
+        let rawKey = aesKey.withUnsafeBytes { Data($0) }
+        var error: Unmanaged<CFError>?
+        guard let wrappedKey = SecKeyCreateEncryptedData(key, .rsaEncryptionOAEPSHA256, rawKey as CFData, &error) as Data? else {
+            FileLogger.log("[PayloadCrypto] 密钥包裹失败: \(error?.takeRetainedValue().localizedDescription ?? "unknown")")
+            return nil
+        }
+
+        return try? JSONSerialization.data(withJSONObject: [
+            "encryptedKey": wrappedKey.base64EncodedString(),
+            "data": combined.base64EncodedString()
+        ])
     }
 }

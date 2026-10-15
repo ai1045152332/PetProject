@@ -57,6 +57,8 @@ go build -o petserver ./cmd/server && ./petserver
 
 默认监听 `:8080`。
 
+> 发布与自动更新流程见 [`docs/自动更新与发布流程.md`](../docs/自动更新与发布流程.md)。
+
 > 部署：公网服务器 `101.96.248.75`（监听 80 端口，systemd 管理，数据在 `/opt/petserver/data`）。
 > App 端地址写在 `DesktopPetForMacApp/Services/ServerConfig.swift`，加密公钥写在
 > `PayloadCrypto.swift`；**两者必须与目标后端一致**（每台服务端各自生成密钥对）。

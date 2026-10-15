@@ -182,7 +182,7 @@ final class UpdateService {
         let script = workDir.appendingPathComponent("swap.sh")
         let scriptBody = """
         #!/bin/sh
-        PID="$1"; SRC="$2"; DEST="$3"
+        PID="$1"; SRC="$2"; DEST="$3"; WORK="$4"
         while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done
         rm -rf "$DEST.old"
         mv "$DEST" "$DEST.old" 2>/dev/null
@@ -194,6 +194,7 @@ final class UpdateService {
         open "$DEST"
         sleep 3
         rm -rf "$DEST.old"
+        rm -rf "$WORK"
         """
         do {
             try scriptBody.write(to: script, atomically: true, encoding: .utf8)
@@ -205,7 +206,7 @@ final class UpdateService {
 
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
-        helper.arguments = [script.path, String(ProcessInfo.processInfo.processIdentifier), newApp.path, dest]
+        helper.arguments = [script.path, String(ProcessInfo.processInfo.processIdentifier), newApp.path, dest, workDir.path]
 
         let alert = NSAlert()
         alert.messageText = "更新已下载完成"

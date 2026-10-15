@@ -25,7 +25,8 @@ APP_BUNDLE="$PROJECT_DIR/$APP_NAME.app"
 DEST_APP="$DESKTOP/$APP_NAME.app"
 
 rm -rf "$APP_BUNDLE"
-if [ -d "$DEST_APP" ]; then
+# 发布模式（SKIP_DESKTOP_COPY=1）不碰桌面那份，避免误删正在运行的 App
+if [ "${SKIP_DESKTOP_COPY:-0}" != "1" ] && [ -d "$DEST_APP" ]; then
     echo "🗑️   删除桌面旧版 $DEST_APP"
     rm -rf "$DEST_APP"
 fi
@@ -87,6 +88,12 @@ cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
 # 应用显示名改为产物名（CFBundleName 与 CFBundleDisplayName）
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$CONTENTS/Info.plist"
+# 版本号统一取自 AppVersion.swift（避免代码内版本与 Info.plist 不一致）
+APPVER=$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' "$PROJECT_DIR/DesktopPetForMacApp/App/AppVersion.swift" | head -1)
+if [ -n "$APPVER" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APPVER#v}" "$CONTENTS/Info.plist"
+    echo "🏷️   版本号: $APPVER"
+fi
 
 # ── 5. 签名 ─────────────────────────────────────────────────────
 echo "🔏 重新签名…"

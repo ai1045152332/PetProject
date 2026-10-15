@@ -118,6 +118,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         HeartbeatService.shared.attach(viewModel: vm)
         HeartbeatService.shared.start()
 
+        // 8.5 系统勿扰/专注模式单向跟随（只读检测，不改变系统状态）：
+        // 系统勿扰开启 → 小猫切专注；退出 → 小猫回休闲
+        FocusModeMonitor.shared.onSystemFocusChange = { [weak vm] active in
+            DispatchQueue.main.async {
+                guard let vm else { return }
+                vm.systemFocusActive = active
+                vm.transitionTo(active ? .focus : .idel)
+            }
+        }
+        FocusModeMonitor.shared.start()
+
         // 9. 首次启动引导弹窗（填写宠物名称）
         OnboardingWindow.showIfNeeded { [weak self] in
             DispatchQueue.main.async {

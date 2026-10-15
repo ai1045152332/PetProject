@@ -88,6 +88,10 @@ final class PetViewModel: ObservableObject {
     /// 当前是否在执行一次性动画（如 jump）
     private var isPlayingOneShot: Bool = false
     
+    /// 系统勿扰/专注模式是否开启（决定一次性动画播完后回到哪个基准状态）
+    /// true = 专注（勿扰中），false = 休闲
+    var systemFocusActive: Bool = false
+
     /// 朝向是否被锁定（喝水提醒期间禁止鼠标翻转）
     private var isFacingLocked: Bool = false
     
@@ -244,10 +248,11 @@ final class PetViewModel: ObservableObject {
         
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
-        // 一次性动画（pet / warn 等）播完自动切回休闲状态
+        // 一次性动画（pet / warn 等）播完自动切回基准状态：
+        // 系统勿扰开启时回专注，否则回休闲
         if isPlayingOneShot && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
             isPlayingOneShot = false
-            transitionTo(.idel)
+            transitionTo(systemFocusActive ? .focus : .idel)
             return
         }
         

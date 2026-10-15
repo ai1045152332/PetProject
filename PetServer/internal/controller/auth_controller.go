@@ -4,17 +4,19 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"petserver/internal/crypto"
 	"petserver/internal/service"
 )
 
 // AuthController 管理后台认证接口
 type AuthController struct {
 	authSvc *service.AuthService
+	keyPair *crypto.KeyPair
 }
 
 // NewAuthController 创建认证控制器
-func NewAuthController(authSvc *service.AuthService) *AuthController {
-	return &AuthController{authSvc: authSvc}
+func NewAuthController(authSvc *service.AuthService, keyPair *crypto.KeyPair) *AuthController {
+	return &AuthController{authSvc: authSvc, keyPair: keyPair}
 }
 
 // LoginRequest 登录请求
@@ -34,8 +36,14 @@ func (c *AuthController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err := ReadPayload(r, c.keyPair)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid payload: " + err.Error()})
+		return
+	}
+
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
 		return
 	}

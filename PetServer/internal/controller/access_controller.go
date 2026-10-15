@@ -4,18 +4,20 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"petserver/internal/crypto"
 	"petserver/internal/model"
 	"petserver/internal/service"
 )
 
 // AccessController 校验码接口控制器
 type AccessController struct {
-	svc *service.AccessService
+	svc     *service.AccessService
+	keyPair *crypto.KeyPair
 }
 
 // NewAccessController 创建校验码控制器
-func NewAccessController(svc *service.AccessService) *AccessController {
-	return &AccessController{svc: svc}
+func NewAccessController(svc *service.AccessService, keyPair *crypto.KeyPair) *AccessController {
+	return &AccessController{svc: svc, keyPair: keyPair}
 }
 
 // Verify 处理 POST /api/access/verify
@@ -25,8 +27,14 @@ func (c *AccessController) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err := ReadPayload(r, c.keyPair)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid payload: " + err.Error()})
+		return
+	}
+
 	var req model.AccessVerifyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
 		return
 	}

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>登录 · cute pet 后台</title>
   <link rel="stylesheet" href="/static/tabler.min.css" />
+  <script src="/static/jsencrypt.min.js"></script>
 </head>
 <body class="antialiased border-top-wide border-primary d-flex flex-column">
   <div class="page page-center">
@@ -49,21 +50,45 @@
         : '';
     }
 
+    // 拉取服务端公钥（缓存，用于加密密码）
+    let serverPublicKey = null;
+
+    function derToPem(base64Der) {
+      const lines = base64Der.match(/.{1,64}/g) || [];
+      return '-----BEGIN PUBLIC KEY-----\n' + lines.join('\n') + '\n-----END PUBLIC KEY-----\n';
+    }
+
+    async function loadPublicKey() {
+      if (serverPublicKey) return serverPublicKey;
+      const resp = await fetch('/api/crypto/pubkey');
+      const json = await resp.json();
+      if (json.code !== 0) throw new Error(json.msg || '获取加密公钥失败');
+      serverPublicKey = derToPem(json.data.publicKey);
+      return serverPublicKey;
+    }
+
     async function doLogin() {
       const username = user.value.trim();
       const password = pwd.value.trim();
       if (!username || !password) { showMsg('请输入账号和密码', false); return; }
       try {
+        // 密码不发明文：用服务端公钥加密后传输
+        const pem = await loadPublicKey();
+        const enc = new JSEncrypt();
+        enc.setPublicKey(pem);
+        const encrypted = enc.encrypt(JSON.stringify({ username, password }));
+        if (!encrypted) throw new Error('本地加密失败');
+
         const resp = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ encrypted })
         });
         const json = await resp.json();
         if (json.code !== 0) throw new Error(json.msg || ('HTTP ' + resp.status));
         localStorage.setItem('petAdminSession', json.data.token);
         localStorage.setItem('petAdminSessionExp', json.data.expiresAt);
-        showMsg('登录成功，正在跳转…', true);
+        showMsg('登录成功（已加密传输），正在跳转…', true);
         location.href = '/admin';
       } catch (e) {
         localStorage.removeItem('petAdminSession');

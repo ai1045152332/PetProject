@@ -96,10 +96,17 @@ enum AccessControl {
         var request = URLRequest(url: url, timeoutInterval: 8)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+        // 激活码与设备 ID 用服务端公钥加密后传输，不发明文
+        let plain = try? JSONSerialization.data(withJSONObject: [
             "code": code.uppercased(),
             "deviceId": deviceID
         ])
+        guard let plain, let body = PayloadCrypto.encryptedEnvelope(plain) else {
+            FileLogger.log("[Access] 激活码加密失败，取消本次校验")
+            DispatchQueue.main.async { completion(.networkError) }
+            return
+        }
+        request.httpBody = body
 
         URLSession.shared.dataTask(with: request) { data, _, error in
             var result = UnlockResult.networkError

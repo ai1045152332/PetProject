@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"petserver/internal/controller"
+	"petserver/internal/crypto"
 	"petserver/internal/router"
 	"petserver/internal/service"
 	"petserver/internal/storage"
@@ -48,7 +49,6 @@ func main() {
 		log.Fatalf("初始化激活码存储失败: %v", err)
 	}
 	accessSvc := service.NewAccessService(activationStore)
-	accessCtrl := controller.NewAccessController(accessSvc)
 	pingCtrl := controller.NewPingController()
 	// 管理后台账号密码：PETSERVER_ADMIN_USER（默认 admin）+ PETSERVER_ADMIN_PASSWORD
 	// 兼容旧的 PETSERVER_ADMIN_TOKEN（作为密码来源）
@@ -58,9 +58,27 @@ func main() {
 		adminPass = os.Getenv("PETSERVER_ADMIN_TOKEN")
 	}
 	authSvc := service.NewAuthService(adminUser, adminPass)
-	authCtrl := controller.NewAuthController(authSvc)
+	// 应用层加密密钥：默认 data/private_key.pem，可用 PETSERVER_PRIVATE_KEY_PATH 覆盖
+	keyPath := os.Getenv("PETSERVER_PRIVATE_KEY_PATH")
+	if keyPath == "" {
+		keyPath = "data/private_key.pem"
+	}
+	keyPair, created, err := crypto.LoadOrCreate(keyPath)
+	if err != nil {
+		log.Fatalf("初始化加密密钥失败: %v", err)
+	}
+	if created {
+		log.Printf("[crypto] 已生成新的 RSA 密钥对: %s（请把公钥内置到客户端）", keyPath)
+	}
+	if pub, err := keyPair.PublicKeyBase64(); err == nil {
+		log.Printf("[crypto] 服务端公钥(base64, RSA-OAEP-SHA256): %s", pub)
+	}
+
+	accessCtrl := controller.NewAccessController(accessSvc, keyPair)
+	authCtrl := controller.NewAuthController(authSvc, keyPair)
+	cryptoCtrl := controller.NewCryptoController(keyPair)
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

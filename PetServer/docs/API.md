@@ -16,7 +16,75 @@
 
 ---
 
-## 0. 连通性测试
+## 0. 载荷加密（应用层）
+
+未部署 TLS 时，密码、激活码、设备 ID 等敏感字段通过应用层加密传输，网线上只有密文。
+
+- **算法**：RSA-2048 + OAEP-SHA256（App 使用；服务端亦兼容 PKCS#1 v1.5，供网页端 JSEncrypt 使用）
+- **服务端私钥**：默认 `data/private_key.pem`（0600，可用 `PETSERVER_PRIVATE_KEY_PATH` 覆盖），首次启动自动生成
+- **请求格式**：把明文 JSON 用服务端公钥加密，请求体改为信封：
+
+```json
+{"encrypted": "<base64(RSA(明文JSON))>"}
+```
+
+- **适用接口**：`POST /api/admin/login`、`POST /api/access/verify`
+- **携带限制**：RSA-2048 OAEP-SHA256 单条载荷上限约 190 字节，故这两类请求体都很小；如需加密更大载荷（如心跳），需改为混合加密（AES-GCM + RSA 包裹密钥）
+
+### 获取公钥
+
+```
+GET /api/crypto/pubkey
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "algorithm": "RSA-OAEP-SHA256",
+    "format": "base64(DER SubjectPublicKeyInfo)",
+    "publicKey": "MIIBIjANBgkqhkiG9w0BAQEF...",
+    "publicKeyPkcs1": "MIIBCgKCAQEA..."
+  }
+}
+```
+
+- `publicKey`：X.509 SubjectPublicKeyInfo（网页 JSEncrypt 可用）
+- `publicKeyPkcs1`：PKCS#1（macOS Security 框架 `SecKeyCreateWithData` 需要）
+
+> 客户端内置公钥与后端一一对应。切换后端地址时必须同步更新 App 内嵌公钥（`PayloadCrypto.swift`），否则解密失败。
+
+### 命令行加密示例
+
+```bash
+# 1. 取公钥转 PEM
+curl -s http://127.0.0.1:8080/api/crypto/pubkey | python3 -c "
+import sys, json, base64
+der = base64.b64decode(json.load(sys.stdin)['data']['publicKey'])
+b64 = base64.b64encode(der).decode()
+print('-----BEGIN PUBLIC KEY-----')
+print('\n'.join(b64[i:i+64] for i in range(0, len(b64), 64)))
+print('-----END PUBLIC KEY-----')
+" > pub.pem
+
+# 2. 加密并请求
+printf '{"username":"admin","password":"123456"}' > plain.json
+openssl pkeyutl -encrypt -pubin -inkey pub.pem -in plain.json \
+  -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out cipher.bin
+python3 -c "
+import base64, json
+print(json.dumps({'encrypted': base64.b64encode(open('cipher.bin','rb').read()).decode()}))
+" > envelope.json
+curl -X POST http://127.0.0.1:8080/api/admin/login \
+  -H "Content-Type: application/json" -d @envelope.json
+```
+
+> 本地调试仍可直接发明文 JSON（服务端兼容），生产客户端应始终加密。
+
+## 0.2 连通性测试
 
 供浏览器或 curl 直接访问，验证服务是否可达（无需请求体）。
 

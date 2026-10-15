@@ -266,7 +266,7 @@ POST /api/admin/login
 ```bash
 curl -X POST http://101.96.248.75/api/admin/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "123456"}'
+  -d '{"username": "admin", "password": "<管理密码>"}'
 ```
 
 响应：
@@ -312,7 +312,7 @@ POST /api/admin/codes/generate
 ```bash
 curl -X POST http://101.96.248.75/api/admin/codes/generate \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Token: 123456" \
+  -H "X-Admin-Token: <管理密码>" \
   -d '{"count": 5, "maxDevices": 3, "validDays": 365, "note": "面包多订单"}'
 ```
 
@@ -331,7 +331,7 @@ GET /api/admin/codes
 请求示例：
 
 ```bash
-curl http://101.96.248.75/api/admin/codes -H "X-Admin-Token: 123456"
+curl http://101.96.248.75/api/admin/codes -H "X-Admin-Token: <管理密码>"
 ```
 
 响应：
@@ -377,7 +377,7 @@ POST /api/admin/codes/unbind
 ```bash
 curl -X POST http://101.96.248.75/api/admin/codes/unbind \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Token: 123456" \
+  -H "X-Admin-Token: <管理密码>" \
   -d '{"code": "TNZW-SFYM-EQCN"}'
 ```
 
@@ -430,7 +430,7 @@ POST /api/admin/codes/delete
 ```bash
 curl -X POST http://101.96.248.75/api/admin/codes/delete \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Token: 123456" \
+  -H "X-Admin-Token: <管理密码>" \
   -d '{"code": "K82M-E7C6-MWZV"}'
 ```
 

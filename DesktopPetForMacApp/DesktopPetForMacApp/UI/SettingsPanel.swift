@@ -277,9 +277,37 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         divider.autoresizingMask = .width
         container.addSubview(divider)
 
+        // ── 垂直堆栈：各行间距自动管理，新增行无需手算坐标 ──
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            // AppKit topAnchor 常量向下为正：标题+分割线共占 66pt，再加 14pt 行距
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 66 + 14),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16)
+        ])
+
+        /// 堆栈内行容器：固定高度、自动铺满堆栈宽度（窗口拉伸时同步变宽）
+        func makeStackRow(height: CGFloat) -> NSView {
+            let row = NSView(frame: NSRect(x: 0, y: 0, width: cw - 32, height: height))
+            row.wantsLayer = true
+            row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+            row.layer?.cornerRadius = 10
+            row.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(row)
+            NSLayoutConstraint.activate([
+                row.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+                row.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+                row.heightAnchor.constraint(equalToConstant: height)
+            ])
+            return row
+        }
+
         // 条目 1：开机自启
-        let rowY = ch - 66 - 14 - 48
-        let row = makeSettingRow(frame: NSRect(x: 16, y: rowY, width: cw - 32, height: 48), in: container)
+        let row = makeStackRow(height: 48)
 
         let itemTitle = NSTextField(labelWithString: "开机自启")
         itemTitle.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -302,10 +330,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         row.addSubview(sw)
 
         // 条目 3：小猫大小（基础权限即可调整）
-        // 上一行（开机自启）高 48，行间距统一 14，避免重叠
-        let rowGap: CGFloat = 14
-        let sizeRowY = rowY - 48 - rowGap
-        let sizeRow = makeSettingRow(frame: NSRect(x: 16, y: sizeRowY, width: cw - 32, height: 56), in: container)
+        let sizeRow = makeStackRow(height: 56)
 
         let sizeTitle = NSTextField(labelWithString: "小猫大小")
         sizeTitle.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -336,9 +361,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         sizeRow.addSubview(scaleLabel)
 
 // 条目 4：权限控制（校验码解锁全部功能）
-// 上一行（小猫大小）高 56，行间距统一 14，避免重叠
-let accessRowY = sizeRowY - 56 - 14
-let accessRow = makeSettingRow(frame: NSRect(x: 16, y: accessRowY, width: cw - 32, height: 72), in: container)
+let accessRow = makeStackRow(height: 72)
 accessRowView = accessRow
 let arw = accessRow.bounds.width
 
@@ -395,8 +418,7 @@ let arw = accessRow.bounds.width
         }
 
         // 条目 5：版本号（本地维护，随发布手动更新）
-        let versionRowY = accessRowY - 72 - 10
-        let versionRow = makeSettingRow(frame: NSRect(x: 16, y: versionRowY, width: cw - 32, height: 48), in: container)
+        let versionRow = makeStackRow(height: 48)
         let vrw = versionRow.bounds.width
 
         let versionTitle = NSTextField(labelWithString: "版本")

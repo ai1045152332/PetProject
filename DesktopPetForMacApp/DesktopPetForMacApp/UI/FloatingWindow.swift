@@ -218,11 +218,13 @@ class CatView: NSView {
             // 点击恢复 focus（从 warn 状态回来）
             viewModel?.transitionTo(.focus)
             
-            // 点击小猫：把小猫窗口及其相关弹窗（Todo/天气/做题等）全部放到最前
-            windowRef?.orderFrontRegardless()
-            for w in NSApp.windows where w is HTMLAlertWindow {
-                w.orderFrontRegardless()
-            }
+// 点击小猫：把小猫窗口及其相关弹窗（Todo/天气/做题等）全部放到最前
+// 仅唤起仍可见的弹窗：已点 ✕ 关闭（orderOut 隐藏）的窗口不能被重新弹出，
+// 否则其 JS 关闭 handler 已被移除，会出现"关了又弹出、再也关不上"的僵尸窗口
+windowRef?.orderFrontRegardless()
+for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
+    w.orderFrontRegardless()
+}
 
             // 双击展示 Todo 清单
             if event.clickCount == 2 {

@@ -45,4 +45,5 @@ type DeviceView struct {
 	LastSeenAt string `json:"lastSeenAt"` // 最近心跳时间（RFC3339）
 	SecondsAgo int64  `json:"secondsAgo"` // 距最近心跳的秒数
 	Online     bool   `json:"online"`     // 是否在在线阈值内
+	Note       string `json:"note"`       // 设备备注（管理端维护，如使用人/部门）
 }

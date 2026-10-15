@@ -246,6 +246,7 @@ curl -X POST http://101.96.248.75/api/access/verify \
 ### 3.1 登录
 
 后台使用账号密码登录，登录成功后签发 24 小时有效的会话令牌。
+会话持久化在 `data/sessions.json`，**服务重启或重新部署后登录态不丢失**。
 账号密码通过环境变量 `PETSERVER_ADMIN_USER`（默认 `admin`）与 `PETSERVER_ADMIN_PASSWORD` 配置
 （launchd plist 的 `EnvironmentVariables`）；未配置密码时管理接口一律返回 403。
 
@@ -382,7 +383,37 @@ curl -X POST http://101.96.248.75/api/admin/codes/unbind \
 
 响应：`{"code":0,"msg":"ok"}`；激活码不存在返回 `{"code":404,"msg":"code not found"}`。
 
-### 3.7 删除激活码
+### 3.7 设置设备备注
+
+给在线设备（按主机名）打备注，如使用人/部门；备注会随设备列表返回。
+
+```
+POST /api/admin/devices/note
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| hostname | string | 是 | 设备主机名（取自设备列表） |
+| note | string | 是 | 备注内容；传空字符串表示清除备注 |
+
+请求示例：
+
+```bash
+curl -X POST http://101.96.248.75/api/admin/devices/note \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: <密码>" \
+  -d '{"hostname": "mbp-xxx.local", "note": "赵健宇"}'
+```
+
+响应：`{"code":0,"msg":"ok"}`
+
+> 备注持久化在 `data/device_notes.json`，服务重启/重新部署不丢。
+> `GET /api/devices` 返回的每台设备会带 `note` 字段。
+
+### 3.8 删除激活码
+
 
 ```
 POST /api/admin/codes/delete
@@ -407,7 +438,7 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 
 > 删除不可恢复，已绑定的设备记录会一并清除。
 
-### 3.8 管理接口错误
+### 3.9 管理接口错误
 
 
 

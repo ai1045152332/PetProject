@@ -8,15 +8,16 @@ import (
 	"petserver/internal/service"
 )
 
-// AdminController 管理接口控制器（激活码生成/查询），需 X-Admin-Token 鉴权
+// AdminController 管理接口控制器（激活码/设备备注等），需登录会话或管理密码
 type AdminController struct {
 	accessSvc *service.AccessService
 	authSvc   *service.AuthService
+	noteSvc   *service.DeviceNoteService
 }
 
 // NewAdminController 创建管理控制器
-func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService) *AdminController {
-	return &AdminController{accessSvc: accessSvc, authSvc: authSvc}
+func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService) *AdminController {
+	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc}
 }
 
 // authorized 校验管理身份：
@@ -178,6 +179,40 @@ func (c *AdminController) DeleteCodes(w http.ResponseWriter, r *http.Request) {
 	}
 	if !found {
 		writeJSON(w, http.StatusNotFound, Response{Code: 404, Msg: "code not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// DeviceNoteRequest 设置设备备注请求
+type DeviceNoteRequest struct {
+	Hostname string `json:"hostname"`
+	Note     string `json:"note"`
+}
+
+// SetDeviceNote 处理 POST /api/admin/devices/note
+func (c *AdminController) SetDeviceNote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	var req DeviceNoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
+		return
+	}
+	if req.Hostname == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: hostname"})
+		return
+	}
+
+	if err := c.noteSvc.Set(req.Hostname, req.Note); err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "save note failed: " + err.Error()})
 		return
 	}
 

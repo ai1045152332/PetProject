@@ -31,6 +31,7 @@ func New(
 	mux.HandleFunc("/api/admin/login", authCtrl.Login)
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)
+	mux.HandleFunc("/api/admin/devices/note", adminCtrl.SetDeviceNote)
 	mux.HandleFunc("/api/app/latest", releaseCtrl.Latest)
 	mux.HandleFunc("/download/", releaseCtrl.Download)
 

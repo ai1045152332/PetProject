@@ -47,7 +47,13 @@ func main() {
 
 	heartbeatSvc := service.NewHeartbeatService(store)
 	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc)
-	devicesCtrl := controller.NewDevicesController(heartbeatSvc)
+
+	noteStore, err := storage.NewDeviceNoteStore("data/device_notes.json")
+	if err != nil {
+		log.Fatalf("初始化设备备注存储失败: %v", err)
+	}
+	noteSvc := service.NewDeviceNoteService(noteStore)
+	devicesCtrl := controller.NewDevicesController(heartbeatSvc, noteSvc)
 	activationStore, err := storage.NewActivationStore("data/activation_codes.json")
 	if err != nil {
 		log.Fatalf("初始化激活码存储失败: %v", err)
@@ -61,7 +67,8 @@ func main() {
 	if adminPass == "" {
 		adminPass = os.Getenv("PETSERVER_ADMIN_TOKEN")
 	}
-	authSvc := service.NewAuthService(adminUser, adminPass)
+	// 会话持久化：服务重启/重新部署后登录态不丢
+	authSvc := service.NewAuthService(adminUser, adminPass, "data/sessions.json")
 	// 应用层加密密钥：默认 data/private_key.pem，可用 PETSERVER_PRIVATE_KEY_PATH 覆盖
 	keyPath := os.Getenv("PETSERVER_PRIVATE_KEY_PATH")
 	if keyPath == "" {
@@ -84,7 +91,7 @@ func main() {
 
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
-	adminCtrl := controller.NewAdminController(accessSvc, authSvc)
+	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc)
 	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl)
 
 	// 后台任务：定期清理过期心跳日志

@@ -72,6 +72,7 @@
                     <th>系统</th>
                     <th>架构</th>
                     <th>最近心跳</th>
+                    <th>备注</th>
                     <th class="w-1">在线</th>
                   </tr>
                 </thead>
@@ -150,9 +151,35 @@
           '<td>' + esc(d.os) + '</td>' +
           '<td>' + esc(d.machine) + '</td>' +
           '<td>' + agoText(d.secondsAgo) + '</td>' +
+          '<td><input class="form-control form-control-sm note-input" style="min-width:120px" ' +
+            'placeholder="点击填写备注" value="' + esc(d.note || '') + '" ' +
+            'data-host="' + esc(d.hostname) + '" onchange="saveNote(this)"></td>' +
           '<td>' + badge + '</td>' +
         '</tr>';
       }).join('');
+    }
+
+    async function saveNote(input) {
+      const hostname = input.getAttribute('data-host');
+      const note = input.value.trim();
+      input.disabled = true;
+      try {
+        const resp = await fetch('/api/admin/devices/note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Session-Token': localStorage.getItem('petAdminSession') || '' },
+          body: JSON.stringify({ hostname: hostname, note: note })
+        });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '保存失败');
+        input.classList.add('is-valid');
+        setTimeout(() => input.classList.remove('is-valid'), 1200);
+      } catch (e) {
+        input.classList.add('is-invalid');
+        alert('备注保存失败：' + e.message);
+      } finally {
+        input.disabled = false;
+      }
     }
 
     async function load() {

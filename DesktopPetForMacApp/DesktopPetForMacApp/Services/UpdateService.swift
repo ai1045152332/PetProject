@@ -49,10 +49,19 @@ final class UpdateService {
 
     // MARK: - 检查更新
 
+    /// 定时自检：版本更新检查 + 授权复核（同一节奏）
     func checkForUpdate(userInitiated: Bool) {
         guard !checking, !downloading else { return }
         checking = true
         lastCheckAt = Date()
+
+        // 顺带向服务端复核授权：仅当服务端明确判定激活码失效时才收回权限
+        AccessControl.revalidate { result in
+            if result == .revoked {
+                self.showAlert(title: "激活码已失效",
+                               text: "该激活码已过期或被停用，高级功能已锁定。\n如需继续使用，请联系客服获取新的激活码。")
+            }
+        }
 
         guard let url = URL(string: ServerConfig.baseURL + "/api/app/latest") else {
             checking = false

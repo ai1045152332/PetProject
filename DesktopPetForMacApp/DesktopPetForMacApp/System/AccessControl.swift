@@ -35,23 +35,57 @@ enum AccessControl {
 
     private static let prefsKey = "settings.accessLevel"
     private static let fullLevel = "full"
-    /// 权限通过时的 App 版本号（用于新版本安装后清除旧权限）
-    private static let grantedVersionKey = "settings.accessGrantedVersion"
+    /// 解锁时使用的校验码（用于后续定时复核；本地后门码不记录）
+    private static let codeKey = "settings.accessCode"
+
+    /// 权限变化通知（供设置面板等界面刷新）
+    static let accessLevelChanged = Notification.Name("AccessControl.accessLevelChanged")
 
     /// 当前是否已解锁全部功能
     static var isFullAccess: Bool {
         UserDefaults.standard.string(forKey: prefsKey) == fullLevel
     }
 
-    /// 启动时调用：版本号变化（新安装/升级）则清除旧版本通过的校验权限
-    static func resetIfVersionChanged() {
-        let grantedVersion = UserDefaults.standard.string(forKey: grantedVersionKey)
-        guard grantedVersion != AppVersion.current else { return }
-        if isFullAccess {
-            FileLogger.log("[AccessControl] 检测到新版本 \(AppVersion.current)（旧权限版本 \(grantedVersion ?? "无")），清除旧权限")
-            clearAccess()
+    /// 定时复核结果
+    enum RevalidateResult {
+        case ok         // 复核通过
+        case skipped    // 无需复核（未解锁 / 本地后门码 / 网络异常，均不影响现有权限）
+        case revoked    // 服务端判定失效，权限已收回
+    }
+
+    /// 定时复核授权（与版本检查同一节奏调用）：
+    /// 用解锁时记录的校验码请求服务端，仅当服务端**明确判定无效**（失效/过期/超设备数）才收回权限；
+    /// 网络异常一律保留权限，避免误伤离线用户。
+    static func revalidate(completion: @escaping (RevalidateResult) -> Void) {
+        guard isFullAccess else {
+            completion(.skipped)
+            return
         }
-        UserDefaults.standard.set(AppVersion.current, forKey: grantedVersionKey)
+        guard let code = UserDefaults.standard.string(forKey: codeKey)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !code.isEmpty else {
+            // 旧版本解锁未记录校验码：不处理
+            completion(.skipped)
+            return
+        }
+        // 本地后门码不参与远程复核
+        if code == fullCode {
+            completion(.skipped)
+            return
+        }
+
+        verifyRemote(code: code) { result in
+            switch result {
+            case .success:
+                completion(.ok)
+            case .invalidCode, .expired, .deviceLimit:
+                FileLogger.log("[AccessControl] 定时复核未通过，收回权限: \(result)")
+                clearAccess()
+                completion(.revoked)
+            default:
+                // 网络/服务异常等：保留现有权限
+                completion(.skipped)
+            }
+        }
     }
 
     /// 输入校验码解锁
@@ -64,9 +98,9 @@ enum AccessControl {
             completion(.invalidCode)
             return
         }
-        // 本地校验码直接通过
+        // 本地校验码直接通过（不记录，避免参与远程复核）
         if trimmed == fullCode {
-            persistFullAccess()
+            persistFullAccess(code: nil)
             completion(.success)
             return
         }
@@ -78,7 +112,7 @@ enum AccessControl {
         }
         // 否则走后端接口校验（激活码 + 设备绑定）
         verifyRemote(code: trimmed) { result in
-            if result == .success { persistFullAccess() }
+            if result == .success { persistFullAccess(code: trimmed) }
             completion(result)
         }
     }
@@ -86,6 +120,8 @@ enum AccessControl {
     /// 清除现有权限，回到基础权限（高级功能锁定）
     static func clearAccess() {
         UserDefaults.standard.removeObject(forKey: prefsKey)
+        UserDefaults.standard.removeObject(forKey: codeKey)
+        notifyAccessLevelChanged()
     }
 
     // MARK: - 私有
@@ -104,9 +140,18 @@ enum AccessControl {
         normalizedCode(code).count == 12
     }
 
-    private static func persistFullAccess() {
+    private static func persistFullAccess(code: String?) {
         UserDefaults.standard.set(fullLevel, forKey: prefsKey)
-        UserDefaults.standard.set(AppVersion.current, forKey: grantedVersionKey)
+        if let code {
+            UserDefaults.standard.set(code, forKey: codeKey)
+        }
+        notifyAccessLevelChanged()
+    }
+
+    private static func notifyAccessLevelChanged() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: accessLevelChanged, object: nil)
+        }
     }
 
     /// 请求后端接口校验激活码（回调统一回到主线程）

@@ -58,8 +58,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 开机自启配置（默认开启，启动时确保 LaunchAgent 已安装/卸载）
         AutoLaunchManager.applyOnLaunch()
 
-        // 新版本安装后启动：清除旧版本通过的校验权限，需重新输入校验码
-        AccessControl.resetIfVersionChanged()
+        // 说明：升级不再清空校验权限，改为随版本检查一起定时向服务端复核授权
 
         // 首次启动随机分配宠物名称（已设置过的不变）
         PetName.ensureAssigned()

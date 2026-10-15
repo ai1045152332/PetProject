@@ -42,6 +42,9 @@ enum PetName {
 }
 
 final class SettingsPanel: NSPanel, NSTextFieldDelegate {
+    /// 权限变化（含定时复核收回）时刷新权限区 UI
+    private var accessObserver: NSObjectProtocol?
+
     private weak var viewModel: PetViewModel?
     private var stateButtons: [CatAnimationState: NSButton] = [:]
     private var navButtons: [NSButton] = []
@@ -85,6 +88,21 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         self.isReleasedWhenClosed = false
         self.title = "设置"
         setupUI()
+
+        // 权限可能被定时复核收回（如激活码过期），同步刷新权限区
+        accessObserver = NotificationCenter.default.addObserver(
+            forName: AccessControl.accessLevelChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshAccessUI()
+        }
+    }
+
+    deinit {
+        if let accessObserver {
+            NotificationCenter.default.removeObserver(accessObserver)
+        }
     }
 
     /// 覆写为可成为 key window，让「宠物名称」输入框能获得焦点并正常编辑。

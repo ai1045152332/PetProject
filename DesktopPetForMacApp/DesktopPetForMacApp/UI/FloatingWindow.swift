@@ -1499,8 +1499,9 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
 
 // MARK: - 小猫说话对话框（粉色手绘风气泡视图）
 
-/// 仿素材风格的对话气泡：粉色圆角底 + 棕色描边 + 左上高光 + 朝下小尾巴，文案居中自动换行
-/// 纯 AppKit draw(_:) 绘制（与 CatView 同一技术方案，避开 layer 渲染坑），尺寸随文案自适应
+/// 仿素材风格的对话气泡：胖圆泡泡 + 左下弯钩尾巴 + 左上→右下粉白渐变 + 釉面高光
+/// 优先加载 Resources/SpeechBubble.png 素材整图铺底（自动裁掉底部 AI 水印条，效果与素材 100% 一致）；
+/// 素材缺失时回退为贝塞尔矢量手绘。文案居中、自动换行、尺寸自适应。
 final class SpeechBubbleView: NSView {
     private let text: String
     /// 文案排版后的实际尺寸（init 时计算，draw 时用于居中）
@@ -1515,14 +1516,39 @@ final class SpeechBubbleView: NSView {
         }
         return base
     }
-    /// 配色取自素材：浅粉底 / 暖棕描边 / 深棕文字
-    private static var fillColor: NSColor { NSColor(red: 0.99, green: 0.92, blue: 0.90, alpha: 1) }
-    private static var strokeColor: NSColor { NSColor(red: 0.54, green: 0.42, blue: 0.35, alpha: 1) }
-    private static var textColor: NSColor { NSColor(red: 0.44, green: 0.32, blue: 0.26, alpha: 1) }
+    /// 配色取自素材：左上近白粉 → 右下暖粉渐变 / 暖棕描边 / 深棕文字
+    private static var fillTop: NSColor { NSColor(red: 1.00, green: 0.97, blue: 0.96, alpha: 1) }
+    private static var fillBottom: NSColor { NSColor(red: 0.98, green: 0.88, blue: 0.86, alpha: 1) }
+    private static var strokeColor: NSColor { NSColor(red: 0.545, green: 0.43, blue: 0.36, alpha: 1) }
+    private static var textColor: NSColor { NSColor(red: 0.42, green: 0.31, blue: 0.25, alpha: 1) }
 
-    /// 排版度量：文案尺寸 + 气泡整体尺寸（含尾巴高度）
+    /// 素材图（可选）：Resources/SpeechBubble.png
+    /// 大图（AI 生成原图 ≥800pt 高）自动裁掉底部 8%，去掉右下角「AI 生成」水印徽标
+    private static var assetImage: NSImage? {
+        let candidates: [URL?] = [
+            Bundle.main.url(forResource: "SpeechBubble", withExtension: "png"),
+            Bundle.main.resourceURL?.appendingPathComponent("SpeechBubble.png"),
+            // swift build 直跑兑底：源码树 …/DesktopPetForMacApp/Resources/SpeechBubble.png
+            URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Resources/SpeechBubble.png")
+        ]
+        guard let url = candidates.compactMap({ $0 }).first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let raw = NSImage(contentsOf: url) else { return nil }
+        guard raw.size.height > 800 else { return raw }
+        let cropH = floor(raw.size.height * 0.92)
+        let cropped = NSImage(size: NSSize(width: raw.size.width, height: cropH))
+        cropped.lockFocus()
+        raw.draw(in: NSRect(x: 0, y: cropH - raw.size.height, width: raw.size.width, height: raw.size.height),
+                 from: .zero, operation: .copy, fraction: 1)
+        cropped.unlockFocus()
+        return cropped
+    }
+
+    /// 排版度量：文案尺寸 + 气泡整体尺寸
     private static func metrics(for text: String) -> (bubbleSize: NSSize, textSize: NSSize) {
-        let maxTextWidth: CGFloat = 190
+        let maxTextWidth: CGFloat = 180
         let bound = (text as NSString).boundingRect(
             with: NSSize(width: maxTextWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -1530,15 +1556,22 @@ final class SpeechBubbleView: NSView {
         )
         let ts = NSSize(width: min(max(ceil(bound.width), 40), maxTextWidth),
                         height: max(ceil(bound.height), 18))
+        // 素材模式：整图等比铺底，按文案需要的安全区反推整体尺寸（保持素材比例不变形）
+        if let img = assetImage, img.size.width > 0 {
+            let aspect = img.size.width / img.size.height
+            let w = max(ts.width / 0.85, (ts.height / 0.50) * aspect, 190)
+            return (NSSize(width: w, height: w / aspect), ts)
+        }
+        // 矢量模式：胖泡泡（上下留白大于左右）
         let hPadding: CGFloat = 18
-        let vPadding: CGFloat = 13
-        let tailHeight: CGFloat = 15
-        let size = NSSize(width: max(ts.width + hPadding * 2, 76),
-                          height: ts.height + vPadding * 2 + tailHeight)
+        let vPadding: CGFloat = 22
+        let tailDrop: CGFloat = 14
+        let size = NSSize(width: max(ts.width + hPadding * 2, 110),
+                          height: ts.height + vPadding * 2 + tailDrop)
         return (size, ts)
     }
 
-    /// 根据文案计算气泡整体尺寸（含尾巴），供外层窗口定位用
+    /// 根据文案计算气泡整体尺寸，供外层窗口定位用
     static func fittingSize(for text: String) -> NSSize { metrics(for: text).bubbleSize }
 
     init(text: String) {
@@ -1556,72 +1589,88 @@ final class SpeechBubbleView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard bounds.width > 8, bounds.height > 8 else { return }
 
-        let stroke: CGFloat = 2.5
-        let radius: CGFloat = 15
-        let tailHeight: CGFloat = 15
+        // ── 素材模式：原图整张铺底（等比），文案叠在泡泡身体中心 ──
+        if let img = Self.assetImage {
+            img.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+            drawText(centerY: bounds.height * 0.52, textWidth: bounds.width * 0.90, textX: bounds.width * 0.05)
+            return
+        }
 
-        // 主体圆角矩形（底部给尾巴留空间；四周内收半描边，避免边缘被窗口裁切）
-        let body = NSRect(
-            x: stroke / 2 + 1,
-            y: tailHeight - 2,
-            width: bounds.width - stroke - 2,
-            height: bounds.height - tailHeight + 2 - stroke / 2 - 1
-        )
-        let bodyPath = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
+        // ── 矢量模式：手绘胖泡泡（素材缺失时的兑底）──
+        let stroke: CGFloat = 3.5
+        let x0 = stroke / 2 + 1
+        let x1 = bounds.width - stroke / 2 - 1
+        let y0: CGFloat = 14                       // 底部让位给弯钩尾巴
+        let y1 = bounds.height - stroke / 2 - 1
+        let bw = x1 - x0
+        let bh = y1 - y0
+        // 胖泡泡：上圆角比下圆角更大（素材是上圆下略平的蛋形）；限宽避免尾巴压进圆角
+        let rTop = min(bh * 0.55, bw * 0.24)
+        let rBottom = min(bh * 0.38, bw * 0.24)
+        let k: CGFloat = 0.5523                    // 贝塞尔近似圆弧系数
 
-        // 尾巴：主体底边中点偏左处向下收出小尖（仿素材朝左下的小尾巴），顶端伸入主体 2pt 衔接无痕
-        let tipX = bounds.width * 0.42
-        let attachL = bounds.width * 0.32
-        let attachR = bounds.width * 0.56
-        let tailTopY = body.minY + 2
-        let tip = NSPoint(x: tipX, y: 1.5)
-        let tailPath = NSBezierPath()
-        tailPath.move(to: NSPoint(x: attachL, y: tailTopY))
-        tailPath.curve(to: tip,
-                       controlPoint1: NSPoint(x: attachL + 1, y: tailTopY - 9),
-                       controlPoint2: NSPoint(x: tipX - 8, y: 2))
-        tailPath.curve(to: NSPoint(x: attachR, y: tailTopY),
-                       controlPoint1: NSPoint(x: tipX + 9, y: 2),
-                       controlPoint2: NSPoint(x: attachR - 2, y: tailTopY - 8))
-        tailPath.close()
+        // 尾巴锚点与尖端（弯钩朝左下，带一点外弓）
+        let aL = x0 + bw * 0.30
+        let aR = x0 + bw * 0.55
+        let tipX = x0 + bw * 0.42
+        let tipY = bounds.minY + 3
 
-        // 1) 填充主体 + 尾巴
-        Self.fillColor.setFill()
-        bodyPath.fill()
-        tailPath.fill()
+        // 单一闭合轮廓：泡泡主体 + 尾巴一体成形，填充描边无衔接痕
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: x0 + rTop, y: y1))                // 顶边左端
+        path.line(to: NSPoint(x: x1 - rTop, y: y1))                // 顶边
+        path.curve(to: NSPoint(x: x1, y: y1 - rTop),               // 右上大圆角
+                   controlPoint1: NSPoint(x: x1 - rTop + k * rTop, y: y1),
+                   controlPoint2: NSPoint(x: x1, y: y1 - rTop + k * rTop))
+        path.line(to: NSPoint(x: x1, y: y0 + rBottom))             // 右边
+        path.curve(to: NSPoint(x: x1 - rBottom, y: y0),            // 右下圆角
+                   controlPoint1: NSPoint(x: x1, y: y0 + rBottom - k * rBottom),
+                   controlPoint2: NSPoint(x: x1 - rBottom + k * rBottom, y: y0))
+        path.line(to: NSPoint(x: aR, y: y0))                       // 底边右段 → 尾巴
+        path.curve(to: NSPoint(x: tipX, y: tipY),                  // 尾巴右弧（微内收）
+                   controlPoint1: NSPoint(x: aR - 1, y: y0 - 4),
+                   controlPoint2: NSPoint(x: tipX + 9, y: tipY + 3))
+        path.curve(to: NSPoint(x: aL, y: y0),                      // 尾巴左弧（外弓出弯钩）
+                   controlPoint1: NSPoint(x: tipX - 7, y: tipY + 2),
+                   controlPoint2: NSPoint(x: aL - 3, y: y0 - 7))
+        path.line(to: NSPoint(x: x0 + rBottom, y: y0))             // 底边左段
+        path.curve(to: NSPoint(x: x0, y: y0 + rBottom),            // 左下圆角
+                   controlPoint1: NSPoint(x: x0 + rBottom - k * rBottom, y: y0),
+                   controlPoint2: NSPoint(x: x0, y: y0 + rBottom - k * rBottom))
+        path.line(to: NSPoint(x: x0, y: y1 - rTop))                // 左边
+        path.curve(to: NSPoint(x: x0 + rTop, y: y1),               // 左上大圆角
+                   controlPoint1: NSPoint(x: x0, y: y1 - rTop + k * rTop),
+                   controlPoint2: NSPoint(x: x0 + rTop - k * rTop, y: y1))
+        path.close()
 
-        // 2) 描边主体
+        // 渐变填充：左上近白 → 右下暖粉
+        NSGradient(colors: [Self.fillTop, Self.fillBottom])?.draw(in: path, angle: -60)
+
+        // 暖棕描边
         Self.strokeColor.setStroke()
-        bodyPath.lineWidth = stroke
-        bodyPath.stroke()
+        path.lineWidth = stroke
+        path.stroke()
 
-        // 3) 再填一次尾巴：盖掉主体底边横穿尾巴根部的描边，衔接自然
-        Self.fillColor.setFill()
-        tailPath.fill()
+        // 左上釉面高光：一道斜长弧 + 一枚小圆点（仿素材反光）
+        if let ctx = NSGraphicsContext.current {
+            ctx.saveGraphicsState()
+            let t = NSAffineTransform()
+            t.translateX(by: x0 + bw * 0.24, yBy: y1 - bh * 0.30)
+            t.rotate(byDegrees: -32)
+            t.concat()
+            NSColor.white.withAlphaComponent(0.6).setFill()
+            NSBezierPath(ovalIn: NSRect(x: -bw * 0.14, y: -6.5, width: bw * 0.28, height: 13)).fill()
+            ctx.restoreGraphicsState()
+            NSColor.white.withAlphaComponent(0.55).setFill()
+            NSBezierPath(ovalIn: NSRect(x: x0 + bw * 0.11, y: y1 - bh * 0.55, width: 11, height: 9)).fill()
+        }
 
-        // 4) 重描尾巴两条侧边（开放路径，根部不压线、尖端自然收拢）
-        Self.strokeColor.setStroke()
-        let tailLeft = NSBezierPath()
-        tailLeft.move(to: NSPoint(x: attachL, y: body.minY))
-        tailLeft.curve(to: tip,
-                       controlPoint1: NSPoint(x: attachL + 1, y: body.minY - 7),
-                       controlPoint2: NSPoint(x: tipX - 8, y: 2))
-        tailLeft.lineWidth = stroke
-        tailLeft.stroke()
-        let tailRight = NSBezierPath()
-        tailRight.move(to: NSPoint(x: attachR, y: body.minY))
-        tailRight.curve(to: tip,
-                        controlPoint1: NSPoint(x: attachR - 2, y: body.minY - 6),
-                        controlPoint2: NSPoint(x: tipX + 9, y: 2))
-        tailRight.lineWidth = stroke
-        tailRight.stroke()
+        // 文案：泡泡身体垂直居中
+        drawText(centerY: (y0 + y1) / 2, textWidth: bw, textX: x0)
+    }
 
-        // 5) 左上高光（仿素材釉面反光：一道长弧 + 一枚小圆点）
-        NSColor.white.withAlphaComponent(0.5).setFill()
-        NSBezierPath(ovalIn: NSRect(x: body.minX + 10, y: body.maxY - 20, width: 32, height: 11)).fill()
-        NSBezierPath(ovalIn: NSRect(x: body.minX + 8, y: body.maxY - 31, width: 9, height: 7)).fill()
-
-        // 6) 文案：居中绘制在主体内
+    /// 居中绘制文案（自动换行；素材模式 / 矢量模式共用）
+    private func drawText(centerY: CGFloat, textWidth: CGFloat, textX: CGFloat = 0) {
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byWordWrapping
@@ -1630,12 +1679,7 @@ final class SpeechBubbleView: NSView {
             .foregroundColor: Self.textColor,
             .paragraphStyle: para
         ])
-        let textRect = NSRect(
-            x: body.minX,
-            y: body.minY + (body.height - textSize.height) / 2,
-            width: body.width,
-            height: textSize.height
-        )
-        attr.draw(in: textRect)
+        let rect = NSRect(x: textX, y: centerY - textSize.height / 2, width: textWidth, height: textSize.height)
+        attr.draw(in: rect)
     }
 }

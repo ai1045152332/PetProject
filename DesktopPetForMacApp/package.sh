@@ -55,6 +55,12 @@ if [ -f "$MENU_ICON" ]; then
     cp "$MENU_ICON" "$RESOURCES/MenuBarIcon.png"
 fi
 
+# 小猫说话气泡素材（可选：存在时对话气泡 100% 使用原图铺底）
+BUBBLE_SRC="$PROJECT_DIR/DesktopPetForMacApp/Resources/SpeechBubble.png"
+if [ -f "$BUBBLE_SRC" ]; then
+    cp "$BUBBLE_SRC" "$RESOURCES/SpeechBubble.png"
+fi
+
 # 资源文件（排除 README）
 cd "$SPRITES_SRC"
 for stateDir in */; do

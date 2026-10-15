@@ -209,6 +209,12 @@ class CatView: NSView {
     
     override func mouseUp(with event: NSEvent) {
         if !isDragging {
+            // 投喂模式：点击小猫即吃掉猫条，走喂食互动而不是普通点击逻辑
+            if isFeeding {
+                performFeed()
+                isDragging = false
+                return
+            }
             // 点击恢复 focus（从 warn 状态回来）
             viewModel?.transitionTo(.focus)
             
@@ -249,6 +255,170 @@ class CatView: NSView {
         loadingLabel = nil
     }
     
+    // MARK: - 喂猫条互动
+
+    /// 是否处于投喂模式（猫条跟随鼠标，等待点击小猫）
+    private var isFeeding = false
+    /// 跟随鼠标的猫条窗口
+    private var treatWindow: NSWindow?
+    /// 猫条跟随鼠标的定时器（1/30s 采样全局鼠标位置）
+    private var treatFollowTimer: Timer?
+    /// 投喂成功后的气泡提示
+    private var feedBubble: NSTextField?
+
+    /// 进入投喂模式：猫条跟随鼠标，点击小猫完成喂食
+    func startFeeding() {
+        cancelFeeding()
+        isFeeding = true
+        FileLogger.log("[DesktopPet] 进入投喂模式")
+
+        // 猫条窗口：透明无边界、不接鼠标事件（点击穿透到小猫）
+        let treat = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 132, height: 92),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        treat.backgroundColor = .clear
+        treat.isOpaque = false
+        treat.hasShadow = false
+        treat.level = .floating
+        treat.ignoresMouseEvents = true
+        treat.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        treat.isReleasedWhenClosed = false
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 132, height: 92))
+
+        let emoji = NSTextField(labelWithString: "🍡")
+        emoji.font = .systemFont(ofSize: 44)
+        emoji.alignment = .center
+        emoji.frame = NSRect(x: 0, y: 36, width: 132, height: 56)
+        container.addSubview(emoji)
+
+        let hint = NSTextField(labelWithString: "点小猫投喂 · 右键取消")
+        hint.font = .systemFont(ofSize: 11, weight: .medium)
+        hint.textColor = .white
+        hint.alignment = .center
+        hint.wantsLayer = true
+        hint.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
+        hint.layer?.cornerRadius = 9
+        hint.frame = NSRect(x: 11, y: 6, width: 110, height: 20)
+        container.addSubview(hint)
+
+        treat.contentView = container
+        treatWindow = treat
+        updateTreatPosition()
+        treat.orderFrontRegardless()
+
+        // 高频采样全局鼠标位置，让猫条贴着光标移动
+        treatFollowTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.updateTreatPosition()
+            }
+        }
+
+        // 兜底：60 秒未投喂自动取消，避免猫条永远跟着鼠标
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            if self?.isFeeding == true {
+                self?.cancelFeeding()
+            }
+        }
+    }
+
+    /// 猫条窗口贴着光标（水平居中于光标上方）
+    private func updateTreatPosition() {
+        guard let treat = treatWindow else { return }
+        let loc = NSEvent.mouseLocation
+        treat.setFrameOrigin(NSPoint(x: loc.x - 66, y: loc.y + 6))
+    }
+
+    /// 退出投喂模式（取消喂食）：移除猫条窗口和跟随定时器
+    private func cancelFeeding() {
+        isFeeding = false
+        treatFollowTimer?.invalidate()
+        treatFollowTimer = nil
+        treatWindow?.orderOut(nil)
+        treatWindow?.close()
+        treatWindow = nil
+    }
+
+    /// 投喂成功：小猫吃掉猫条，播放开心动画 + 气泡 + 飘心，亲密度 +1
+    private func performFeed() {
+        cancelFeeding()
+        FileLogger.log("[DesktopPet] 投喂成功，亲密度 +1")
+
+        // 小猫开心动画（pet 无有效帧时内部会 fallback 到 warn）
+        viewModel?.pet()
+
+        // 亲密度持久化
+        let key = "settings.affinity"
+        let newCount = UserDefaults.standard.integer(forKey: key) + 1
+        UserDefaults.standard.set(newCount, forKey: key)
+
+        showFeedBubble(text: "喵呜～真好吃 😋 亲密度 +1")
+        spawnHearts()
+    }
+
+    /// 在小猫头顶展示气泡提示（2.2 秒后淡出移除）
+    private func showFeedBubble(text: String) {
+        feedBubble?.removeFromSuperview()
+
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .white
+        label.alignment = .center
+        label.wantsLayer = true
+        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        label.layer?.cornerRadius = 10
+        // 气泡稍宽于小猫，居中显示在窗口顶部内侧（窗口会裁剪越界子视图）
+        let w = bounds.width + 60
+        label.frame = NSRect(x: (bounds.width - w) / 2, y: bounds.height - 32, width: w, height: 24)
+        addSubview(label)
+        feedBubble = label
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self, weak label] in
+            guard let label = label, label.superview != nil else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.5
+                label.animator().alphaValue = 0
+            }, completionHandler: {
+                label.removeFromSuperview()
+                if self?.feedBubble === label { self?.feedBubble = nil }
+            })
+        }
+    }
+
+    /// 飘心特效：3 颗爱心从小猫身上缓缓升起并淡出
+    private func spawnHearts() {
+        let symbols = ["💗", "💖", "💕"]
+        for (i, sym) in symbols.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.15) { [weak self] in
+                guard let self else { return }
+                let heart = NSTextField(labelWithString: sym)
+                heart.font = .systemFont(ofSize: 16)
+                heart.alignment = .center
+                let x = self.bounds.width * (0.25 + 0.25 * CGFloat(i))
+                let startY = self.bounds.height * 0.3
+                heart.frame = NSRect(x: x - 12, y: startY, width: 24, height: 20)
+                heart.alphaValue = 0.95
+                self.addSubview(heart)
+
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 1.1
+                    heart.animator().alphaValue = 0
+                    heart.animator().frame = NSRect(
+                        x: heart.frame.origin.x,
+                        y: startY + 44,
+                        width: heart.frame.width,
+                        height: heart.frame.height
+                    )
+                }, completionHandler: {
+                    heart.removeFromSuperview()
+                })
+            }
+        }
+    }
+
     /// 显示喝水提醒弹窗（HTML 样式）
     func showDrinkWaterAlert() {
         viewModel?.isWaterAlertShowing = true
@@ -489,6 +659,11 @@ class CatView: NSView {
     }
     
     override func rightMouseDown(with event: NSEvent) {
+        // 投喂模式中右键：取消投喂，不弹菜单
+        if isFeeding {
+            cancelFeeding()
+            return
+        }
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -498,6 +673,7 @@ class CatView: NSView {
         typealias MenuEntry = (title: String, action: Selector, fullOnly: Bool)
         let entries: [MenuEntry] = [
             ("抚摸 🐾", #selector(petAction(_:)), false),
+            ("喂猫条 🍡", #selector(feedAction(_:)), false),
             ("玩小游戏 🎮", #selector(playGameAction(_:)), false),
             ("背单词 📚", #selector(wordLearningAction(_:)), true),
             ("苦练基本功 🧩", #selector(problemAction(_:)), true),
@@ -544,6 +720,8 @@ class CatView: NSView {
     }
     
     @objc private func petAction(_ sender: NSMenuItem) { viewModel?.pet() }
+    /// 「喂猫条」：进入投喂模式，猫条跟随鼠标，点小猫完成喂食
+    @objc private func feedAction(_ sender: NSMenuItem) { startFeeding() }
     /// 「解锁更多功能」：通知 AppDelegate 打开设置面板并锚定闪烁「权限」栏
     @objc private func unlockMoreAction(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: .init("DesktopPet.ShowAccessSettings"), object: nil)

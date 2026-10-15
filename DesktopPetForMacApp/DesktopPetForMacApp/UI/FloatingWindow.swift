@@ -507,20 +507,25 @@ class CatView: NSView {
             ("输入股票代码查询 📈", #selector(stockAction(_:)), true),
         ]
 
-        // 按可用状态排序：可用的在前，置灰的在后（解锁后全部可用，保持原顺序）
-        let usable = entries.filter { !$0.fullOnly }
-        let locked = entries.filter { $0.fullOnly }
-        let ordered = fullAccess ? entries : usable + locked
+        // 按权限过滤：已解锁显示全部；未解锁隐藏锁定功能（不再置灰），改为「解锁更多功能」引导
+        var ordered = entries
+        if !fullAccess {
+            ordered = entries.filter { !$0.fullOnly }
+        }
 
-        for (i, entry) in ordered.enumerated() {
+        for entry in ordered {
             let item = NSMenuItem(title: entry.title, action: entry.action, keyEquivalent: "")
             item.target = self
-            item.isEnabled = fullAccess || !entry.fullOnly
+            item.isEnabled = true
             menu.addItem(item)
-            // 基础权限下：可用项与置灰项之间插入分隔线
-            if !fullAccess && i == usable.count - 1 {
-                menu.addItem(NSMenuItem.separator())
-            }
+        }
+
+        // 未解锁：尾部追加「解锁更多功能」引导（点击打开设置锚定权限栏；解锁成功后本项不再出现）
+        if !fullAccess {
+            menu.addItem(NSMenuItem.separator())
+            let unlockItem = NSMenuItem(title: "解锁更多功能 🔓", action: #selector(unlockMoreAction(_:)), keyEquivalent: "")
+            unlockItem.target = self
+            menu.addItem(unlockItem)
         }
 
         let quitItem = NSMenuItem(title: "关闭 ❌", action: #selector(quitAction(_:)), keyEquivalent: "")
@@ -535,6 +540,10 @@ class CatView: NSView {
     }
     
     @objc private func petAction(_ sender: NSMenuItem) { viewModel?.pet() }
+    /// 「解锁更多功能」：通知 AppDelegate 打开设置面板并锚定闪烁「权限」栏
+    @objc private func unlockMoreAction(_ sender: NSMenuItem) {
+        NotificationCenter.default.post(name: .init("DesktopPet.ShowAccessSettings"), object: nil)
+    }
     @objc private func playGameAction(_ sender: NSMenuItem) {
         HTMLAlertWindow.showWeb(title: "玩小游戏 🎮", urlString: "https://brake.tp0k.us/")
     }

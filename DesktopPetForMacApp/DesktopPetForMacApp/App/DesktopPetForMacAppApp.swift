@@ -135,6 +135,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.refreshMenuAccess()
             }
         }
+
+        // 10. 「解锁更多功能」引导：右键菜单点击后打开设置、锚定通用设置并高亮闪烁「权限」栏
+        NotificationCenter.default.addObserver(
+            forName: .init("DesktopPet.ShowAccessSettings"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.showSettings(nil)
+                self?.settingsPanel?.showGeneralAndFlashAccess()
+            }
+        }
     }
     
     // MARK: - 菜单栏

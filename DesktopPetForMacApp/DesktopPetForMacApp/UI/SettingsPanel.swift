@@ -39,6 +39,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
     // 权限控制（通用设置 > 权限）
     var onAccessLevelChanged: (() -> Void)?
+    /// 权限栏容器（用于「解锁更多功能」引导时高亮闪烁）
+    private weak var accessRowView: NSView?
     private weak var catScaleSlider: NSSlider?
     private weak var accessStatusLabel: NSTextField?
     private weak var accessCodeField: NSSecureTextField?
@@ -300,7 +302,9 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         row.addSubview(sw)
 
         // 条目 3：小猫大小（基础权限即可调整）
-        let sizeRowY = rowY - 48 - 10
+        // 上一行（开机自启）高 48，行间距统一 14，避免重叠
+        let rowGap: CGFloat = 14
+        let sizeRowY = rowY - 48 - rowGap
         let sizeRow = makeSettingRow(frame: NSRect(x: 16, y: sizeRowY, width: cw - 32, height: 56), in: container)
 
         let sizeTitle = NSTextField(labelWithString: "小猫大小")
@@ -331,10 +335,12 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         scaleLabel.autoresizingMask = .minXMargin
         sizeRow.addSubview(scaleLabel)
 
-        // 条目 4：权限控制（校验码解锁全部功能）
-        let accessRowY = sizeRowY - 56 - 10
-        let accessRow = makeSettingRow(frame: NSRect(x: 16, y: accessRowY, width: cw - 32, height: 72), in: container)
-        let arw = accessRow.bounds.width
+// 条目 4：权限控制（校验码解锁全部功能）
+// 上一行（小猫大小）高 56，行间距统一 14，避免重叠
+let accessRowY = sizeRowY - 56 - 14
+let accessRow = makeSettingRow(frame: NSRect(x: 16, y: accessRowY, width: cw - 32, height: 72), in: container)
+accessRowView = accessRow
+let arw = accessRow.bounds.width
 
         let accessTitle = NSTextField(labelWithString: "权限")
         accessTitle.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -826,6 +832,30 @@ return row
         // 自动点编辑：让输入框可编辑并聚焦
         editPetName(petNameEditBtn ?? NSButton())
         makeFirstResponder(petNameField)
+    }
+
+    /// 「解锁更多功能」引导：打开设置面板、锚定到通用设置页，高亮闪烁「权限」栏
+    func showGeneralAndFlashAccess() {
+        showCentered()
+        // 切换到通用设置（navTitles index 1）
+        currentSection = 1
+        for (i, v) in contentViews.enumerated() {
+            v.isHidden = (i != currentSection)
+        }
+        applyNavStyle()
+        // 高亮闪烁权限栏：3 次 × 0.45s 明暗交替
+        guard let row = accessRowView else { return }
+        let flash = NSColor.controlAccentColor.withAlphaComponent(0.32).cgColor
+        let normal = NSColor(white: 0, alpha: 0.04).cgColor
+        for i in 0..<6 {
+            let on = i % 2 == 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.45) {
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.2
+                    row.layer?.backgroundColor = on ? flash : normal
+                })
+            }
+        }
     }
 
     /// 屏幕居中弹出

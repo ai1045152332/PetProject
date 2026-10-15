@@ -24,7 +24,7 @@ func NewAccessService(store *storage.ActivationStore) *AccessService {
 	return &AccessService{store: store}
 }
 
-// Verify 校验激活码并绑定设备，返回是否通过及原因（ok / invalid_code / device_limit）
+// Verify 校验激活码并绑定设备，返回是否通过及原因（ok / invalid_code / device_limit / expired）
 func (s *AccessService) Verify(code, deviceID string) (bool, string) {
 	normalized := strings.ToUpper(strings.TrimSpace(code))
 
@@ -34,13 +34,14 @@ func (s *AccessService) Verify(code, deviceID string) (bool, string) {
 		return false, "invalid_code"
 	}
 
+	now := time.Now()
 	for i := range codes {
 		if codes[i].Code != normalized {
 			continue
 		}
-		if !codes[i].CanActivate(deviceID) {
-			log.Printf("[access] 激活码 %s 设备数已达上限(%d)，设备 %s 拒绝", normalized, codes[i].MaxDevices, maskDeviceID(deviceID))
-			return false, "device_limit"
+		if reason := codes[i].ActivationStatus(deviceID, now); reason != "ok" {
+			log.Printf("[access] 激活码 %s 激活被拒（%s），设备 %s", normalized, reason, maskDeviceID(deviceID))
+			return false, reason
 		}
 		codes[i].Bind(deviceID)
 		if err := s.store.Save(codes); err != nil {
@@ -55,7 +56,8 @@ func (s *AccessService) Verify(code, deviceID string) (bool, string) {
 }
 
 // Generate 批量生成激活码并持久化，返回生成的码
-func (s *AccessService) Generate(count, maxDevices int, note string) ([]string, error) {
+// validDays 为有效期天数（0 表示永久有效）
+func (s *AccessService) Generate(count, maxDevices, validDays int, note string) ([]string, error) {
 	codes, err := s.store.Load()
 	if err != nil {
 		return nil, err
@@ -76,11 +78,17 @@ func (s *AccessService) Generate(count, maxDevices int, note string) ([]string, 
 			continue
 		}
 		existing[code] = true
+		var expiresAt *time.Time
+		if validDays > 0 {
+			exp := time.Now().AddDate(0, 0, validDays)
+			expiresAt = &exp
+		}
 		codes = append(codes, model.ActivationCode{
 			Code:       code,
 			MaxDevices: maxDevices,
 			Devices:    []string{},
 			CreatedAt:  time.Now(),
+			ExpiresAt:  expiresAt,
 			Note:       note,
 		})
 		generated = append(generated, code)
@@ -89,7 +97,11 @@ func (s *AccessService) Generate(count, maxDevices int, note string) ([]string, 
 	if err := s.store.Save(codes); err != nil {
 		return nil, err
 	}
-	log.Printf("[access] 生成 %d 个激活码（每码 %d 设备，备注: %s）", count, maxDevices, note)
+	validity := "永久"
+	if validDays > 0 {
+		validity = fmt.Sprintf("%d 天", validDays)
+	}
+	log.Printf("[access] 生成 %d 个激活码（每码 %d 设备，有效期 %s，备注: %s）", count, maxDevices, validity, note)
 	return generated, nil
 }
 

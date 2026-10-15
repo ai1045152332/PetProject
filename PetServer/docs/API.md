@@ -159,7 +159,7 @@ curl -X POST http://11.0.213.233:8080/api/access/verify \
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data.valid | bool | 是否激活通过 |
-| data.reason | string | `ok` 通过 / `invalid_code` 激活码不存在 / `device_limit` 设备数达上限 |
+| data.reason | string | `ok` 通过 / `invalid_code` 激活码不存在 / `expired` 激活码已过期 / `device_limit` 设备数达上限 |
 
 ### 失败响应
 
@@ -173,13 +173,57 @@ curl -X POST http://11.0.213.233:8080/api/access/verify \
 
 ---
 
-## 3. 管理接口（激活码生成/查询）
+## 3. 管理后台接口
 
-管理接口需要在请求头携带管理令牌：`X-Admin-Token: <token>`。
-令牌通过环境变量 `PETSERVER_ADMIN_TOKEN` 配置（launchd plist 的 `EnvironmentVariables`），
-未配置时管理接口一律返回 403。
+### 3.1 登录
 
-### 3.1 生成激活码
+后台使用账号密码登录，登录成功后签发 24 小时有效的会话令牌。
+账号密码通过环境变量 `PETSERVER_ADMIN_USER`（默认 `admin`）与 `PETSERVER_ADMIN_PASSWORD` 配置
+（launchd plist 的 `EnvironmentVariables`）；未配置密码时管理接口一律返回 403。
+
+```
+POST /api/admin/login
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| username | string | 是 | 管理员账号 |
+| password | string | 是 | 管理员密码 |
+
+请求示例：
+
+```bash
+curl -X POST http://11.0.213.233:8080/api/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "123456"}'
+```
+
+响应：
+
+```json
+{"code":0,"msg":"ok","data":{"token":"b2b9e7...","expiresAt":"Fri, 16 Oct 2026 14:37:00 GMT"}}
+```
+
+### 3.2 退出登录
+
+```
+POST /api/admin/logout
+```
+
+请求头需带会话令牌：`X-Session-Token: <token>`。
+
+### 3.3 鉴权方式
+
+管理接口（生成/查询激活码）支持两种凭证：
+
+| 方式 | 请求头 | 适用场景 |
+| --- | --- | --- |
+| 会话令牌 | `X-Session-Token: <登录返回的 token>` | 网页后台 |
+| 管理密码 | `X-Admin-Token: <PETSERVER_ADMIN_PASSWORD>` | 脚本 / curl |
+
+### 3.4 生成激活码
 
 ```
 POST /api/admin/codes/generate
@@ -191,6 +235,7 @@ POST /api/admin/codes/generate
 | --- | --- | --- | --- |
 | count | int | 是 | 生成数量，1~100 |
 | maxDevices | int | 否 | 每码最多绑定设备数，1~10，默认 3 |
+| validDays | int | 否 | 有效期天数，0~3650，默认 0（永久有效） |
 | note | string | 否 | 备注（购买渠道/买家等） |
 
 请求示例：
@@ -198,8 +243,8 @@ POST /api/admin/codes/generate
 ```bash
 curl -X POST http://11.0.213.233:8080/api/admin/codes/generate \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Token: <token>" \
-  -d '{"count": 5, "maxDevices": 3, "note": "面包多订单"}'
+  -H "X-Admin-Token: 123456" \
+  -d '{"count": 5, "maxDevices": 3, "validDays": 365, "note": "面包多订单"}'
 ```
 
 响应：
@@ -208,7 +253,7 @@ curl -X POST http://11.0.213.233:8080/api/admin/codes/generate \
 {"code":0,"msg":"ok","data":{"codes":["9MDW-TCZ5-YVD8","TNZW-SFYM-EQCN"]}}
 ```
 
-### 3.2 查询激活码列表
+### 3.5 查询激活码列表
 
 ```
 GET /api/admin/codes
@@ -217,7 +262,7 @@ GET /api/admin/codes
 请求示例：
 
 ```bash
-curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: <token>"
+curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: 123456"
 ```
 
 响应：
@@ -233,6 +278,7 @@ curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: <token>"
         "maxDevices": 3,
         "devices": ["XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"],
         "createdAt": "2026-10-15T13:00:00+08:00",
+        "expiresAt": "2027-10-15T13:00:00+08:00",
         "note": "面包多订单"
       }
     ]
@@ -240,70 +286,22 @@ curl http://11.0.213.233:8080/api/admin/codes -H "X-Admin-Token: <token>"
 }
 ```
 
-### 管理接口错误
+> `expiresAt` 为 `null` 表示永久有效。
+
+### 3.6 管理接口错误
 
 | 场景 | HTTP 状态码 | 响应 |
 | --- | --- | --- |
-| 未配置管理令牌 | 403 | `{"code":403,"msg":"admin api disabled (PETSERVER_ADMIN_TOKEN not set)"}` |
-| 令牌错误 | 401 | `{"code":401,"msg":"invalid admin token"}` |
+| 未配置管理密码 | 403 | `{"code":403,"msg":"admin api disabled (PETSERVER_ADMIN_TOKEN not set)"}` |
+| 账号或密码错误 | 401 | `{"code":401,"msg":"账号或密码错误"}` |
+| 会话失效/凭证缺失 | 401 | `{"code":401,"msg":"unauthorized"}` |
 | 参数非法 | 400 | `{"code":400,"msg":"count must be 1~100"}` |
 
----
+## 4. 后台页面
 
-## 3. 在线宠物列表
-
-返回所有登记过的设备及其在线状态，供 H5 页面展示。
-心跳每 1 分钟上报一次，最近 3 分钟内有心跳视为在线。
-
-```
-GET /api/devices
-```
-
-### 成功响应
-
-```json
-{
-  "code": 0,
-  "msg": "ok",
-  "data": {
-    "serverTime": "2026-10-14T20:09:00+08:00",
-    "total": 2,
-    "online": 1,
-    "devices": [
-      {
-        "version": "v1.0.001.test",
-        "hostname": "MacBook-Pro.local",
-        "os": "macOS Version 15.6.1",
-        "machine": "arm64",
-        "petName": "毛豆",
-        "petState": "idel",
-        "lastSeenAt": "2026-10-14T20:09:00+08:00",
-        "secondsAgo": 0,
-        "online": true
-      }
-    ]
-  }
-}
-```
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| data.total | int | 设备总数 |
-| data.online | int | 在线设备数 |
-| data.devices | array | 设备列表，按最近心跳时间倒序 |
-| devices[].lastSeenAt | string | 最近心跳时间（RFC3339） |
-| devices[].secondsAgo | int | 距最近心跳的秒数 |
-| devices[].online | bool | 是否在线（阈值 3 分钟） |
-
----
-
-## 4. H5 在线列表页
-
-内置静态页面，与接口同源（无需处理跨域），页面内每 5 秒自动拉取 `GET /api/devices`。
-
-```
-GET /online      # 专用路径
-GET /            # 根路径同样展示列表页，方便手机输入 IP 直达
-```
-
-> 页面通过 `go:embed` 随二进制打包（`internal/web/online.html`），无需外部文件。
+| 路径 | 说明 |
+| --- | --- |
+| `GET /admin/login` | 登录页（账号密码） |
+| `GET /admin` | 菜单一：小猫在线列表 |
+| `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间） |
+| `GET /online`（或 `/`） | 手机版在线宠物页（免登录） |

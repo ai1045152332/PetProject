@@ -668,6 +668,9 @@ let arw = accessRow.bounds.width
             case .deviceLimit:
                 alert.messageText = "激活码已达设备上限"
                 alert.informativeText = "该激活码绑定的设备数量已达上限，无法在新设备上使用"
+            case .expired:
+                alert.messageText = "激活码已过期"
+                alert.informativeText = "该激活码已超过有效期，请联系客服获取新的激活码"
             case .networkError:
                 alert.messageText = "网络异常"
                 alert.informativeText = "无法连接校验服务，请检查网络后重试"

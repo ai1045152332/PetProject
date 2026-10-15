@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>激活码管理 · cute pet 后台</title>
   <link rel="stylesheet" href="/static/tabler.min.css" />
+  <script>
+    if (!localStorage.getItem('petAdminSession')) location.replace('/admin/login');
+  </script>
 </head>
 <body class="antialiased">
   <div class="page">
@@ -15,6 +18,7 @@
           <a class="nav-link" href="/admin">在线宠物</a>
           <a class="nav-link active fw-bold" href="/admin/codes">激活码管理</a>
           <a class="nav-link" href="/online" target="_blank">手机版</a>
+          <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
         </div>
       </div>
     </header>
@@ -25,7 +29,7 @@
           <div class="row g-2 align-items-center">
             <div class="col">
               <h2 class="page-title">激活码管理</h2>
-              <div class="text-secondary mt-1" id="status">未登录：请填写管理令牌</div>
+              <div class="text-secondary mt-1" id="status">加载中…</div>
             </div>
             <div class="col-auto ms-auto">
               <button class="btn" onclick="loadList()">刷新</button>
@@ -40,79 +44,59 @@
 
             <div class="col-12">
               <div class="card">
+                <div class="card-header"><h3 class="card-title">生成激活码</h3></div>
                 <div class="card-body">
-                  <label class="form-label">管理令牌（对应服务端 PETSERVER_ADMIN_TOKEN）</label>
-                  <div class="row g-2">
-                    <div class="col">
-                      <input type="password" id="token" class="form-control" placeholder="粘贴管理令牌" />
+                  <div class="row g-3">
+                    <div class="col-6 col-md-2">
+                      <label class="form-label">数量（1~100）</label>
+                      <input type="number" id="count" class="form-control" value="5" min="1" max="100" />
                     </div>
-                    <div class="col-auto">
-                      <button class="btn btn-primary" onclick="saveToken()">验证并保存</button>
+                    <div class="col-6 col-md-2">
+                      <label class="form-label">每码设备数</label>
+                      <input type="number" id="maxDevices" class="form-control" value="3" min="1" max="10" />
                     </div>
-                    <div class="col-auto">
-                      <button class="btn" onclick="clearToken()">清除</button>
+                    <div class="col-6 col-md-2">
+                      <label class="form-label">有效期（天）</label>
+                      <input type="number" id="validDays" class="form-control" value="0" min="0" max="3650" />
+                      <div class="form-hint">0 = 永久有效</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                      <label class="form-label">备注</label>
+                      <input type="text" id="note" class="form-control" placeholder="如：面包多订单" />
+                    </div>
+                    <div class="col-12 col-md-3 d-flex align-items-start pt-4">
+                      <button class="btn btn-primary w-100" onclick="generate()">生成</button>
                     </div>
                   </div>
-                  <div id="tokenMsg" class="mt-2"></div>
+                  <div id="newCodes" class="mt-3"></div>
                 </div>
               </div>
             </div>
 
-            <div id="panel" style="display:none" class="col-12">
-              <div class="row row-cards">
-
-                <div class="col-12">
-                  <div class="card">
-                    <div class="card-header"><h3 class="card-title">生成激活码</h3></div>
-                    <div class="card-body">
-                      <div class="row g-3">
-                        <div class="col-6 col-md-3">
-                          <label class="form-label">数量（1~100）</label>
-                          <input type="number" id="count" class="form-control" value="5" min="1" max="100" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                          <label class="form-label">每码设备数（1~10）</label>
-                          <input type="number" id="maxDevices" class="form-control" value="3" min="1" max="10" />
-                        </div>
-                        <div class="col-12 col-md-4">
-                          <label class="form-label">备注</label>
-                          <input type="text" id="note" class="form-control" placeholder="如：面包多订单" />
-                        </div>
-                        <div class="col-12 col-md-2 d-flex align-items-end">
-                          <button class="btn btn-primary w-100" onclick="generate()">生成</button>
-                        </div>
-                      </div>
-                      <div id="newCodes" class="mt-3"></div>
-                    </div>
-                  </div>
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">全部激活码</h3>
+                  <span class="ms-2 text-secondary" id="total"></span>
                 </div>
-
-                <div class="col-12">
-                  <div class="card">
-                    <div class="card-header">
-                      <h3 class="card-title">全部激活码</h3>
-                      <span class="ms-2 text-secondary" id="total"></span>
-                    </div>
-                    <div class="table-responsive">
-                      <table class="table table-vcenter card-table table-hover">
-                        <thead>
-                          <tr>
-                            <th>激活码</th>
-                            <th>设备绑定</th>
-                            <th>备注</th>
-                            <th>生成时间</th>
-                            <th class="w-1"></th>
-                          </tr>
-                        </thead>
-                        <tbody id="list"></tbody>
-                      </table>
-                    </div>
-                    <div class="card-body text-secondary text-center" id="empty" style="display:none">
-                      还没有激活码，先在上方生成吧
-                    </div>
-                  </div>
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover">
+                    <thead>
+                      <tr>
+                        <th>激活码</th>
+                        <th>设备绑定</th>
+                        <th>备注</th>
+                        <th>生成时间</th>
+                        <th>过期时间</th>
+                        <th class="w-1"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="list"></tbody>
+                  </table>
                 </div>
-
+                <div class="card-body text-secondary text-center" id="empty" style="display:none">
+                  还没有激活码，先在上方生成吧
+                </div>
               </div>
             </div>
 
@@ -129,22 +113,22 @@
   </div>
 
   <script>
-    const tokenInput = document.getElementById('token');
-    tokenInput.value = localStorage.getItem('petAdminToken') || '';
-    if (tokenInput.value) loadList();
-
-    function token() { return tokenInput.value.trim(); }
-
     function esc(s) {
       return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
       ));
     }
 
-    function setTokenMsg(html, ok) {
-      document.getElementById('tokenMsg').innerHTML = html
-        ? '<div class="alert ' + (ok ? 'alert-success' : 'alert-danger') + ' mb-0 py-2">' + html + '</div>'
-        : '';
+    function session() { return localStorage.getItem('petAdminSession') || ''; }
+
+    async function logout() {
+      const token = session();
+      localStorage.removeItem('petAdminSession');
+      localStorage.removeItem('petAdminSessionExp');
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Session-Token': token } });
+      } catch (e) { /* 忽略网络异常 */ }
+      location.href = '/admin/login';
     }
 
     function copyCode(text, btn) {
@@ -156,8 +140,13 @@
 
     async function api(path, options) {
       const resp = await fetch(path, Object.assign({
-        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token() }
+        headers: { 'Content-Type': 'application/json', 'X-Session-Token': session() }
       }, options));
+      if (resp.status === 401) {
+        localStorage.removeItem('petAdminSession');
+        location.replace('/admin/login');
+        throw new Error('登录已失效，请重新登录');
+      }
       let json = null;
       try { json = await resp.json(); } catch (e) { json = null; }
       if (!json) throw new Error('HTTP ' + resp.status + '（服务未响应或返回异常）');
@@ -166,39 +155,13 @@
     }
 
     async function loadList() {
-      const status = document.getElementById('status');
-      if (!token()) {
-        document.getElementById('panel').style.display = 'none';
-        status.textContent = '未登录：请填写管理令牌';
-        setTokenMsg('');
-        return;
-      }
       try {
         const data = await api('/api/admin/codes');
-        document.getElementById('panel').style.display = '';
-        status.textContent = '已登录 · 更新于 ' + new Date().toLocaleTimeString('zh-CN');
-        setTokenMsg('令牌有效 ✓', true);
+        document.getElementById('status').textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
         render(data.codes || []);
       } catch (e) {
-        document.getElementById('panel').style.display = 'none';
-        status.textContent = '加载失败：' + e.message;
-        setTokenMsg('验证失败：' + esc(e.message) +
-          '<br>请确认令牌与服务端 PETSERVER_ADMIN_TOKEN 完全一致', false);
+        document.getElementById('status').textContent = '加载失败：' + e.message;
       }
-    }
-
-    function saveToken() {
-      localStorage.setItem('petAdminToken', token());
-      setTokenMsg('');
-      loadList();
-    }
-
-    function clearToken() {
-      localStorage.removeItem('petAdminToken');
-      tokenInput.value = '';
-      document.getElementById('panel').style.display = 'none';
-      document.getElementById('status').textContent = '未登录：请填写管理令牌';
-      setTokenMsg('');
     }
 
     async function generate() {
@@ -209,6 +172,7 @@
           body: JSON.stringify({
             count: parseInt(document.getElementById('count').value, 10),
             maxDevices: parseInt(document.getElementById('maxDevices').value, 10),
+            validDays: parseInt(document.getElementById('validDays').value, 10) || 0,
             note: document.getElementById('note').value.trim()
           })
         });
@@ -220,6 +184,16 @@
       } catch (e) {
         box.innerHTML = '<div class="alert alert-danger mb-0">' + esc(e.message) + '</div>';
       }
+    }
+
+    function expiryCell(c) {
+      if (!c.expiresAt) return '<span class="badge bg-blue-lt">永久</span>';
+      const exp = new Date(c.expiresAt);
+      const expired = exp.getTime() < Date.now();
+      const text = exp.toLocaleString('zh-CN');
+      return expired
+        ? '<span class="badge bg-red-lt">已过期</span> <span class="text-secondary">' + text + '</span>'
+        : '<span class="badge bg-green-lt">有效</span> <span class="text-secondary">' + text + '</span>';
     }
 
     function render(codes) {
@@ -240,11 +214,14 @@
             '<td><span title="' + (devTitle || '暂无绑定') + '">' + badge + '</span></td>' +
             '<td class="text-secondary">' + esc(c.note || '—') + '</td>' +
             '<td class="text-secondary">' + new Date(c.createdAt).toLocaleString('zh-CN') + '</td>' +
+            '<td>' + expiryCell(c) + '</td>' +
             '<td><button class="btn btn-sm btn-outline-primary" onclick="copyCode(\'' + esc(c.code) + '\', this)">复制</button></td>' +
           '</tr>'
         );
       }).join('');
     }
+
+    loadList();
   </script>
 </body>
 </html>

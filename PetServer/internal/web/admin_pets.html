@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>在线宠物 · cute pet 后台</title>
   <link rel="stylesheet" href="/static/tabler.min.css" />
+  <script>
+    if (!localStorage.getItem('petAdminSession')) location.replace('/admin/login');
+  </script>
 </head>
 <body class="antialiased">
   <div class="page">
@@ -15,6 +18,7 @@
           <a class="nav-link active fw-bold" href="/admin">在线宠物</a>
           <a class="nav-link" href="/admin/codes">激活码管理</a>
           <a class="nav-link" href="/online" target="_blank">手机版</a>
+          <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
         </div>
       </div>
     </header>
@@ -24,7 +28,7 @@
         <div class="container-xl">
           <div class="row g-2 align-items-center">
             <div class="col">
-              <h2 class="page-title">在线宠物</h2>
+              <h2 class="page-title">小猫在线列表</h2>
               <div class="text-secondary mt-1" id="status">正在连接服务器…</div>
             </div>
           </div>
@@ -90,6 +94,16 @@
   </div>
 
   <script>
+    async function logout() {
+      const token = localStorage.getItem('petAdminSession');
+      localStorage.removeItem('petAdminSession');
+      localStorage.removeItem('petAdminSessionExp');
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Session-Token': token || '' } });
+      } catch (e) { /* 忽略网络异常 */ }
+      location.href = '/admin/login';
+    }
+
     const STATE = {
       focus: { face: '📚', label: '专注' },
       idel:  { face: '😸', label: '休闲' },

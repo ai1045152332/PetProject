@@ -13,6 +13,11 @@ var OnlinePage []byte
 //go:embed admin_pets.html
 var AdminPetsPage []byte
 
+// AdminLoginPage 后台管理：登录页
+//
+//go:embed admin_login.html
+var AdminLoginPage []byte
+
 // AdminCodesPage 后台管理：激活码管理页
 //
 //go:embed admin_codes.html

@@ -86,6 +86,8 @@ final class DictionaryService: @unchecked Sendable {
 
     /// 单词详情缓存（学习阶段预取落这里）
     private var detailCache: [String: WordDetail] = [:]
+    /// 例句增强已失败过的单词（同进程短路，避免每张卡片白等 Free Dictionary 超时）
+    private var exampleFailed: Set<String> = []
     /// 在途请求（同词并发合并为一次网络请求）
     private var inFlight: [String: Task<WordDetail?, Never>] = [:]
     /// 保护上面两个可变状态（类被多个 Task 并发访问）
@@ -122,6 +124,25 @@ final class DictionaryService: @unchecked Sendable {
     private func storeDetail(_ detail: WordDetail, forKey key: String) {
         lock.lock(); defer { lock.unlock() }
         detailCache[key] = detail
+    }
+
+    /// 异步拉到的例句回填到既有缓存项（不覆盖音标/发音）
+    private func attachExample(_ example: String, forKey key: String) {
+        lock.lock(); defer { lock.unlock() }
+        guard var detail = detailCache[key] else { return }
+        detail.example = example
+        detailCache[key] = detail
+    }
+
+    /// 该词是否已有过例句增强失败记录
+    private func isExampleFailed(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return exampleFailed.contains(key)
+    }
+
+    private func markExampleFailed(_ key: String) {
+        lock.lock(); defer { lock.unlock() }
+        exampleFailed.insert(key)
     }
 
     // MARK: - 缓存读取（同步，考试阶段用）
@@ -162,15 +183,24 @@ final class DictionaryService: @unchecked Sendable {
     }
 
     /// 真正的网络请求 + 解析（结果写入缓存）
-    /// 链路：有道（音标+发音，国内快）→ Free Dictionary 例句增强 → Free Dictionary 整体兜底
+    /// 链路：有道（音标+发音，国内快，~150ms）→ 例句增强异步后台补充，不阻塞音标返回；
+    /// 有道整体失败时才用 Free Dictionary 兜底
     private func requestWordDetail(key: String) async -> WordDetail? {
-        if var detail = await requestYoudaoDetail(key: key) {
-            // 例句增强：有道已不开放免费例句，Free Dictionary 部分网络可达；
-            // 短超时、静默失败，拿不到不影响音标/发音
-            if detail.firstExample == nil {
-                detail.example = await fetchFreeDictExample(key: key)
-            }
+        if let detail = await requestYoudaoDetail(key: key) {
+            // 音标先行：立刻入缓存并返回，避免卡片等例句超时而延迟热更新
             storeDetail(detail, forKey: key)
+            // 例句增强：有道不开放免费例句，Free Dictionary 部分网络不可达；
+            // 改为后台异步补充，拉到后回填缓存，失败则短路该词后续重试
+            if detail.firstExample == nil && !isExampleFailed(key) {
+                Task(priority: .utility) { [weak self] in
+                    guard let self else { return }
+                    if let example = await self.fetchFreeDictExample(key: key) {
+                        self.attachExample(example, forKey: key)
+                    } else {
+                        self.markExampleFailed(key)
+                    }
+                }
+            }
             return detail
         }
 
@@ -378,6 +408,7 @@ final class DictionaryService: @unchecked Sendable {
     func clearCache() {
         lock.lock(); defer { lock.unlock() }
         detailCache.removeAll()
+        exampleFailed.removeAll()
         FileLogger.log("[DictionaryService] 缓存已清空")
     }
 

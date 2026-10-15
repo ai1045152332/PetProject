@@ -50,8 +50,17 @@ func main() {
 	accessSvc := service.NewAccessService(activationStore)
 	accessCtrl := controller.NewAccessController(accessSvc)
 	pingCtrl := controller.NewPingController()
-	adminCtrl := controller.NewAdminController(accessSvc, os.Getenv("PETSERVER_ADMIN_TOKEN"))
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl)
+	// 管理后台账号密码：PETSERVER_ADMIN_USER（默认 admin）+ PETSERVER_ADMIN_PASSWORD
+	// 兼容旧的 PETSERVER_ADMIN_TOKEN（作为密码来源）
+	adminUser := os.Getenv("PETSERVER_ADMIN_USER")
+	adminPass := os.Getenv("PETSERVER_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = os.Getenv("PETSERVER_ADMIN_TOKEN")
+	}
+	authSvc := service.NewAuthService(adminUser, adminPass)
+	authCtrl := controller.NewAuthController(authSvc)
+	adminCtrl := controller.NewAdminController(accessSvc, authSvc)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

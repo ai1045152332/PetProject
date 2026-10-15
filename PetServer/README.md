@@ -36,8 +36,10 @@ launchd 运行时为 `PetServer/`）。同时内存中按主机名维护每台�
 | `POST /api/admin/codes/generate` | 管理：生成激活码（需 `X-Admin-Token`） |
 | `GET /api/admin/codes` | 管理：激活码列表（需 `X-Admin-Token`） |
 | `GET /online`（或 `/`） | H5 在线宠物列表页，手机浏览器直接访问 |
-| `GET /admin` | 后台管理：在线宠物（Tabler UI） |
-| `GET /admin/codes` | 后台管理：激活码管理（需在页面填管理令牌） |
+| `POST /api/admin/login` | 后台登录（账号密码，返回 24h 会话令牌） |
+| `GET /admin/login` | 后台登录页 |
+| `GET /admin` | 后台菜单一：小猫在线列表（Tabler UI） |
+| `GET /admin/codes` | 后台菜单二：激活码管理（含有效期/过期时间） |
 
 > 在线判定：App 每 1 分钟上报一次心跳，最近 3 分钟内有心跳视为在线。
 > H5 页面通过 `go:embed` 内置在二进制中，与 `/api/devices` 同源，无需额外部署或处理跨域。

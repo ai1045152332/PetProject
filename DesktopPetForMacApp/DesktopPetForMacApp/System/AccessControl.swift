@@ -25,6 +25,7 @@ enum AccessControl {
     enum UnlockResult {
         case success        // 解锁成功
         case invalidCode    // 校验码错误
+        case expired        // 激活码已过期
         case deviceLimit    // 该码绑定设备数已达上限
         case networkError   // 网络/服务异常
     }
@@ -111,7 +112,11 @@ enum AccessControl {
                 if valid {
                     result = .success
                 } else {
-                    result = (dataDict["reason"] as? String) == "device_limit" ? .deviceLimit : .invalidCode
+                    switch dataDict["reason"] as? String {
+                    case "device_limit": result = .deviceLimit
+                    case "expired":      result = .expired
+                    default:             result = .invalidCode
+                    }
                 }
             } else {
                 FileLogger.log("[Access] 校验码远程验证响应解析失败: \(String(data: data ?? Data(), encoding: .utf8) ?? "nil")")

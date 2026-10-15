@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 · cute pet 后台</title>
+  <link rel="stylesheet" href="/static/tabler.min.css" />
+</head>
+<body class="antialiased border-top-wide border-primary d-flex flex-column">
+  <div class="page page-center">
+    <div class="container-tight py-4">
+      <div class="text-center mb-4">
+        <div class="h1">🐾</div>
+        <div class="h2">cute pet 后台管理</div>
+        <div class="text-secondary">登录后可管理激活码与查看在线小猫</div>
+      </div>
+      <div class="card card-md">
+        <div class="card-body">
+          <h2 class="card-title text-center mb-4">管理员登录</h2>
+          <div class="mb-3">
+            <label class="form-label">账号</label>
+            <input type="text" id="username" class="form-control" value="admin" autofocus />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">密码</label>
+            <input type="password" id="password" class="form-control" placeholder="请输入密码" />
+          </div>
+          <div id="msg" class="mb-2"></div>
+          <div class="form-footer">
+            <button class="btn btn-primary w-100" onclick="doLogin()">登录</button>
+          </div>
+        </div>
+      </div>
+      <div class="text-center text-secondary mt-3">
+        账号密码由服务端 <code>PETSERVER_ADMIN_USER</code> / <code>PETSERVER_ADMIN_PASSWORD</code> 配置
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const user = document.getElementById('username');
+    const pwd = document.getElementById('password');
+    user.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
+    pwd.addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
+
+    function showMsg(text, ok) {
+      document.getElementById('msg').innerHTML = text
+        ? '<div class="alert ' + (ok ? 'alert-success' : 'alert-danger') + ' mb-0 py-2">' + text + '</div>'
+        : '';
+    }
+
+    async function doLogin() {
+      const username = user.value.trim();
+      const password = pwd.value.trim();
+      if (!username || !password) { showMsg('请输入账号和密码', false); return; }
+      try {
+        const resp = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || ('HTTP ' + resp.status));
+        localStorage.setItem('petAdminSession', json.data.token);
+        localStorage.setItem('petAdminSessionExp', json.data.expiresAt);
+        showMsg('登录成功，正在跳转…', true);
+        location.href = '/admin';
+      } catch (e) {
+        localStorage.removeItem('petAdminSession');
+        showMsg('登录失败：' + e.message, false);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,6 +1,13 @@
 import AppKit
 import WebKit
 
+/// 接受 first mouse 的 WKWebView：
+/// App 不在前台时，对窗口的首次点击默认只用于激活 App、不传给网页内容
+/// （表现为小游戏窗口不在最前时 ✕ 要点两次）。重写后首次点击直接生效。
+class FirstMouseWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// 基于 WKWebView 的自定义弹窗窗口（支持自适应高度 + 输入模式）
 class HTMLAlertWindow: NSWindow {
     override var canBecomeKey: Bool { true }
@@ -810,7 +817,7 @@ class HTMLAlertWindow: NSWindow {
         let userScript = WKUserScript(source: linkInterceptor, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         config.userContentController.addUserScript(userScript)
 
-        webView = WKWebView(frame: self.contentView?.bounds ?? .zero, configuration: config)
+        webView = FirstMouseWebView(frame: self.contentView?.bounds ?? .zero, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
@@ -959,7 +966,8 @@ class HTMLAlertWindow: NSWindow {
             self.isOpaque = false
             self.hasShadow = false
         }
-        self.level = .modalPanel
+        // 普通层级：切到其他 App 时窗口可正常落到后面（modalPanel 会一直浮在所有 App 之上）
+        self.level = .normal
         self.isReleasedWhenClosed = false
     }
 }

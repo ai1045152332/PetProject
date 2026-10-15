@@ -47,14 +47,13 @@ func New(
 	})
 	// 内置静态资源（Tabler 样式等，与接口同源）
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
-	// 根路径也直接展示列表页，方便手机扫码/输入 IP 访问
+	// 根路径跳转后台管理（手机版在线宠物页保留在 /online）
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(web.OnlinePage)
+		http.Redirect(w, r, "/admin", http.StatusFound)
 	})
 	return mux
 }

@@ -17,6 +17,7 @@ func New(
 	adminCtrl *controller.AdminController,
 	authCtrl *controller.AuthController,
 	cryptoCtrl *controller.CryptoController,
+	releaseCtrl *controller.ReleaseController,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
@@ -30,6 +31,8 @@ func New(
 	mux.HandleFunc("/api/admin/login", authCtrl.Login)
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)
+	mux.HandleFunc("/api/app/latest", releaseCtrl.Latest)
+	mux.HandleFunc("/download/", releaseCtrl.Download)
 
 	// H5 在线宠物列表页（内置静态页面，与接口同源，免跨域）
 	mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {

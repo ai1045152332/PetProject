@@ -120,6 +120,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 8. 启动心跳上报（每 1 分钟向 Go 后端上报本机信息、版本号与宠物状态）
         HeartbeatService.shared.attach(viewModel: vm)
         HeartbeatService.shared.start()
+        
+        // 9. 启动自动更新检查（启动后延迟检查，之后每 6 小时一次）
+        UpdateService.shared.start()
 
         // 8.5 系统勿扰/专注模式单向跟随（只读检测，不改变系统状态）：
         // 系统勿扰开启 → 小猫切专注；退出 → 小猫回休闲

@@ -79,10 +79,13 @@ func main() {
 	}
 
 	accessCtrl := controller.NewAccessController(accessSvc, keyPair)
+	releaseSvc := service.NewReleaseService("dist")
+	releaseCtrl := controller.NewReleaseController(releaseSvc)
+
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

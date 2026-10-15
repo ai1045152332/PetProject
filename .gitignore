@@ -34,3 +34,6 @@ PetServer/petserver
 PetServer/data/
 # Go 测试性能分析产物
 PetServer/*.out
+
+# 发布产物（本地生成，不入库）
+DesktopPetForMacApp/dist/

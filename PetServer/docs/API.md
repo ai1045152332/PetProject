@@ -418,7 +418,62 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 | 会话失效/凭证缺失 | 401 | `{"code":401,"msg":"unauthorized"}` |
 | 参数非法 | 400 | `{"code":400,"msg":"count must be 1~100"}` |
 
-## 4. 后台页面
+## 4. App 更新接口
+
+### 4.1 查询最新版本
+
+```
+GET /api/app/latest
+```
+
+响应（无发布版本时返回 404 `no release published`）：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "version": "v1.0.002",
+    "file": "cute-pet-v1.0.002.zip",
+    "sha256": "674d566d8bff...",
+    "signature": "4ygrNyMoV5UoP0q/...",
+    "notes": "更新说明",
+    "publishedAt": "2026-10-15T16:12:00+08:00",
+    "size": 3634932,
+    "minOS": "13.0"
+  }
+}
+```
+
+- `signature`：Ed25519 签名（base64），**签名对象为 `sha256` 的十六进制字符串**
+- 客户端必须先比对 sha256，再用内置公钥验签，任一不通过都不得安装
+
+### 4.2 下载安装包
+
+```
+GET /download/<file>
+```
+
+返回 zip（`Content-Type: application/zip`，支持断点续传）。仅允许访问 dist 目录内的文件。
+
+### 4.3 发布流程
+
+发布在开发者本机执行（私钥不出本机）：
+
+```bash
+cd DesktopPetForMacApp
+./release.sh v1.0.002 "本次更新说明"
+```
+
+脚本依次完成：写入版本号（AppVersion.swift + Info.plist）→ 编译打包（签名）
+→ 压缩 zip → 计算 sha256 → Ed25519 签名 → 生成 latest.json → 上传到
+`/opt/petserver/dist/`。
+
+> ⚠️ 签名私钥位于 `~/.cute-pet-release/ed25519_private.pem`，**丢失后无法再发布可被
+> 已装客户端接受的更新**（客户端内置的对应公钥不可更改，只能强制用户重装）。
+> 公钥内嵌在 `DesktopPetForMacApp/DesktopPetForMacApp/Services/UpdateService.swift`。
+
+## 5. 后台页面
 
 | 路径 | 说明 |
 | --- | --- |

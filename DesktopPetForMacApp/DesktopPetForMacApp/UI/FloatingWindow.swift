@@ -736,6 +736,10 @@ class CatView: NSView {
     @objc private func todoAction(_ sender: NSMenuItem) { showTodoList() }
     @objc private func stockAction(_ sender: NSMenuItem) { showStockInput() }
 
+    @objc private func checkUpdateAction(_ sender: NSMenuItem) {
+        UpdateService.shared.checkForUpdate(userInitiated: true)
+    }
+
     // MARK: - 天气查询
 
     /// 显示天气查询弹窗（默认本地天气，输入城市后同窗口切换）

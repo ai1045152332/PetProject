@@ -37,6 +37,8 @@ launchd 运行时为 `PetServer/`）。同时内存中按主机名维护每台�
 | `GET /api/admin/codes` | 管理：激活码列表（需 `X-Admin-Token`） |
 | `GET /online`（或 `/`） | H5 在线宠物列表页，手机浏览器直接访问 |
 | `POST /api/admin/login` | 后台登录（账号密码，返回 24h 会话令牌） |
+| `GET /api/app/latest` | 客户端检查更新（版本/sha256/Ed25519 签名） |
+| `GET /download/<file>` | 下载 App 安装包（zip） |
 | `GET /admin/login` | 后台登录页 |
 | `GET /admin` | 后台菜单一：小猫在线列表（Tabler UI） |
 | `GET /admin/codes` | 后台菜单二：激活码管理（含有效期/过期时间） |

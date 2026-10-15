@@ -88,15 +88,23 @@ cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$CONTENTS/Info.plist"
 
-# ── 5. 拷贝到桌面 ───────────────────────────────────────────────
+# ── 5. 签名 ─────────────────────────────────────────────────────
+echo "🔏 重新签名…"
+codesign --force --deep --sign - "$APP_BUNDLE"
+xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+
+# 发布场景（SKIP_DESKTOP_COPY=1）只产出工程内 .app，不动桌面那份
+if [ "${SKIP_DESKTOP_COPY:-0}" = "1" ]; then
+    echo "⏭️  跳过桌面拷贝（发布模式）"
+    echo ""
+    echo "✅ 打包完成（仅工程内）：$APP_BUNDLE"
+    exit 0
+fi
+
+# ── 6. 拷贝到桌面 ───────────────────────────────────────────────
 echo "📦 拷贝到桌面…"
 cp -R "$APP_BUNDLE" "$DEST_APP"
-
-# ── 6. 重新签名（修复 Gatekeeper 签名不匹配问题）─────────────────
-echo "🔏 重新签名…"
 codesign --force --deep --sign - "$DEST_APP"
-
-# 清理来源标记（避免 quarantine 属性导致无法打开）
 xattr -cr "$DEST_APP" 2>/dev/null || true
 
 # ── 7. 清掉旧编译残留（可选） ───────────────────────────────────

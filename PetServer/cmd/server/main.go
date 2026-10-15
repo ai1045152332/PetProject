@@ -45,7 +45,11 @@ func main() {
 	}
 	defer store.Close()
 
-	heartbeatSvc := service.NewHeartbeatService(store)
+	snapshotStore, err := storage.NewDeviceSnapshotStore("data/devices.json")
+	if err != nil {
+		log.Fatalf("初始化设备快照存储失败: %v", err)
+	}
+	heartbeatSvc := service.NewHeartbeatService(store, snapshotStore)
 	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc)
 
 	noteStore, err := storage.NewDeviceNoteStore("data/device_notes.json")

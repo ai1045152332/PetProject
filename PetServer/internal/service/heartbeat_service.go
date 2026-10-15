@@ -16,16 +16,56 @@ const onlineThreshold = 3 * time.Minute
 
 // HeartbeatService 处理心跳相关业务：登记设备最近心跳
 type HeartbeatService struct {
-	mu      sync.RWMutex
-	devices map[string]model.Device // key: 主机名
-	store   *storage.HeartbeatStore
+	mu       sync.RWMutex
+	devices  map[string]model.Device // key: 主机名
+	store    *storage.HeartbeatStore
+	snapshot *storage.DeviceSnapshotStore // 设备快照：重启后恢复列表
 }
 
-// NewHeartbeatService 创建心跳服务实例
-func NewHeartbeatService(store *storage.HeartbeatStore) *HeartbeatService {
-	return &HeartbeatService{
-		devices: make(map[string]model.Device),
-		store:   store,
+// NewHeartbeatService 创建心跳服务实例，并从快照恢复已知设备
+// （内存列表是易失的，重启/重新部署后靠快照立即恢复，无需等设备重新上报）
+func NewHeartbeatService(store *storage.HeartbeatStore, snapshot *storage.DeviceSnapshotStore) *HeartbeatService {
+	svc := &HeartbeatService{
+		devices:  make(map[string]model.Device),
+		store:    store,
+		snapshot: snapshot,
+	}
+	svc.restoreFromSnapshot()
+	return svc
+}
+
+// restoreFromSnapshot 启动时恢复设备列表
+func (s *HeartbeatService) restoreFromSnapshot() {
+	if s.snapshot == nil {
+		return
+	}
+	devices, err := s.snapshot.Load()
+	if err != nil {
+		log.Printf("[heartbeat] 设备快照读取失败，忽略: %v", err)
+		return
+	}
+	for hostname, d := range devices {
+		s.devices[hostname] = d
+	}
+	if len(devices) > 0 {
+		log.Printf("[heartbeat] 已从快照恢复 %d 台设备（重启不丢设备列表）", len(devices))
+	}
+}
+
+// persistSnapshot 保存设备快照（写失败不影响主流程）
+func (s *HeartbeatService) persistSnapshot() {
+	if s.snapshot == nil {
+		return
+	}
+	s.mu.RLock()
+	snapshotCopy := make(map[string]model.Device, len(s.devices))
+	for k, v := range s.devices {
+		snapshotCopy[k] = v
+	}
+	s.mu.RUnlock()
+
+	if err := s.snapshot.Save(snapshotCopy); err != nil {
+		log.Printf("[heartbeat] 设备快照保存失败: %v", err)
 	}
 }
 
@@ -44,6 +84,8 @@ func (s *HeartbeatService) Record(h model.Heartbeat) model.Device {
 	if err := s.store.Append(device); err != nil {
 		log.Printf("[heartbeat] 持久化失败: %v", err)
 	}
+	// 更新设备快照（重启后设备列表不丢）
+	s.persistSnapshot()
 
 	log.Printf("[heartbeat] %s | version=%s os=%s machine=%s pet=%s state=%s",
 		h.Hostname, h.Version, h.OS, h.Machine, h.PetName, h.PetState)

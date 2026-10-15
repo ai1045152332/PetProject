@@ -20,8 +20,18 @@ PetServer/
 
 ## 数据存储
 
-每条心跳以 JSON Lines 追加到 `data/heartbeats.jsonl`（相对服务的工作目录，
-launchd 运行时为 `PetServer/`）。同时内存中按主机名维护每台设备的最近心跳。
+所有状态都落在服务端工作目录的 `data/`（公网部署为 `/opt/petserver/data/`），重启/重新部署不丢：
+
+| 文件 | 内容 | 说明 |
+| --- | --- | --- |
+| `heartbeats.jsonl` | 心跳日志（JSON Lines） | 每 5 分钟清理一次过期条目 |
+| `devices.json` | 设备快照（主机名 → 最后心跳） | **重启后设备列表立即恢复**，无需等设备重新上报；30 天未上报自动丢弃 |
+| `device_notes.json` | 设备备注 | 管理端维护，如使用人/部门 |
+| `activation_codes.json` | 激活码（含设备绑定、有效期） | — |
+| `sessions.json` | 管理后台登录会话 | 重启后登录态不丢 |
+| `private_key.pem` | 载荷加密 RSA 私钥（0600） | 首次启动自动生成 |
+
+发布物在 `dist/`（`latest.json` + 各版本 zip），由 `DesktopPetForMacApp/release.sh` 上传。
 
 ## 接口
 

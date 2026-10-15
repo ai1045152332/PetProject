@@ -212,6 +212,12 @@ class CatView: NSView {
             // 点击恢复 focus（从 warn 状态回来）
             viewModel?.transitionTo(.focus)
             
+            // 点击小猫：把小猫窗口及其相关弹窗（Todo/天气/做题等）全部放到最前
+            windowRef?.orderFrontRegardless()
+            for w in NSApp.windows where w is HTMLAlertWindow {
+                w.orderFrontRegardless()
+            }
+
             // 双击展示 Todo 清单
             if event.clickCount == 2 {
                 showTodoList()

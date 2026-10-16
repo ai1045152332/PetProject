@@ -70,6 +70,12 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var clearAccessBtn: NSButton?
     /// 通用设置 > 版本的「检查更新」按钮
     private weak var checkUpdateBtn: NSButton?
+    /// 提醒设置 > 天气提醒控件
+    private weak var weatherToggle: ToggleSwitch?
+    private weak var weatherTimeField: NSTextField?
+    private weak var weatherCityField: NSTextField?
+    private weak var weatherPreviewBtn: NSButton?
+    private weak var weatherDescLabel: NSTextField?
 
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
@@ -98,6 +104,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.refreshAccessUI()
+            self?.refreshWeatherControls()
         }
     }
 
@@ -509,7 +516,7 @@ let arw = accessRow.bounds.width
         titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
         container.addSubview(titleLbl)
 
-        let descLbl = NSTextField(labelWithString: "设置喝水提醒的时间间隔")
+        let descLbl = NSTextField(labelWithString: "喝水提醒与每日天气提醒")
         descLbl.font = .systemFont(ofSize: 11)
         descLbl.textColor = .tertiaryLabelColor
         descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
@@ -519,8 +526,8 @@ let arw = accessRow.bounds.width
         divider.boxType = .separator
         divider.autoresizingMask = .width
         container.addSubview(divider)
-        
-        // ── 垂直堆栈：各行间距自动管理，避免手算坐标导致重叠 ──
+
+        // ── 垂直堆栈：各行间距自动管理 ──
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.spacing = 14
@@ -532,7 +539,6 @@ let arw = accessRow.bounds.width
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16)
         ])
 
-        /// 堆栈内行容器：固定高度、自动铺满堆栈宽度
         func makeStackRow(height: CGFloat) -> NSView {
             let row = NSView(frame: NSRect(x: 0, y: 0, width: cw - 32, height: height))
             row.wantsLayer = true
@@ -548,53 +554,39 @@ let arw = accessRow.bounds.width
             return row
         }
 
-        let presets = [15, 30, 45, 60]
+        // ═══ 卡片 1：喝水提醒（预设 + 自定义合并为一行）═══
+        let waterCard = makeStackRow(height: 104)
+        let wcw = waterCard.bounds.width
+
+        let waterTitle = NSTextField(labelWithString: "喝水提醒")
+        waterTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        waterTitle.textColor = .labelColor
+        waterTitle.frame = NSRect(x: 14, y: 74, width: 200, height: 18)
+        waterCard.addSubview(waterTitle)
+
+        let waterDesc = NSTextField(labelWithString: "每隔一段时间提醒你起身喝水")
+        waterDesc.font = .systemFont(ofSize: 11)
+        waterDesc.textColor = .tertiaryLabelColor
+        waterDesc.frame = NSRect(x: 14, y: 56, width: 260, height: 15)
+        waterCard.addSubview(waterDesc)
+
         let currentInterval = viewModel?.reminderInterval ?? PetViewModel.defaultReminderInterval
-
-        // 条目 1：提醒间隔标题行（左标题 + 右当前值）
-        let intervalRow = makeStackRow(height: 48)
-
-        let presetLabel = NSTextField(labelWithString: "提醒间隔")
-        presetLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        presetLabel.textColor = .labelColor
-        presetLabel.frame = NSRect(x: 14, y: 24, width: 120, height: 18)
-        intervalRow.addSubview(presetLabel)
-
-        let presetDesc = NSTextField(labelWithString: "选择或输入喝水提醒频率")
-        presetDesc.font = .systemFont(ofSize: 11)
-        presetDesc.textColor = .tertiaryLabelColor
-        presetDesc.frame = NSRect(x: 14, y: 6, width: 200, height: 15)
-        intervalRow.addSubview(presetDesc)
-
-        // 当前生效的提醒间隔（预设高亮不直观，自定义间隔时更需显示）
-        let irw = intervalRow.bounds.width
         let currentLabel = NSTextField(labelWithString: "当前：\(currentInterval) 分钟")
         currentLabel.font = .systemFont(ofSize: 12, weight: .medium)
         currentLabel.textColor = .controlAccentColor
         currentLabel.alignment = .right
-        currentLabel.frame = NSRect(x: irw - 16 - 140, y: 15, width: 140, height: 18)
+        currentLabel.frame = NSRect(x: wcw - 16 - 140, y: 70, width: 140, height: 18)
         currentLabel.autoresizingMask = .minXMargin
-        intervalRow.addSubview(currentLabel)
+        waterCard.addSubview(currentLabel)
         currentIntervalLabel = currentLabel
 
-        // 条目 2：预设按钮行（按钮在 layout 时自动居中）
-        let btnW: CGFloat = 56
-        let btnH: CGFloat = 32
-        let btnGap: CGFloat = 10
-        let totalBtnsW = CGFloat(presets.count) * btnW + CGFloat(presets.count - 1) * btnGap
-
-        let btnRow = CenteredButtonContainer(frame: NSRect(x: 0, y: 0, width: cw - 32, height: 44))
-        btnRow.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(btnRow)
-        NSLayoutConstraint.activate([
-            btnRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            btnRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            btnRow.heightAnchor.constraint(equalToConstant: 44)
-        ])
-
-        var intervalBtns: [NSButton] = []
+        // 控制行：预设按钮 + 自定义输入 + 应用
+        let presets = [15, 30, 45, 60]
+        let presetW: CGFloat = 52
+        let ctrlH: CGFloat = 28
+        var px: CGFloat = 14
         for minutes in presets {
-            let btn = NSButton(frame: NSRect(x: 0, y: 6, width: btnW, height: btnH))
+            let btn = NSButton(frame: NSRect(x: px, y: 12, width: presetW, height: ctrlH))
             btn.title = "\(minutes)"
             btn.bezelStyle = .rounded
             btn.target = self
@@ -602,49 +594,139 @@ let arw = accessRow.bounds.width
             btn.tag = minutes
             btn.wantsLayer = true
             btn.layer?.cornerRadius = 8
-            btnRow.addSubview(btn)
+            waterCard.addSubview(btn)
             intervalButtons.append((minutes, btn))
-            intervalBtns.append(btn)
+            px += presetW + 8
         }
-        btnRow.configureButtons(intervalBtns, gap: btnGap, totalWidth: totalBtnsW, drawBackground: true)
 
-        refreshIntervalButtons(currentInterval: currentInterval)
+        let unitHint = NSTextField(labelWithString: "分钟")
+        unitHint.font = .systemFont(ofSize: 11)
+        unitHint.textColor = .tertiaryLabelColor
+        unitHint.frame = NSRect(x: px + 2, y: 18, width: 40, height: 15)
+        waterCard.addSubview(unitHint)
 
-        // 条目 3：自定义时间输入行
-        let customRow = makeStackRow(height: 48)
+        let applyW: CGFloat = 52
+        let applyBtn = NSButton(title: "应用", target: self, action: #selector(applyCustomInterval(_:)))
+        applyBtn.frame = NSRect(x: wcw - 16 - applyW, y: 12, width: applyW, height: ctrlH)
+        applyBtn.bezelStyle = .rounded
+        applyBtn.autoresizingMask = .minXMargin
+        waterCard.addSubview(applyBtn)
 
-        let customLabel = NSTextField(labelWithString: "自定义间隔")
-        customLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        customLabel.textColor = .labelColor
-        customLabel.frame = NSRect(x: 14, y: 24, width: 120, height: 18)
-        customRow.addSubview(customLabel)
-
-        let customDesc = NSTextField(labelWithString: "输入 1 ~ 120 之间的分钟数")
-        customDesc.font = .systemFont(ofSize: 11)
-        customDesc.textColor = .tertiaryLabelColor
-        customDesc.frame = NSRect(x: 14, y: 6, width: 180, height: 15)
-        customRow.addSubview(customDesc)
-
-        let fieldW: CGFloat = 70
-        let applyBtnW: CGFloat = 58
-        let right = customRow.bounds.width - 16
-        let field = NSTextField(frame: NSRect(x: right - applyBtnW - 8 - fieldW, y: 10, width: fieldW, height: 28))
+        let fieldW: CGFloat = 66
+        let field = NSTextField(frame: NSRect(x: wcw - 16 - applyW - 8 - fieldW, y: 12, width: fieldW, height: ctrlH))
         field.font = .systemFont(ofSize: 13)
         field.alignment = .center
         field.bezelStyle = .roundedBezel
-        field.placeholderString = "分钟"
+        field.placeholderString = "自定义"
         field.delegate = self
         field.autoresizingMask = .minXMargin
-        customRow.addSubview(field)
+        waterCard.addSubview(field)
         customIntervalField = field
 
-        let applyBtn = NSButton(title: "应用", target: self, action: #selector(applyCustomInterval(_:)))
-        applyBtn.frame = NSRect(x: right - applyBtnW, y: 10, width: applyBtnW, height: 28)
-        applyBtn.bezelStyle = .rounded
-        applyBtn.controlSize = .regular
-        applyBtn.keyEquivalent = "\r"
-        applyBtn.autoresizingMask = .minXMargin
-        customRow.addSubview(applyBtn)
+        refreshIntervalButtons(currentInterval: currentInterval)
+
+        // ═══ 卡片 2：天气提醒（仅解锁可用；天气接口按量付费）═══
+        let weatherCard = makeStackRow(height: 104)
+        let ecw = weatherCard.bounds.width
+
+        let weatherTitle = NSTextField(labelWithString: "天气提醒")
+        weatherTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        weatherTitle.textColor = .labelColor
+        weatherTitle.frame = NSRect(x: 14, y: 74, width: 200, height: 18)
+        weatherCard.addSubview(weatherTitle)
+
+        let weatherDesc = NSTextField(labelWithString: "")
+        weatherDesc.font = .systemFont(ofSize: 11)
+        weatherDesc.textColor = .tertiaryLabelColor
+        weatherDesc.frame = NSRect(x: 14, y: 56, width: ecw - 200, height: 15)
+        weatherCard.addSubview(weatherDesc)
+        weatherDescLabel = weatherDesc
+
+        let toggle = ToggleSwitch(frame: NSRect(x: ecw - 16 - 52, y: 70, width: 52, height: 26))
+        toggle.autoresizingMask = .minXMargin
+        toggle.isOn = WeatherReminderService.shared.isEnabled
+        toggle.onToggle = { [weak self] on in
+            guard AccessControl.isFullAccess else {
+                // 基础权限：不开启（天气接口付费），并提示解锁
+                WeatherReminderService.shared.isEnabled = false
+                self?.refreshWeatherControls()
+                self?.showWeatherUnlockHint()
+                return
+            }
+            WeatherReminderService.shared.isEnabled = on
+            self?.refreshWeatherControls()
+        }
+        weatherCard.addSubview(toggle)
+        weatherToggle = toggle
+
+        let timeField = NSTextField(frame: NSRect(x: 14, y: 12, width: 66, height: ctrlH))
+        timeField.font = .systemFont(ofSize: 13)
+        timeField.alignment = .center
+        timeField.bezelStyle = .roundedBezel
+        timeField.placeholderString = "08:00"
+        timeField.stringValue = WeatherReminderService.shared.timeText
+        timeField.delegate = self
+        weatherCard.addSubview(timeField)
+        weatherTimeField = timeField
+
+        let timeHint = NSTextField(labelWithString: "每天提醒时间")
+        timeHint.font = .systemFont(ofSize: 11)
+        timeHint.textColor = .tertiaryLabelColor
+        timeHint.frame = NSRect(x: 86, y: 18, width: 90, height: 15)
+        weatherCard.addSubview(timeHint)
+
+        let cityField = NSTextField(frame: NSRect(x: 186, y: 12, width: ecw - 186 - 16 - 52 - 12, height: ctrlH))
+        cityField.font = .systemFont(ofSize: 13)
+        cityField.placeholderString = "城市（留空按定位）"
+        cityField.stringValue = WeatherReminderService.shared.city
+        cityField.delegate = self
+        cityField.autoresizingMask = [.width]
+        weatherCard.addSubview(cityField)
+        weatherCityField = cityField
+
+        let previewBtn = NSButton(title: "预览", target: self, action: #selector(previewWeatherReminder(_:)))
+        previewBtn.frame = NSRect(x: ecw - 16 - 52, y: 12, width: 52, height: ctrlH)
+        previewBtn.bezelStyle = .rounded
+        previewBtn.autoresizingMask = .minXMargin
+        weatherCard.addSubview(previewBtn)
+        weatherPreviewBtn = previewBtn
+
+        refreshWeatherControls()
+    }
+
+    /// 天气提醒控件可用状态：基础权限全部置灰（天气接口按量付费）
+    private func refreshWeatherControls() {
+        let unlocked = AccessControl.isFullAccess
+        weatherToggle?.isEnabled = unlocked
+        weatherTimeField?.isEnabled = unlocked
+        weatherCityField?.isEnabled = unlocked
+        weatherPreviewBtn?.isEnabled = unlocked
+
+        if unlocked {
+            let on = WeatherReminderService.shared.isEnabled
+            weatherDescLabel?.stringValue = on
+                ? "每天 \(WeatherReminderService.shared.timeText) 提醒今天的天气"
+                : "打开开关后，每天定时提醒今天的天气"
+            weatherDescLabel?.textColor = .tertiaryLabelColor
+        } else {
+            weatherDescLabel?.stringValue = "需解锁全部功能后可用（天气接口按量付费）"
+            weatherDescLabel?.textColor = .systemOrange
+        }
+    }
+
+    private func showWeatherUnlockHint() {
+        let alert = NSAlert()
+        alert.messageText = "该功能需要解锁"
+        alert.informativeText = "天气提醒使用付费天气接口，请在「通用设置 → 权限」输入校验码解锁后使用。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    @objc private func previewWeatherReminder(_ sender: Any?) {
+        guard AccessControl.isFullAccess else { return }
+        WeatherReminderService.shared.deliver()
     }
 
     // MARK: - 提醒间隔操作
@@ -841,11 +923,54 @@ return row
     // MARK: - NSTextFieldDelegate（失焦时若仍处于编辑态则自动保存）
 
     func controlTextDidEndEditing(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, field === petNameField else { return }
-        // 仅当仍处于编辑态时保存（保存按钮内部已先置只读，不会重复触发）
-        if field.isEditable {
-            savePetName(nil)
+        guard let field = obj.object as? NSTextField else { return }
+
+        if field === petNameField {
+            // 仅当仍处于编辑态时保存（保存按钮内部已先置只读，不会重复触发）
+            if field.isEditable {
+                savePetName(nil)
+            }
+            return
         }
+
+        if field === weatherTimeField {
+            applyWeatherTime(field)
+            return
+        }
+
+        if field === weatherCityField {
+            WeatherReminderService.shared.city = field.stringValue
+            field.stringValue = WeatherReminderService.shared.city
+            FileLogger.log("[WeatherReminder] 城市设置为：\(field.stringValue.isEmpty ? "按定位" : field.stringValue)")
+            return
+        }
+    }
+
+    /// 解析并保存天气提醒时间（支持 8 / 8:30 / 08:30）
+    private func applyWeatherTime(_ field: NSTextField) {
+        let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+        let parts = text.split(separator: ":").map { Int($0) }
+        var hour: Int?
+        var minute: Int?
+
+        if parts.count == 2, let h = parts[0], let m = parts[1] {
+            hour = h
+            minute = m
+        } else if parts.count == 1, let h = parts[0] {
+            hour = h
+            minute = 0
+        }
+
+        guard let h = hour, let m = minute, (0...23).contains(h), (0...59).contains(m) else {
+            // 非法输入：还原为当前生效值
+            field.stringValue = WeatherReminderService.shared.timeText
+            return
+        }
+
+        WeatherReminderService.shared.hour = h
+        WeatherReminderService.shared.minute = m
+        field.stringValue = WeatherReminderService.shared.timeText
+        refreshWeatherControls()
     }
 
     // MARK: - 左侧导航
@@ -1082,6 +1207,11 @@ final class ToggleSwitch: NSView {
     }
     var onToggle: ((Bool) -> Void)?
 
+    /// 是否可交互（false 时置灰且不响应点击）
+    var isEnabled: Bool = true {
+        didSet { refresh(animated: false) }
+    }
+
     private let trackLayer = CALayer()
     private let thumbLayer = CALayer()
 
@@ -1103,6 +1233,7 @@ final class ToggleSwitch: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
         isOn.toggle()
         onToggle?(isOn)
     }
@@ -1118,14 +1249,15 @@ final class ToggleSwitch: NSView {
         // 轨道：圆角胶囊（绿 / 灰）
         trackLayer.frame = bounds
         trackLayer.cornerRadius = h / 2
-        trackLayer.backgroundColor = (isOn ? NSColor.systemGreen : NSColor.systemGray).cgColor
+        trackLayer.backgroundColor = (isOn ? NSColor.systemGreen : NSColor.systemGray)
+            .withAlphaComponent(isEnabled ? 1.0 : 0.4).cgColor
 
         // 滑块：白色圆钮，随开关左右移动
         let thumbSize = h - 6
         let x = isOn ? w - thumbSize - 3 : 3
         thumbLayer.frame = NSRect(x: x, y: 3, width: thumbSize, height: thumbSize)
         thumbLayer.cornerRadius = thumbSize / 2
-        thumbLayer.backgroundColor = NSColor.white.cgColor
+        thumbLayer.backgroundColor = NSColor.white.withAlphaComponent(isEnabled ? 1.0 : 0.6).cgColor
         thumbLayer.shadowOpacity = 0.3
         thumbLayer.shadowRadius = 1
         thumbLayer.shadowOffset = CGSize(width: 0, height: 0.5)

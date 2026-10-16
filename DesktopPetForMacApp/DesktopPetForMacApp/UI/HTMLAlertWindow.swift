@@ -72,6 +72,11 @@ class HTMLAlertWindow: NSWindow {
         updateWeatherContent(buildWeatherCardHTML(forecast: forecast))
     }
 
+    /// 独立弹出一张天气卡片（每日天气提醒用，不需要输入框）
+    static func showWeatherCard(_ forecast: WeatherForecast, title: String = "今日天气") {
+        show(title: title, htmlBody: buildWeatherCardHTML(forecast: forecast), width: 380, maxHeight: 640)
+    }
+
     /// 更新当前天气窗口的天气内容（保留上方输入框）
     static func updateWeatherContent(_ html: String) {
         currentWeatherWindow?.updateWeatherHTML(html)

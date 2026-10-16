@@ -122,6 +122,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 9. 启动自动更新检查（启动后延迟检查，之后每 6 小时一次）
         UpdateService.shared.start()
+        
+        // 10. 启动每日天气提醒（已开启且已解锁时生效）
+        WeatherReminderService.shared.start()
 
         // 8.5 系统勿扰/专注模式单向跟随（只读检测，不改变系统状态）：
         // 系统勿扰开启 → 小猫切专注；退出 → 小猫回休闲

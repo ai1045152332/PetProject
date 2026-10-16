@@ -46,10 +46,23 @@ final class SpriteSheet {
         self.frames = extractedFrames
     }
 
+    init(state: CatAnimationState, image: NSImage) {
+        self.state = state
+        self.frames = [image]
+        self.frameCount = 1
+    }
+
     /// 自动扫描 PNG 帧
     /// 先尝试子文件夹模式，再回退到扁平前缀模式
     init?(state: CatAnimationState) {
         self.state = state
+
+        if let customImage = CustomSpriteStore.load(for: state) {
+            self.frames = [customImage]
+            self.frameCount = 1
+            NSLog("[DesktopPetForMacApp] ✓ Loaded custom image for state '%@'", state.rawValue)
+            return
+        }
 
         let allDirs = Self.allPossibleDirs(for: state.rawValue)
         NSLog("[DesktopPetForMacApp] Scanning for state '%@'", state.rawValue)
@@ -239,5 +252,38 @@ final class SpriteSheet {
         NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
         image.unlockFocus()
         return image
+    }
+}
+
+enum CustomSpriteStore {
+    private static let folderName = "DesktopPetForMacApp/CustomSprites"
+
+    private static var directoryURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return appSupport.appendingPathComponent(folderName, isDirectory: true)
+    }
+
+    static func load(for state: CatAnimationState) -> NSImage? {
+        let url = directoryURL.appendingPathComponent("\(state.rawValue).png")
+        return NSImage(contentsOf: url)
+    }
+
+    static func hasCustomImage(for state: CatAnimationState) -> Bool {
+        load(for: state) != nil
+    }
+
+    static func url(for state: CatAnimationState) -> URL {
+        directoryURL.appendingPathComponent("\(state.rawValue).png")
+    }
+
+    static func save(_ image: NSImage, for state: CatAnimationState) throws {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try pngData.write(to: url(for: state), options: .atomic)
     }
 }

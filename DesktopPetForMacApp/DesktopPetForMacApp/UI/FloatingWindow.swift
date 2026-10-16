@@ -167,6 +167,7 @@ class CatView: NSView {
     /// 上一次渲染的帧标识（state + frameIndex），用于跳过未变化的重绘
     private var lastRenderedState: String = ""
     private var lastRenderedFrameIndex: Int = -1
+    private var lastRenderedSpriteRevision: Int = -1
 
     func setupLayerHosting() {
         // 不需要任何子视图或 layer，全部通过 draw(_:) 绘制
@@ -206,9 +207,10 @@ class CatView: NSView {
         // 帧未变化时跳过重绘（如 sleep 状态画面静止）
         let stateKey = vm.animationState.rawValue
         let frameIndex = vm.currentFrameIndex
-        guard stateKey != lastRenderedState || frameIndex != lastRenderedFrameIndex else { return }
+        guard stateKey != lastRenderedState || frameIndex != lastRenderedFrameIndex || lastRenderedSpriteRevision != vm.spriteRevision else { return }
         lastRenderedState = stateKey
         lastRenderedFrameIndex = frameIndex
+        lastRenderedSpriteRevision = vm.spriteRevision
 
         guard let image = vm.currentFrameImage else {
             FileLogger.log("[DesktopPet] updateLayerImage: currentFrameImage is nil, state=\(vm.animationState.displayName)")
@@ -218,7 +220,7 @@ class CatView: NSView {
         currentImage = image
         needsDisplay = true
     }
-    
+
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {

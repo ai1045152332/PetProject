@@ -128,6 +128,8 @@ final class PetViewModel: ObservableObject {
     
     /// 动画状态变化回调（供设置面板实时同步选中卡片）
     var onStateChanged: ((CatAnimationState) -> Void)?
+
+    var spriteRevision = 0
     
     /// 新闻查询回调（供视图层展示弹窗）
     var onShowHotNews: ((String) -> Void)?
@@ -196,6 +198,35 @@ final class PetViewModel: ObservableObject {
             } else {
                 FileLogger.log("[DesktopPet] loadSpriteSheets: \(state.displayName) FAILED to load sprite sheet")
             }
+        }
+    }
+
+    func setCustomSprite(_ image: NSImage, for state: CatAnimationState) throws {
+        try CustomSpriteStore.save(image, for: state)
+        installSprite(image, for: state)
+    }
+
+    func resetCustomSprite(for state: CatAnimationState) throws {
+        let url = CustomSpriteStore.url(for: state)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+        let sheet = SpriteSheet(state: state)
+        if let sheet {
+            spriteSheets[state] = sheet
+            flippedFrames[state] = sheet.frames.map(Self.mirrorImage)
+        }
+        spriteRevision += 1
+        currentFrameIndex = 0
+    }
+
+    private func installSprite(_ image: NSImage, for state: CatAnimationState) {
+        let sheet = SpriteSheet(state: state, image: image)
+        spriteSheets[state] = sheet
+        flippedFrames[state] = sheet.frames.map(Self.mirrorImage)
+        spriteRevision += 1
+        if animationState == state {
+            currentFrameIndex = 0
         }
     }
     

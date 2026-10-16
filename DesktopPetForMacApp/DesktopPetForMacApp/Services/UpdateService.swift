@@ -17,12 +17,6 @@ final class UpdateService {
     /// 自动检查间隔：6 小时
     private let checkInterval: TimeInterval = 6 * 3600
 
-    /// 交互触发检查的最小间隔（打开右键菜单时顺带检查，避免频繁请求）
-    private let backgroundCooldown: TimeInterval = 30 * 60
-
-    /// 上次检查时间（用于交互触发节流）
-    private var lastCheckAt: Date?
-
     private var timer: Timer?
     private var checking = false
     private var downloading = false
@@ -41,19 +35,19 @@ final class UpdateService {
         timer = t
     }
 
-    /// 交互触发（打开右键菜单等）：带节流，不打扰用户；发现新版本仍会正常弹窗
-    func backgroundCheck() {
-        if let last = lastCheckAt, Date().timeIntervalSince(last) < backgroundCooldown { return }
-        checkForUpdate(userInitiated: false)
-    }
-
     // MARK: - 检查更新
 
     /// 定时自检：版本更新检查 + 授权复核（同一节奏）
-    func checkForUpdate(userInitiated: Bool) {
-        guard !checking, !downloading else { return }
+    /// 检查更新
+    /// - Parameters:
+    ///   - userInitiated: 用户主动触发（无更新/失败时会弹提示）
+    ///   - completion: 检查请求结束后的回调（用于恢复按钮等 UI 状态）
+    func checkForUpdate(userInitiated: Bool, completion: (() -> Void)? = nil) {
+        guard !checking, !downloading else {
+            completion?()
+            return
+        }
         checking = true
-        lastCheckAt = Date()
 
         // 顺带向服务端复核授权：仅当服务端明确判定激活码失效时才收回权限
         AccessControl.revalidate { result in
@@ -65,6 +59,7 @@ final class UpdateService {
 
         guard let url = URL(string: ServerConfig.baseURL + "/api/app/latest") else {
             checking = false
+            completion?()
             return
         }
         var request = URLRequest(url: url, timeoutInterval: 10)
@@ -74,6 +69,7 @@ final class UpdateService {
             Task { @MainActor in
                 guard let self else { return }
                 self.checking = false
+                completion?()
                 self.handleCheckResult(data: data, response: response, error: error, userInitiated: userInitiated)
             }
         }.resume()

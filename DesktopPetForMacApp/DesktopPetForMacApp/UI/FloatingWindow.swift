@@ -861,9 +861,6 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
             cancelFeeding()
             return
         }
-        // 打开菜单时顺带检查更新（内部有 30 分钟节流，不会频繁请求）
-        UpdateService.shared.backgroundCheck()
-
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -935,10 +932,6 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     @objc private func showWeatherAction(_ sender: NSMenuItem) { showWeatherInput() }
     @objc private func todoAction(_ sender: NSMenuItem) { showTodoList() }
     @objc private func stockAction(_ sender: NSMenuItem) { showStockInput() }
-
-    @objc private func checkUpdateAction(_ sender: NSMenuItem) {
-        UpdateService.shared.checkForUpdate(userInitiated: true)
-    }
 
     // MARK: - 天气查询
 

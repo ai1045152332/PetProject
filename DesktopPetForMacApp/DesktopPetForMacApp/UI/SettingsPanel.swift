@@ -68,6 +68,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var accessCodeField: NSSecureTextField?
     private weak var unlockBtn: NSButton?
     private weak var clearAccessBtn: NSButton?
+    /// 通用设置 > 版本的「检查更新」按钮
+    private weak var checkUpdateBtn: NSButton?
 
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
@@ -474,6 +476,25 @@ let arw = accessRow.bounds.width
         versionLabel.frame = NSRect(x: vrw - 16 - 150, y: 15, width: 150, height: 18)
         versionLabel.autoresizingMask = .minXMargin
         versionRow.addSubview(versionLabel)
+
+        // 「检查更新」按钮：手动触发更新检查（无更新/失败都会有提示）
+        let checkBtn = NSButton(title: "检查更新", target: self, action: #selector(checkUpdateNow(_:)))
+        checkBtn.frame = NSRect(x: vrw - 16 - 150 - 8 - 84, y: 11, width: 84, height: 26)
+        checkBtn.bezelStyle = .rounded
+        checkBtn.font = .systemFont(ofSize: 12)
+        checkBtn.autoresizingMask = .minXMargin
+        versionRow.addSubview(checkBtn)
+        checkUpdateBtn = checkBtn
+    }
+
+    /// 手动检查更新（结果通过弹窗反馈）
+    @objc private func checkUpdateNow(_ sender: Any?) {
+        checkUpdateBtn?.isEnabled = false
+        checkUpdateBtn?.title = "检查中…"
+        UpdateService.shared.checkForUpdate(userInitiated: true) { [weak self] in
+            self?.checkUpdateBtn?.isEnabled = true
+            self?.checkUpdateBtn?.title = "检查更新"
+        }
     }
 
     // MARK: - 分区 3：提醒设置

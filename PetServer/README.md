@@ -42,6 +42,7 @@ PetServer/
 | `GET /api/ping` | 连通性测试（浏览器可直接打开） |
 | `POST /api/heartbeat` | 心跳上报：版本号 + 本机信息 + 宠物名/状态 |
 | `GET /api/devices` | 在线宠物列表：返回所有设备及在线状态 |
+| `GET /api/weather` | 天气查询（服务端代持上游 Key，按设备限流 30 次/小时） |
 | `POST /api/access/verify` | 激活码验证（码 + 设备 ID，每码限绑定 N 台设备） |
 | `POST /api/admin/codes/generate` | 管理：生成激活码（需 `X-Admin-Token`） |
 | `GET /api/admin/codes` | 管理：激活码列表（需 `X-Admin-Token`） |

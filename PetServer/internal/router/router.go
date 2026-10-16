@@ -18,12 +18,14 @@ func New(
 	authCtrl *controller.AuthController,
 	cryptoCtrl *controller.CryptoController,
 	releaseCtrl *controller.ReleaseController,
+	weatherCtrl *controller.WeatherController,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
 	mux.HandleFunc("/api/devices", devicesCtrl.List)
 	mux.HandleFunc("/api/access/verify", accessCtrl.Verify)
 	mux.HandleFunc("/api/ping", pingCtrl.Ping)
+	mux.HandleFunc("/api/weather", weatherCtrl.Query)
 	mux.HandleFunc("/api/admin/codes", adminCtrl.ListCodes)
 	mux.HandleFunc("/api/admin/codes/generate", adminCtrl.GenerateCodes)
 	mux.HandleFunc("/api/admin/codes/unbind", adminCtrl.UnbindCodes)

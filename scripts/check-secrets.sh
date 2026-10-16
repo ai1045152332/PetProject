@@ -9,6 +9,8 @@ PATTERNS=(
   'BEGIN PUBLIC KEY'
   'Xp123456'
   'arBrw6FjWtL6Dq2s'
+  'f1f27eaa954e40aa975a0a9418a205f0'                    # 历史泄露的和风天气 Key（已废弃）
+  '(?i)(qweather|api[_-]?key|apikey|secret|access[_-]?token)[a-z]*[[:space:]]*[:=][[:space:]]*"[A-Za-z0-9]{16,}"'
 )
 
 # 排除扫描器自身（其中包含用于匹配的模式串）

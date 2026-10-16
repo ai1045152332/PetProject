@@ -29,8 +29,8 @@ struct WeatherForecast {
 }
 
 struct WeatherService {
-    private static let qweatherHost = "kv359hcbtd.re.qweatherapi.com"
-    private static let qweatherKey  = "f1f27eaa954e40aa975a0a9418a205f0"
+    /// 说明：天气改为走自建 PetServer 转发（/api/weather），
+    /// 上游 Key 只存在服务端，客户端不再持有任何天气服务密钥。
     private static var cachedLocation: (city: String, lat: Double, lon: Double)?
     private static let locationLock = NSLock()
 
@@ -108,71 +108,55 @@ struct WeatherService {
         return fetchWeatherForecast(city: shortName, lat: lat, lon: lon)
     }
     
-    /// 通过坐标查询天气
+    /// 通过坐标查询天气（走自建后端转发，服务端代持上游 Key）
     static func fetchWeatherForecast(city: String, lat: Double, lon: Double) -> WeatherForecast? {
-        let loc = "\(lon),\(lat)"
-        
-        // 1. 实时天气
-        let nowURL = "https://\(qweatherHost)/v7/weather/now?location=\(loc)&key=\(qweatherKey)"
-        guard let nowData = NetworkClient.fetchData(nowURL, timeout: 5),
-              let nowJson = try? JSONSerialization.jsonObject(with: nowData) as? [String: Any],
-              let nowCode = nowJson["code"] as? String, nowCode == "200",
-              let now = nowJson["now"] as? [String: Any] else {
+        var comps = URLComponents(string: ServerConfig.baseURL + "/api/weather")
+        comps?.queryItems = [
+            URLQueryItem(name: "lat", value: String(format: "%.4f", lat)),
+            URLQueryItem(name: "lon", value: String(format: "%.4f", lon)),
+            URLQueryItem(name: "city", value: city),
+            URLQueryItem(name: "deviceId", value: AccessControl.deviceID)
+        ]
+        guard let url = comps?.url else { return nil }
+
+        guard let data = NetworkClient.fetchData(url.absoluteString, timeout: 8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            FileLogger.log("[Weather] 后端响应异常")
             return nil
         }
-        let nowTemp = now["temp"] as? String ?? "?"
-        let nowText = now["text"] as? String ?? "未知"
-        
-        // 2. 逐小时预报
-        var hourly: [WeatherHourly] = []
-        let h24URL = "https://\(qweatherHost)/v7/weather/24h?location=\(loc)&key=\(qweatherKey)"
-        if let h24Data = NetworkClient.fetchData(h24URL, timeout: 5),
-           let h24Json = try? JSONSerialization.jsonObject(with: h24Data) as? [String: Any],
-           let h24Code = h24Json["code"] as? String, h24Code == "200",
-           let h24List = h24Json["hourly"] as? [[String: Any]] {
-            for h in h24List.prefix(6) {
-                let fxTime = h["fxTime"] as? String ?? ""
-                let hourStr = formatHour(from: fxTime)
-                let temp = h["temp"] as? String ?? "?"
-                let text = h["text"] as? String ?? ""
-                hourly.append(WeatherHourly(time: hourStr, temp: temp, text: text, icon: weatherEmoji(for: text)))
-            }
-        }
-        
-        // 3. 3天预报
-        let d3URL = "https://\(qweatherHost)/v7/weather/3d?location=\(loc)&key=\(qweatherKey)"
-        guard let d3Data = NetworkClient.fetchData(d3URL, timeout: 5),
-              let d3Json = try? JSONSerialization.jsonObject(with: d3Data) as? [String: Any],
-              let d3Code = d3Json["code"] as? String, d3Code == "200",
-              let dailyList = d3Json["daily"] as? [[String: Any]],
-              !dailyList.isEmpty else {
+        guard (json["code"] as? Int) == 0, let d = json["data"] as? [String: Any] else {
+            let msg = json["msg"] as? String ?? "unknown"
+            FileLogger.log("[Weather] 查询失败: \(msg)")
             return nil
         }
-        
-        var daily: [WeatherDaily] = []
-        let dayNames = ["今天", "明天", "后天"]
-        for (i, d) in dailyList.enumerated() {
-            let name = i < 3 ? dayNames[i] : "第\(i+1)天"
-            let textDay = d["textDay"] as? String ?? "未知"
-            daily.append(WeatherDaily(
-                dayName: name,
+
+        let hourly: [WeatherHourly] = (d["hourly"] as? [[String: Any]] ?? []).map { h in
+            let text = h["text"] as? String ?? ""
+            return WeatherHourly(
+                time: h["time"] as? String ?? "",
+                temp: h["temp"] as? String ?? "?",
+                text: text,
+                icon: weatherEmoji(for: text)
+            )
+        }
+
+        let daily: [WeatherDaily] = (d["daily"] as? [[String: Any]] ?? []).map { day in
+            let textDay = day["textDay"] as? String ?? "未知"
+            return WeatherDaily(
+                dayName: day["dayName"] as? String ?? "",
                 textDay: textDay,
-                tempMax: d["tempMax"] as? String ?? "?",
-                tempMin: d["tempMin"] as? String ?? "?",
+                tempMax: day["tempMax"] as? String ?? "?",
+                tempMin: day["tempMin"] as? String ?? "?",
                 icon: weatherEmoji(for: textDay)
-            ))
+            )
         }
-        
-        let today = dailyList.first
-        let todayMax = today?["tempMax"] as? String ?? "?"
-        let todayMin = today?["tempMin"] as? String ?? "?"
-        
+
         return WeatherForecast(
-            city: city,
-            nowTemp: nowTemp,
-            nowText: nowText,
-            todayMax: todayMax,
-            todayMin: todayMin,
+            city: d["city"] as? String ?? city,
+            nowTemp: d["nowTemp"] as? String ?? "?",
+            nowText: d["nowText"] as? String ?? "未知",
+            todayMax: d["todayMax"] as? String ?? "?",
+            todayMin: d["todayMin"] as? String ?? "?",
             hourly: hourly,
             daily: daily
         )

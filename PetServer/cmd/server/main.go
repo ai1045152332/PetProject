@@ -64,6 +64,13 @@ func main() {
 	}
 	accessSvc := service.NewAccessService(activationStore)
 	pingCtrl := controller.NewPingController()
+
+	// 天气服务：上游 Key 只存服务器环境变量（天气接口按量付费，不下发客户端）
+	weatherSvc := service.NewWeatherService(os.Getenv("PETSERVER_QWEATHER_HOST"), os.Getenv("PETSERVER_QWEATHER_KEY"))
+	weatherCtrl := controller.NewWeatherController(weatherSvc)
+	if !weatherSvc.Enabled() {
+		log.Printf("[weather] 未配置 PETSERVER_QWEATHER_KEY，/api/weather 将返回 503")
+	}
 	// 管理后台账号密码：PETSERVER_ADMIN_USER（默认 admin）+ PETSERVER_ADMIN_PASSWORD
 	// 兼容旧的 PETSERVER_ADMIN_TOKEN（作为密码来源）
 	adminUser := os.Getenv("PETSERVER_ADMIN_USER")
@@ -96,7 +103,7 @@ func main() {
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

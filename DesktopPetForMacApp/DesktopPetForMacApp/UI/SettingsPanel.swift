@@ -72,7 +72,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var checkUpdateBtn: NSButton?
     /// 提醒设置 > 天气提醒控件
     private weak var weatherToggle: ToggleSwitch?
-    private weak var weatherTimeField: NSTextField?
+    private weak var weatherTimePicker: NSDatePicker?
     private weak var weatherCityField: NSTextField?
     private weak var weatherPreviewBtn: NSButton?
     private weak var weatherDescLabel: NSTextField?
@@ -659,23 +659,27 @@ let arw = accessRow.bounds.width
         weatherCard.addSubview(toggle)
         weatherToggle = toggle
 
-        let timeField = NSTextField(frame: NSRect(x: 14, y: 12, width: 66, height: ctrlH))
-        timeField.font = .systemFont(ofSize: 13)
-        timeField.alignment = .center
-        timeField.bezelStyle = .roundedBezel
-        timeField.placeholderString = "08:00"
-        timeField.stringValue = WeatherReminderService.shared.timeText
-        timeField.delegate = self
-        weatherCard.addSubview(timeField)
-        weatherTimeField = timeField
+        // 时间选择器（只选时/分，强制 24 小时制，避免用户对格式产生歧义）
+        let timePicker = NSDatePicker(frame: NSRect(x: 14, y: 11, width: 96, height: 30))
+        timePicker.datePickerStyle = .textFieldAndStepper
+        timePicker.datePickerElements = .hourMinute
+        timePicker.datePickerMode = .single
+        timePicker.locale = Locale(identifier: "zh_CN")   // 强制 24 小时制显示
+        timePicker.font = .systemFont(ofSize: 13)
+        timePicker.target = self
+        timePicker.action = #selector(weatherTimeChanged(_:))
+        timePicker.dateValue = Self.dateForTime(hour: WeatherReminderService.shared.hour,
+                                               minute: WeatherReminderService.shared.minute)
+        weatherCard.addSubview(timePicker)
+        weatherTimePicker = timePicker
 
-        let timeHint = NSTextField(labelWithString: "每天提醒时间")
+        let timeHint = NSTextField(labelWithString: "每天提醒时间（24 小时制）")
         timeHint.font = .systemFont(ofSize: 11)
         timeHint.textColor = .tertiaryLabelColor
-        timeHint.frame = NSRect(x: 86, y: 18, width: 90, height: 15)
+        timeHint.frame = NSRect(x: 118, y: 18, width: 170, height: 15)
         weatherCard.addSubview(timeHint)
 
-        let cityField = NSTextField(frame: NSRect(x: 186, y: 12, width: ecw - 186 - 16 - 52 - 12, height: ctrlH))
+        let cityField = NSTextField(frame: NSRect(x: 292, y: 12, width: ecw - 292 - 16 - 52 - 12, height: ctrlH))
         cityField.font = .systemFont(ofSize: 13)
         cityField.placeholderString = "城市（留空按定位）"
         cityField.stringValue = WeatherReminderService.shared.city
@@ -698,15 +702,15 @@ let arw = accessRow.bounds.width
     private func refreshWeatherControls() {
         let unlocked = AccessControl.isFullAccess
         weatherToggle?.isEnabled = unlocked
-        weatherTimeField?.isEnabled = unlocked
+        weatherTimePicker?.isEnabled = unlocked
         weatherCityField?.isEnabled = unlocked
         weatherPreviewBtn?.isEnabled = unlocked
 
         if unlocked {
             let on = WeatherReminderService.shared.isEnabled
             weatherDescLabel?.stringValue = on
-                ? "每天 \(WeatherReminderService.shared.timeText) 提醒今天的天气"
-                : "打开开关后，每天定时提醒今天的天气"
+                ? "每天 \(WeatherReminderService.shared.timeText)（24 小时制）提醒今天的天气"
+                : "打开开关后，每天在你选择的时间提醒今天的天气"
             weatherDescLabel?.textColor = .tertiaryLabelColor
         } else {
             weatherDescLabel?.stringValue = "需解锁全部功能后可用（天气接口按量付费）"
@@ -933,11 +937,6 @@ return row
             return
         }
 
-        if field === weatherTimeField {
-            applyWeatherTime(field)
-            return
-        }
-
         if field === weatherCityField {
             WeatherReminderService.shared.city = field.stringValue
             field.stringValue = WeatherReminderService.shared.city
@@ -946,30 +945,20 @@ return row
         }
     }
 
-    /// 解析并保存天气提醒时间（支持 8 / 8:30 / 08:30）
-    private func applyWeatherTime(_ field: NSTextField) {
-        let text = field.stringValue.trimmingCharacters(in: .whitespaces)
-        let parts = text.split(separator: ":").map { Int($0) }
-        var hour: Int?
-        var minute: Int?
+    /// 把 hour/minute 转成今天对应的 Date（仅用于日期选择器回显）
+    static func dateForTime(hour: Int, minute: Int) -> Date {
+        var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        comps.hour = hour
+        comps.minute = minute
+        comps.second = 0
+        return Calendar.current.date(from: comps) ?? Date()
+    }
 
-        if parts.count == 2, let h = parts[0], let m = parts[1] {
-            hour = h
-            minute = m
-        } else if parts.count == 1, let h = parts[0] {
-            hour = h
-            minute = 0
-        }
-
-        guard let h = hour, let m = minute, (0...23).contains(h), (0...59).contains(m) else {
-            // 非法输入：还原为当前生效值
-            field.stringValue = WeatherReminderService.shared.timeText
-            return
-        }
-
-        WeatherReminderService.shared.hour = h
-        WeatherReminderService.shared.minute = m
-        field.stringValue = WeatherReminderService.shared.timeText
+    /// 天气提醒时间变化（日期选择器只提供合法时分）
+    @objc private func weatherTimeChanged(_ sender: NSDatePicker) {
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: sender.dateValue)
+        WeatherReminderService.shared.hour = comps.hour ?? WeatherReminderService.defaultHour
+        WeatherReminderService.shared.minute = comps.minute ?? WeatherReminderService.defaultMinute
         refreshWeatherControls()
     }
 

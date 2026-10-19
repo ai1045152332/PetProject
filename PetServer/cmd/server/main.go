@@ -100,10 +100,11 @@ func main() {
 	releaseSvc := service.NewReleaseService("dist")
 	releaseCtrl := controller.NewReleaseController(releaseSvc)
 
-	// 文件管理：默认只开放 data 目录，可用 PETSERVER_FILES_ROOT 指向其他目录
+	// 文件管理：默认锚定服务工作目录（线上为 /opt/petserver），可同时浏览 data/ 与 dist/（安装包）；
+	// 敏感文件（.env/.pem/.key/sessions.json）在 FileService 内已禁止预览与删除。可用 PETSERVER_FILES_ROOT 覆盖。
 	filesRoot := os.Getenv("PETSERVER_FILES_ROOT")
 	if filesRoot == "" {
-		filesRoot = "data"
+		filesRoot = "."
 	}
 	fileSvc, err := service.NewFileService(filesRoot)
 	if err != nil {

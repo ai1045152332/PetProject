@@ -16,10 +16,27 @@ const filePreviewLimit = 200 * 1024
 
 // FileEntry 文件/目录条目信息
 type FileEntry struct {
-	Name    string `json:"name"`
-	IsDir   bool   `json:"isDir"`
-	Size    int64  `json:"size"`
-	ModTime string `json:"modTime"`
+	Name      string `json:"name"`
+	IsDir     bool   `json:"isDir"`
+	Size      int64  `json:"size"`
+	ModTime   string `json:"modTime"`
+	Sensitive bool   `json:"sensitive"` // 命中敏感黑名单，前端禁用预览
+}
+
+// isSensitiveFile 判断文件名是否属于敏感文件（禁止预览）。
+// 根目录提到服务目录后，petserver.env（后台密码/天气 Key）、RSA 私钥、
+// 会话令牌 sessions.json 都会被列出，必须在预览环节挡住，防止秘密泄露。
+func isSensitiveFile(name string) bool {
+	lower := strings.ToLower(name)
+	if lower == "sessions.json" {
+		return true
+	}
+	for _, ext := range []string{".env", ".pem", ".key"} {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // FilePreview 文件预览内容
@@ -92,10 +109,11 @@ func (s *FileService) List(rel string) ([]FileEntry, error) {
 			continue
 		}
 		entries = append(entries, FileEntry{
-			Name:    item.Name(),
-			IsDir:   item.IsDir(),
-			Size:    fi.Size(),
-			ModTime: fi.ModTime().Format("2006-01-02 15:04:05"),
+			Name:      item.Name(),
+			IsDir:     item.IsDir(),
+			Size:      fi.Size(),
+			ModTime:   fi.ModTime().Format("2006-01-02 15:04:05"),
+			Sensitive: !item.IsDir() && isSensitiveFile(item.Name()),
 		})
 	}
 
@@ -120,6 +138,10 @@ func (s *FileService) Preview(rel string) (*FilePreview, error) {
 	}
 	if info.IsDir() {
 		return nil, fmt.Errorf("是目录，无法预览: %s", rel)
+	}
+	// 敏感文件黑名单：即使能列出也绝不返回内容（后台密码/私钥/会话令牌）
+	if isSensitiveFile(filepath.Base(full)) {
+		return nil, fmt.Errorf("敏感文件，禁止预览: %s", rel)
 	}
 	// 大文件只读预览上限，避免一次性载入超大内容拖垮服务
 	f, err := os.Open(full)
@@ -151,6 +173,10 @@ func (s *FileService) Delete(rel string) error {
 	}
 	if full == s.root {
 		return fmt.Errorf("禁止删除根目录本身")
+	}
+	// 敏感文件（配置/私钥/会话）禁止删除，避免误删导致服务不可用且不可恢复
+	if isSensitiveFile(filepath.Base(full)) {
+		return fmt.Errorf("敏感文件，禁止删除: %s", rel)
 	}
 	info, err := os.Stat(full)
 	if err != nil {

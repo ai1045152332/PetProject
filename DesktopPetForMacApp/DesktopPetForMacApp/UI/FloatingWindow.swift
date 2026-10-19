@@ -668,7 +668,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
         <div class="water-text">该喝水啦！</div>
         <div class="water-tips">久坐对身体不好<br>起来倒杯水，活动一下吧～</div>
         """
-        HTMLAlertWindow.show(title: "小猫喝水提醒", htmlBody: htmlBody, width: 340) { [weak self] in
+        HTMLAlertWindow.show(title: "喝水提醒", htmlBody: htmlBody, width: 340) { [weak self] in
             self?.viewModel?.isWaterAlertShowing = false
             self?.viewModel?.transitionTo(.focus)
         }

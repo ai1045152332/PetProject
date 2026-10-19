@@ -186,14 +186,22 @@
         for (const f of files) {
           const full = joinPath(currentPath, f.name);
           const tr = document.createElement('tr');
-          const icon = f.isDir ? '📁' : '📄';
-          const nameCell = f.isDir
-            ? `<a class="file-name-link" href="javascript:go('${esc(full)}')">${icon} ${esc(f.name)}</a>`
-            : `<span>${icon} <a class="file-name-link" href="javascript:preview('${esc(full)}','${esc(f.name)}')">${esc(f.name)}</a></span>`;
-          const actions = f.isDir
-            ? `<button class="btn btn-sm btn-outline-danger" onclick="remove('${esc(full)}','${esc(f.name)}',true)">删除</button>`
-            : `<button class="btn btn-sm" onclick="preview('${esc(full)}','${esc(f.name)}')">预览</button>
+          let icon = f.isDir ? '📁' : '📄';
+          if (f.sensitive) icon = '🔒';
+          // 敏感文件：不给出预览/删除入口（后端也已拦），仅展示名称
+          let nameCell, actions;
+          if (f.isDir) {
+            nameCell = `<a class="file-name-link" href="javascript:go('${esc(full)}')">${icon} ${esc(f.name)}</a>`;
+            actions = `<button class="btn btn-sm btn-outline-danger" onclick="remove('${esc(full)}','${esc(f.name)}',true)">删除</button>`;
+          } else if (f.sensitive) {
+            nameCell = `<span class="text-secondary">${icon} ${esc(f.name)}</span>
+              <span class="badge bg-red-lt ms-1">已保护·不可预览</span>`;
+            actions = '';
+          } else {
+            nameCell = `<span>${icon} <a class="file-name-link" href="javascript:preview('${esc(full)}','${esc(f.name)}')">${esc(f.name)}</a></span>`;
+            actions = `<button class="btn btn-sm" onclick="preview('${esc(full)}','${esc(f.name)}')">预览</button>
                <button class="btn btn-sm btn-outline-danger ms-1" onclick="remove('${esc(full)}','${esc(f.name)}',false)">删除</button>`;
+          }
           tr.innerHTML = `
             <td>${nameCell}</td>
             <td class="text-secondary">${f.isDir ? '-' : fmtSize(f.size)}</td>

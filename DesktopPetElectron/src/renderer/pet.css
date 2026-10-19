@@ -1,0 +1,27 @@
+/* src/renderer/pet.css */
+/* 透明窗口：body 必须背景透明，否则透明失效会出现白底 */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
+
+#pet {
+  width: 200px;
+  height: 200px;
+  /* 整只小猫可拖动（对标 mac 版按住拖拽移动窗口） */
+  -webkit-app-region: drag;
+}
+
+#cat {
+  width: 200px;
+  height: 200px;
+  display: block;
+  /* 去掉图片边缘锯齿，逐帧切换更平滑 */
+  image-rendering: auto;
+  -webkit-user-drag: none;
+}

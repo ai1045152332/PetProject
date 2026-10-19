@@ -2,12 +2,81 @@
 package router
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io/fs"
 	"net/http"
+	"path"
+	"strings"
+	"sync"
 
 	"petserver/internal/controller"
 	"petserver/internal/web"
 )
+
+// 静态资源压缩缓存：文件小且固定，首次请求压缩后常驻内存
+var (
+	staticCacheMu sync.RWMutex
+	staticCache   = map[string][]byte{}
+)
+
+func contentTypeFor(name string) string {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".js":
+		return "application/javascript; charset=utf-8"
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".png":
+		return "image/png"
+	case ".svg":
+		return "image/svg+xml"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// serveStatic 提供内置静态资源：gzip 压缩 + 一周强缓存（链路差时显著减少传输量）
+func serveStatic(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/static/")
+	if name == "" || strings.Contains(name, "..") {
+		http.NotFound(w, r)
+		return
+	}
+
+	data, err := fs.ReadFile(web.StaticFS, "static/"+name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentTypeFor(name))
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	w.Header().Set("Vary", "Accept-Encoding")
+
+	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		w.Write(data)
+		return
+	}
+
+	staticCacheMu.RLock()
+	gz, ok := staticCache[name]
+	staticCacheMu.RUnlock()
+	if !ok {
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		_, _ = zw.Write(data)
+		_ = zw.Close()
+		gz = buf.Bytes()
+		staticCacheMu.Lock()
+		staticCache[name] = gz
+		staticCacheMu.Unlock()
+	}
+
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Write(gz)
+}
 
 // New 注册全部路由，返回根 Handler
 func New(
@@ -75,8 +144,8 @@ func New(
 		noCache(w)
 		w.Write(web.AdminFilesPage)
 	})
-	// 内置静态资源（Tabler 样式等，与接口同源）
-	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
+	// 内置静态资源（Tabler 样式等）：gzip + 长缓存，链路上只需传输一次
+	mux.HandleFunc("/static/", serveStatic)
 	// 官网落地页：根路径 / 直接托管嵌入的静态站点（index.html + assets），后台管理保留在 /admin
 	siteFS, err := fs.Sub(web.SiteFS, "site")
 	if err != nil {

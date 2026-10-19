@@ -455,9 +455,11 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 GET /api/admin/files/list?path=相对目录
 ```
 
-- 所有文件操作锚定在根目录内（默认 `data/`，可用环境变量 `PETSERVER_FILES_ROOT` 覆盖），
-  路径已净化，`../` 穿越会被限制在根目录内，越界直接拒绝
+- 所有文件操作锚定在根目录内（默认为**服务工作目录**，线上即 `/opt/petserver`，可同时浏览 `data/` 与 `dist/` 安装包；
+  可用环境变量 `PETSERVER_FILES_ROOT` 覆盖），路径已净化，`../` 穿越会被限制在根目录内，越界直接拒绝
 - `path` 留空表示根目录本身
+- **敏感文件黑名单**：`*.env`、`*.pem`、`*.key`、`sessions.json` 会在列表中以 `sensitive=true` 标出，
+  并**禁止预览与删除**（防止后台密码、RSA 私钥、会话令牌泄露或误删）
 
 响应示例：
 
@@ -467,9 +469,9 @@ GET /api/admin/files/list?path=相对目录
   "msg": "ok",
   "data": {
     "path": "",
-    "root": "/opt/petserver/data",
+    "root": "/opt/petserver",
     "files": [
-      { "name": "activation_codes.json", "isDir": false, "size": 590, "modTime": "2026-10-15 15:40:32" }
+      { "name": "activation_codes.json", "isDir": false, "size": 590, "modTime": "2026-10-15 15:40:32", "sensitive": false }
     ]
   }
 }
@@ -507,7 +509,7 @@ curl -X POST http://101.96.248.75/api/admin/files/delete \
 
 响应：`{"code":0,"msg":"ok"}`。
 
-> ⚠️ 删除不可恢复；目录会递归删除；根目录本身禁止删除。
+> ⚠️ 删除不可恢复；目录会递归删除；根目录本身禁止删除；敏感文件（`.env`/`.pem`/`.key`/`sessions.json`）禁止删除。
 
 ## 4. App 更新接口
 

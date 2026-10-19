@@ -37,3 +37,5 @@ PetServer/*.out
 
 # 发布产物（本地生成，不入库）
 DesktopPetForMacApp/dist/
+/DesktopPetElectron/dist/
+/DesktopPetElectron/node_modules/

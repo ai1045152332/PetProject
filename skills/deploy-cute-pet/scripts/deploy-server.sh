@@ -29,13 +29,19 @@ fail() { say "❌ $*"; exit 1; }
 
 say "检查 SSH 连通性…"
 SSH_TMP="/tmp/cute_pet_deploy_check.log"
-SSH_OUT_FILE="$SSH_TMP" "$SSH" "systemctl is-active petserver; if test -f /opt/petserver/petserver.env; then echo ENV_YES; else echo ENV_NO; fi" >/dev/null 2>&1
-RAW=$(tr -d '\r' < "$SSH_TMP" 2>/dev/null || true)
+CHECK_OK=0
+for attempt in 1 2 3; do
+  SSH_OUT_FILE="$SSH_TMP" "$SSH" "systemctl is-active petserver; if test -f /opt/petserver/petserver.env; then echo ENV_YES; else echo ENV_NO; fi" >/dev/null 2>&1 || true
+  RAW=$(tr -d '\r' < "$SSH_TMP" 2>/dev/null || true)
+  if printf '%s\n' "$RAW" | grep -qx 'active'; then
+    CHECK_OK=1
+    break
+  fi
+  [ "$attempt" -lt 3 ] && say "  连接未就绪，重试（${attempt}/3）…" && sleep 2
+done
+[ "$CHECK_OK" = "1" ] || fail "SSH 连接失败或无响应（检查 $SSH、服务器密码或网络）"
 
-grep -qx 'active' <<< "$RAW" || grep -q '^active$' <<< "$RAW" || fail "SSH 连接失败或无响应（检查 $SSH 与服务器密码/网络）"
-
-STATE=unknown
-if printf '%s\n' "$RAW" | grep -qx 'active'; then STATE=active; fi
+STATE=active
 ENVOK=unknown
 if printf '%s\n' "$RAW" | grep -qx 'ENV_YES'; then ENVOK=yes; fi
 

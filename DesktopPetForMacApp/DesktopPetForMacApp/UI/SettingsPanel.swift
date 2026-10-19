@@ -60,6 +60,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var customIntervalField: NSTextField?
     /// 宠物状态分区：当前状态指示标签
     private weak var currentStateBadge: NSTextField?
+    /// 自定义状态图片说明标签（随权限切换解锁提示）
+    private weak var spriteDescLabel: NSTextField?
     private weak var currentIntervalLabel: NSTextField?
 
     // 权限控制（通用设置 > 权限）
@@ -108,6 +110,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         ) { [weak self] _ in
             self?.refreshAccessUI()
             self?.refreshWeatherControls()
+            self?.refreshSpriteAccessUI()
         }
     }
 
@@ -317,6 +320,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         spriteDesc.textColor = .tertiaryLabelColor
         spriteDesc.frame = NSRect(x: 14, y: 108, width: 300, height: 15)
         spriteRow.addSubview(spriteDesc)
+        spriteDescLabel = spriteDesc
 
         let customStates = CatAnimationState.allCases
         let customButtonW: CGFloat = 76
@@ -335,6 +339,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             uploadButton.tag = index
             uploadButton.target = self
             uploadButton.action = #selector(uploadCustomSprite(_:))
+            // 上传图片为高级能力：基础权限下置灰，需校验码解锁
+            uploadButton.isEnabled = AccessControl.isFullAccess
             spriteRow.addSubview(uploadButton)
             customSpriteButtons[state] = uploadButton
 
@@ -349,6 +355,33 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
             customX += customButtonW + customButtonGap
         }
+
+        refreshSpriteAccessUI()
+    }
+
+    /// 自定义状态图片控件权限状态：上传图片需校验码解锁（恢复默认不受限，便于权限收回后还原）
+    private func refreshSpriteAccessUI() {
+        let unlocked = AccessControl.isFullAccess
+        for state in CatAnimationState.allCases {
+            customSpriteButtons[state]?.isEnabled = unlocked
+        }
+        if unlocked {
+            spriteDescLabel?.stringValue = "图片保存在用户目录，应用更新后仍会保留"
+            spriteDescLabel?.textColor = .tertiaryLabelColor
+        } else {
+            spriteDescLabel?.stringValue = "\u{1f512} 需输入校验码解锁后使用（通用设置 → 权限）"
+            spriteDescLabel?.textColor = .systemOrange
+        }
+    }
+
+    private func showSpriteUnlockHint() {
+        let alert = NSAlert()
+        alert.messageText = "该功能需要解锁"
+        alert.informativeText = "自定义宠物图片为解锁功能，请在「通用设置 → 权限」输入校验码解锁后使用。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func customSpriteImage(for state: CatAnimationState) -> NSImage? {
@@ -362,6 +395,11 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     }
 
     @objc private func uploadCustomSprite(_ sender: NSButton) {
+        // 防抖兼防御：置灰状态被绕过（如解锁前已创建的按钮）时仍拦截
+        guard AccessControl.isFullAccess else {
+            showSpriteUnlockHint()
+            return
+        }
         guard let state = customSpriteState(for: sender) else { return }
         let window: NSWindow = self
         let panel = NSOpenPanel()

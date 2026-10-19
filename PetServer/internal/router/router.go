@@ -2,6 +2,7 @@
 package router
 
 import (
+	"io/fs"
 	"net/http"
 
 	"petserver/internal/controller"
@@ -76,13 +77,11 @@ func New(
 	})
 	// 内置静态资源（Tabler 样式等，与接口同源）
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))
-	// 根路径跳转后台管理（手机版在线宠物页保留在 /online）
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		http.Redirect(w, r, "/admin", http.StatusFound)
-	})
+	// 官网落地页：根路径 / 直接托管嵌入的静态站点（index.html + assets），后台管理保留在 /admin
+	siteFS, err := fs.Sub(web.SiteFS, "site")
+	if err != nil {
+		panic("加载内置官网失败: " + err.Error())
+	}
+	mux.Handle("/", http.FileServer(http.FS(siteFS)))
 	return mux
 }

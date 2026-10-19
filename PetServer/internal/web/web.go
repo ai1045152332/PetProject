@@ -32,3 +32,9 @@ var AdminFilesPage []byte
 //
 //go:embed static
 var StaticFS embed.FS
+
+// SiteFS 官网落地页（cute pet 介绍 + 下载入口），随二进制打包，由后端在根路径 / 托管
+// 与 /api/app/latest 同源，官网可直接动态获取最新版本、无需跨域
+//
+//go:embed site
+var SiteFS embed.FS

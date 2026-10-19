@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cute pet · macOS 桌面宠物</title>
+  <meta name="description" content="cute pet —— 一只住在 macOS 桌面最上层的虚拟宠物。精灵动画、鼠标互动、喝水提醒、天气股票新闻 Todo、背单词与 LeetCode 热题，一只能在桌面上陪你工作的宠物。" />
+  <style>
+    :root {
+      --bg: #0f1020;
+      --bg-soft: #171834;
+      --card: #1e2140;
+      --card-2: #262a52;
+      --text: #f3f4fb;
+      --muted: #a7abd0;
+      --accent: #ffb86b;
+      --accent-2: #a0e8ff;
+      --pink: #ff8fab;
+      --line: rgba(255, 255, 255, 0.09);
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 700px at 80% -10%, #2a2d5e 0%, var(--bg) 55%) fixed, var(--bg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px; }
+
+    /* NAV */
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      backdrop-filter: saturate(160%) blur(14px);
+      background: rgba(15, 16, 32, 0.6);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 66px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: .2px; }
+    .brand img { width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0,0,0,.4)); }
+    .nav-links { display: flex; gap: 26px; align-items: center; }
+    .nav-links a { color: var(--muted); font-size: 15px; transition: color .2s; }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--accent), var(--pink));
+      color: #231303; font-weight: 700; padding: 9px 18px; border-radius: 999px;
+      font-size: 14px; box-shadow: 0 8px 22px rgba(255, 138, 107, .28);
+    }
+
+    /* HERO */
+    .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center; padding: 82px 0 66px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(160, 232, 255, .12); color: var(--accent-2);
+      border: 1px solid rgba(160, 232, 255, .28);
+      padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 22px;
+    }
+    h1 { font-size: 52px; line-height: 1.08; font-weight: 900; letter-spacing: -1px; }
+    h1 .grad { background: linear-gradient(120deg, var(--accent), var(--pink) 60%, var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { color: var(--muted); font-size: 19px; margin: 20px 0 30px; max-width: 520px; }
+    .cta-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .btn-dl {
+      display: inline-flex; align-items: center; gap: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--pink));
+      color: #231303; font-weight: 800; font-size: 17px;
+      padding: 15px 28px; border-radius: 16px;
+      box-shadow: 0 14px 34px rgba(255, 138, 107, .34); transition: transform .18s, box-shadow .18s;
+    }
+    .btn-dl:hover { transform: translateY(-2px); box-shadow: 0 20px 44px rgba(255, 138, 107, .44); }
+    .btn-dl svg { width: 22px; height: 22px; }
+    .btn-ghost { color: var(--muted); font-size: 15px; padding: 14px 4px; }
+    .btn-ghost:hover { color: var(--text); }
+    .meta { margin-top: 16px; color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .meta .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); opacity: .5; }
+    #verLabel { color: var(--accent-2); font-weight: 600; }
+
+    .hero-art { position: relative; display: flex; justify-content: center; }
+    .hero-cat {
+      width: 240px; max-width: 100%; image-rendering: auto;
+      animation: breathe 4s ease-in-out infinite;
+      filter: drop-shadow(0 30px 50px rgba(0, 0, 0, .5));
+      z-index: 2;
+    }
+    .glow { position: absolute; inset: 8% 6% 4% 6%; background: radial-gradient(circle at 50% 45%, rgba(255, 184, 107, .35), transparent 62%); filter: blur(28px); z-index: 1; }
+    @keyframes breathe { 0%,100% { transform: scale(1) translateY(0); } 50% { transform: scale(1.02) translateY(-6px); } }
+
+    /* SECTIONS */
+    section { padding: 66px 0; }
+    .sec-head { text-align: center; max-width: 640px; margin: 0 auto 44px; }
+    .sec-head h2 { font-size: 34px; font-weight: 850; letter-spacing: -.5px; }
+    .sec-head p { color: var(--muted); margin-top: 12px; font-size: 17px; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .card {
+      background: linear-gradient(180deg, var(--card), var(--bg-soft));
+      border: 1px solid var(--line); border-radius: 20px; padding: 26px;
+      transition: transform .2s, border-color .2s;
+    }
+    .card:hover { transform: translateY(-4px); border-color: rgba(255, 184, 107, .4); }
+    .card .ico { font-size: 30px; line-height: 1; margin-bottom: 14px; }
+    .card h3 { font-size: 19px; font-weight: 750; margin-bottom: 8px; }
+    .card p { color: var(--muted); font-size: 15px; }
+
+    /* FREE vs UNLOCK band */
+    .band { background: linear-gradient(180deg, var(--bg-soft), transparent); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; margin-bottom: 12px; }
+    .pill.free { background: rgba(82, 196, 26, .16); color: #7ede5a; border: 1px solid rgba(82,196,26,.3); }
+    .pill.unlock { background: rgba(255, 184, 107, .14); color: var(--accent); border: 1px solid rgba(255,184,107,.3); }
+
+    /* STATES */
+    .states { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+    .state {
+      background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+      padding: 18px 24px; text-align: center; min-width: 130px;
+    }
+    .state .e { font-size: 34px; }
+    .state .n { margin-top: 8px; font-weight: 700; }
+    .state .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+    /* STEPS */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; counter-reset: s; }
+    .step { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px; position: relative; }
+    .step .num { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--pink)); color: #231303; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+    .step h3 { font-size: 18px; margin-bottom: 8px; }
+    .step p { color: var(--muted); font-size: 15px; }
+
+    /* FINAL CTA */
+    .final { text-align: center; background: linear-gradient(135deg, rgba(255,184,107,.12), rgba(160,232,255,.1)); border: 1px solid var(--line); border-radius: 28px; padding: 56px 26px; }
+    .final h2 { font-size: 32px; margin-bottom: 12px; }
+    .final p { color: var(--muted); margin-bottom: 26px; font-size: 17px; }
+
+    footer { padding: 40px 0 54px; text-align: center; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 30px; }
+    footer .fl { display: flex; gap: 20px; justify-content: center; margin-bottom: 14px; }
+    footer .fl a:hover { color: var(--text); }
+
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; text-align: center; padding-top: 48px; }
+      .cta-row, .meta { justify-content: center; }
+      .lead { margin-left: auto; margin-right: auto; }
+      .grid, .steps { grid-template-columns: 1fr; }
+      .hero-cat { width: 220px; }
+      h1 { font-size: 40px; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="wrap nav-inner">
+      <div class="brand"><img src="assets/cat.png" alt="cute pet 宠物" /> cute pet</div>
+      <div class="nav-links">
+        <a href="#features">功能</a>
+        <a href="#states">宠物状态</a>
+        <a href="#install">安装</a>
+      </div>
+      <a class="nav-cta" href="#" data-download>下载</a>
+    </div>
+  </nav>
+
+  <header class="wrap hero">
+    <div>
+      <span class="eyebrow">🐾 macOS 桌面虚拟宠物 · 纯 Swift 打造</span>
+      <h1>一只住在桌面上的<br><span class="grad">宠物伙伴</span></h1>
+      <p class="lead">cute pet 悬浮在桌面最上层，会呼吸、能抚摸、可喂猫条。喝水提醒、天气、股票、新闻、Todo 随手可得，背单词和 LeetCode 热题陪你摸鱼充电——工作之余，它一直在你身边。</p>
+      <div class="cta-row">
+        <a class="btn-dl" href="#" data-download>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          下载 macOS 版
+        </a>
+        <a class="btn-ghost" href="#features">了解更多 ↓</a>
+      </div>
+      <div class="meta">
+        <span id="verLabel">正在获取最新版本…</span>
+        <span class="dot"></span><span>需 macOS 13.0+</span>
+        <span class="dot"></span><span id="sizeLabel">约 6 MB</span>
+      </div>
+    </div>
+    <div class="hero-art">
+      <div class="glow"></div>
+      <img class="hero-cat" src="assets/cat.png" alt="cute pet 宠物" />
+    </div>
+  </header>
+
+  <section id="features" class="wrap">
+    <div class="sec-head">
+      <h2>不只是一个桌宠</h2>
+      <p>从陪伴互动到实用工具，一只宠物把「治愈」和「效率」都装进了桌面。</p>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="ico">🫧</div><h3>桌面悬浮 & 拖拽</h3><p>无边框透明窗口始终置顶，跨桌面 / 全屏共存，鼠标一拖就能挪到任意角落。</p></div>
+      <div class="card"><div class="ico">🎬</div><h3>精灵图动画</h3><p>专注 / 休闲 / 提醒 / 睡觉 / 抚摸 5 种状态，帧循环驱动 + 渲染层呼吸效果，看着就治愈。</p></div>
+      <div class="card"><div class="ico">🐾</div><h3>摸摸 & 喂猫条</h3><p>点一下就提醒，右键抚摸；「喂猫条」让宠物追着你的光标走，互动感拉满。</p></div>
+      <div class="card"><div class="ico">💧</div><h3>喝水提醒</h3><p>每到整点 / 半点自动弹窗提醒，附带动画，久坐党记得抬头喝口水。</p></div>
+      <div class="card"><div class="ico">📊</div><h3>菜单栏系统监控</h3><p>CPU / 内存 / 磁盘 / 网络实时可见，还能一键清理内存，给 Mac 减减负。</p></div>
+      <div class="card"><div class="ico">🔄</div><h3>自动更新</h3><p>内置 Ed25519 验签的静默更新，新版本自动下载校验替换，宠物无缝回来。</p></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>解锁更多超能力 🔓</h2>
+        <p>输入激活码即可开启「全功能模式」，把这些陪伴彩蛋收进右键菜单。</p>
+      </div>
+      <div class="grid">
+        <div class="card"><span class="pill unlock">需解锁</span><div class="ico">📚</div><h3>背单词</h3><p>四级 / 六级 / 雅思 / 旅行场景词库，学 3 考 3，配合释义与发音，碎片时间顺便记单词。</p></div>
+        <div class="card"><span class="pill unlock">需解锁</span><div class="ico">🧩</div><h3>苦练基本功</h3><p>随机抽取 LeetCode 热题 100，题干原样呈现，带难度徽章，「换一题」随时开练。</p></div>
+        <div class="card"><span class="pill unlock">需解锁</span><div class="ico">📰</div><h3>今日热点新闻</h3><p>今日头条热榜 Top10，接口异常自动切百度热搜兜底，标题可点击直达。</p></div>
+        <div class="card"><span class="pill unlock">需解锁</span><div class="ico">☀️</div><h3>天气查询</h3><p>和风天气 API，支持定位自动查询与输入城市，展示当前 / 逐小时 / 未来 7 天气温条。</p></div>
+        <div class="card"><span class="pill unlock">需解锁</span><div class="ico">📈</div><h3>股票查询</h3><p>腾讯行情接口，覆盖沪 / 深 / 北 / 港代码，红涨绿跌，带最近查询历史一键回填。</p></div>
+        <div class="card"><span class="pill free">免费</span><div class="ico">📝</div><h3>Todo 清单</h3><p>双击宠物即开，本地持久化增删随意，把待办挂在桌面最显眼的地方。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="states" class="wrap">
+    <div class="sec-head">
+      <h2>宠物的五种心情</h2>
+      <p>每一种状态都有专属动画，随时切换，随时陪伴。</p>
+    </div>
+    <div class="states">
+      <div class="state"><div class="e">🎯</div><div class="n">专注</div><div class="d">默认状态</div></div>
+      <div class="state"><div class="e">😌</div><div class="n">休闲</div><div class="d">放松一下</div></div>
+      <div class="state"><div class="e">🔔</div><div class="n">提醒</div><div class="d">该喝水啦</div></div>
+      <div class="state"><div class="e">😴</div><div class="n">睡觉</div><div class="d">安静待着</div></div>
+      <div class="state"><div class="e">🤲</div><div class="n">抚摸</div><div class="d">被你摸摸</div></div>
+    </div>
+  </section>
+
+  <section id="install" class="wrap">
+    <div class="sec-head">
+      <h2>三步把宠物接回家</h2>
+      <p>纯 Swift 开发，无第三方依赖，下载安装即用。</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>下载安装包</h3><p>点击上方按钮下载 <code>cute-pet-*.zip</code>，解压得到 <code>cute pet.app</code>。</p></div>
+      <div class="step"><div class="num">2</div><h3>放到「应用程序」</h3><p>把 app 拖进 <code>/Applications</code>，需要窗口置顶时请保持关闭 App Sandbox。</p></div>
+      <div class="step"><div class="num">3</div><h3>首次打开</h3><p>若被 Gatekeeper 拦截：右键 app → 「打开」→「仍要打开」；或执行 <code>xattr -cr</code> 移除隔离属性。</p></div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="final">
+      <h2>让宠物住进你的桌面 🐈</h2>
+      <p>免费、开源、纯本地运行。下载开始，你的第一只 macOS 桌面宠物。</p>
+      <a class="btn-dl" href="#" data-download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        下载最新版 <span id="verBtn"></span>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div class="fl">
+        <a href="#features">功能</a>
+        <a href="#states">状态</a>
+        <a href="#install">安装</a>
+        <a href="https://github.com/ai1045152332/PetProject" target="_blank" rel="noopener">GitHub</a>
+      </div>
+      <div>© 2026 cute pet · MIT License · 支持 macOS 13.0+（Ventura 及以上）</div>
+    </div>
+  </footer>
+
+  <script>
+    // ── 发布信息接口（与官网同源，由 PetServer 直接托管）──
+    var API_BASE = "";  // 同源：留空即可，自动指向当前站点（http://101.96.248.75）
+    // 兜底：接口不可用时，指向当前已发布的最新稳定版直链
+    var FALLBACK = { version: "v1.0.016", file: "cute-pet-v1.0.016.zip", size: 5978876 };
+
+    function fmtSize(bytes) {
+      if (!bytes) return "";
+      var mb = bytes / 1024 / 1024;
+      return "约 " + (mb >= 1 ? mb.toFixed(1) + " MB" : Math.round(bytes / 1024) + " KB");
+    }
+
+    function applyRelease(info) {
+      var url = API_BASE + "/download/" + encodeURIComponent(info.file);
+      document.querySelectorAll("[data-download]").forEach(function (a) {
+        a.setAttribute("href", url);
+        a.setAttribute("download", info.file);
+      });
+      var label = document.getElementById("verLabel");
+      if (label) label.textContent = "最新版本 " + info.version;
+      var sizeLabel = document.getElementById("sizeLabel");
+      if (sizeLabel && info.size) sizeLabel.textContent = fmtSize(info.size);
+      var verBtn = document.getElementById("verBtn");
+      if (verBtn) verBtn.textContent = info.version;
+    }
+
+    // 先设兜底链接，保证即使接口失败下载按钮也可用
+    applyRelease(FALLBACK);
+
+    // 动态拉取最新版本（同源请求，无跨域限制）
+    fetch(API_BASE + "/api/app/latest", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject("http " + r.status); })
+      .then(function (j) {
+        if (j && j.code === 0 && j.data && j.data.file) {
+          applyRelease({ version: j.data.version, file: j.data.file, size: j.data.size });
+        }
+      })
+      .catch(function () {
+        // 跨域 / 网络失败：保留兜底直链，仅在版本标签提示手动检查
+        var label = document.getElementById("verLabel");
+        if (label) label.textContent = "最新版本 " + FALLBACK.version;
+      });
+  </script>
+</body>
+</html>

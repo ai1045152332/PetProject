@@ -94,6 +94,7 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 | 客户端收不到更新 | 先 `curl /api/app/latest` 确认线上版本；客户端也可能尚未到检查时机（6h），让用户在设置里手动点「检查更新」 |
 | 客户端「验签失败」 | 发布私钥与 App 内置公钥不匹配（换过密钥/在别的机器发布）—— 用同一私钥重发，或换公钥后重新打包发版 |
 | 安装包 sha256 不一致 | 上传中断，重新执行发布脚本 |
+| 服务端部署报「未确认远端启动结果」 | 替换/重启那条 SSH 连接中途断了。二进制已上传并校验过，单独重跑替换命令即可（脚本里那段 `cp …; mv …; systemctl restart …; if curl …; echo DEPLOYED; fi`），或再跑一次 `deploy-server.sh` |
 | 服务端部署卡在「上传中断」 | 到服务器链路很差（`curl` 下 3MB 也超时）。脚本会拒绝替换线上文件；待网络恢复后重跑即可，或用 `CUTE_PET_SSH_HOST` 换出口 |
 | 服务端部署后服务 SEGV/重启循环 | 通常是上传的二进制被截断。脚本的 sha 校验会拦住；若已发生：`mv petserver.bak petserver && systemctl restart petserver` |
 | rsync 报 `--append` 相关错误 | 已改用 `--partial --inplace`（目的文件不存在时 `--append-verify` 会报错） |

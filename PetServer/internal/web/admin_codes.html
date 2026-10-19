@@ -193,9 +193,29 @@
     }
 
     async function api(path, options) {
-      const resp = await fetch(path, Object.assign({
+      const opts = Object.assign({
         headers: { 'Content-Type': 'application/json', 'X-Session-Token': session() }
-      }, options));
+      }, options);
+
+      async function once() {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 12000);
+        try {
+          return await fetch(path, Object.assign({ signal: ctrl.signal }, opts));
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      // 仅查询类请求重试；生成激活码等写操作重试会造成重复执行
+      const isRead = !(opts.method && String(opts.method).toUpperCase() !== 'GET');
+      let resp;
+      try {
+        resp = await once();
+      } catch (e) {
+        if (!isRead) throw e;
+        resp = await once();
+      }
       if (resp.status === 401) {
         localStorage.removeItem('petAdminSession');
         location.replace('/admin/login');

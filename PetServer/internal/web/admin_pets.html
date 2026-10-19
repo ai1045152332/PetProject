@@ -183,14 +183,28 @@
       }
     }
 
+    let loading = false;
+    let retryTimer = 0;
+
     async function load() {
+      if (loading) return;          // 网络慢时避免请求堆积
+      loading = true;
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 10000);
       try {
-        const resp = await fetch('/api/devices', { headers: { 'Accept': 'application/json' } });
+        const resp = await fetch('/api/devices', { headers: { 'Accept': 'application/json' }, signal: ctrl.signal });
         const json = await resp.json();
         if (json.code !== 0) throw new Error(json.msg || '接口返回异常');
         render(json.data);
       } catch (e) {
-        document.getElementById('status').textContent = '加载失败：' + e.message;
+        // 链路抖动：1.5s 后重试一次，避免界面一直停在「加载失败」
+        document.getElementById('status').textContent = '连接不稳，正在重试…';
+        if (!retryTimer) {
+          retryTimer = setTimeout(() => { retryTimer = 0; load(); }, 1500);
+        }
+      } finally {
+        clearTimeout(timeout);
+        loading = false;
       }
     }
 

@@ -100,10 +100,22 @@ func main() {
 	releaseSvc := service.NewReleaseService("dist")
 	releaseCtrl := controller.NewReleaseController(releaseSvc)
 
+	// 文件管理：默认只开放 data 目录，可用 PETSERVER_FILES_ROOT 指向其他目录
+	filesRoot := os.Getenv("PETSERVER_FILES_ROOT")
+	if filesRoot == "" {
+		filesRoot = "data"
+	}
+	fileSvc, err := service.NewFileService(filesRoot)
+	if err != nil {
+		log.Fatalf("初始化文件管理服务失败: %v", err)
+	}
+	log.Printf("[files] 文件管理根目录: %s", fileSvc.Root())
+	filesCtrl := controller.NewFileController(authSvc, fileSvc)
+
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

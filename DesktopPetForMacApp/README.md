@@ -1,6 +1,6 @@
 # DesktopPetForMacApp — macOS 桌面小猫
 
-> 版本发布与客户端自动更新流程见 [`docs/自动更新与发布流程.md`](../docs/自动更新与发布流程.md)。
+> 版本发布与客户端自动更新流程见 [`skills/deploy-cute-pet`](../skills/deploy-cute-pet/SKILL.md)。
 
 一款纯 Swift 开发的 macOS 桌面虚拟宠物。一只小猫悬浮在桌面最上层，支持精灵图动画、鼠标拖拽、右键菜单、菜单栏设置，以及喝水提醒、热点新闻、天气、股票、Todo 等实用小功能。
 

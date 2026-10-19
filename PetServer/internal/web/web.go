@@ -23,6 +23,11 @@ var AdminLoginPage []byte
 //go:embed admin_codes.html
 var AdminCodesPage []byte
 
+// AdminFilesPage 后台管理：文件管理页
+//
+//go:embed admin_files.html
+var AdminFilesPage []byte
+
 // StaticFS 内置静态资源（Tabler 后台 UI 框架样式等）
 //
 //go:embed static

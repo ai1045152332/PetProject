@@ -449,6 +449,66 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 | 会话失效/凭证缺失 | 401 | `{"code":401,"msg":"unauthorized"}` |
 | 参数非法 | 400 | `{"code":400,"msg":"count must be 1~100"}` |
 
+### 3.10 文件管理：列出目录
+
+```
+GET /api/admin/files/list?path=相对目录
+```
+
+- 所有文件操作锚定在根目录内（默认 `data/`，可用环境变量 `PETSERVER_FILES_ROOT` 覆盖），
+  路径已净化，`../` 穿越会被限制在根目录内，越界直接拒绝
+- `path` 留空表示根目录本身
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "path": "",
+    "root": "/opt/petserver/data",
+    "files": [
+      { "name": "activation_codes.json", "isDir": false, "size": 590, "modTime": "2026-10-15 15:40:32" }
+    ]
+  }
+}
+```
+
+### 3.11 文件管理：预览文件
+
+```
+GET /api/admin/files/preview?path=相对文件路径
+```
+
+响应：`data` 为 `{"path","content","size","truncated"}`；最多读取前 200 KB，
+超出时 `truncated=true`（大文件/二进制文件不建议预览）。
+
+### 3.12 文件管理：删除文件
+
+```
+POST /api/admin/files/delete
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| path | string | 是 | 相对根目录的文件/目录路径 |
+
+请求示例：
+
+```bash
+curl -X POST http://101.96.248.75/api/admin/files/delete \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: <管理密码>" \
+  -d '{"path": "old_log.txt"}'
+```
+
+响应：`{"code":0,"msg":"ok"}`。
+
+> ⚠️ 删除不可恢复；目录会递归删除；根目录本身禁止删除。
+
 ## 4. App 更新接口
 
 ### 4.1 查询最新版本
@@ -511,4 +571,5 @@ cd DesktopPetForMacApp
 | `GET /admin/login` | 登录页（账号密码） |
 | `GET /admin` | 菜单一：小猫在线列表 |
 | `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间） |
+| `GET /admin/files` | 菜单三：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
 | `GET /online`（或 `/`） | 手机版在线宠物页（免登录） |

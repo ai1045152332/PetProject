@@ -5,9 +5,14 @@ metadata:
   short-description: Deploy cute pet app releases to the remote server
 ---
 
-# 部署 cute pet App 到远程
+# 部署 cute pet（App + PetServer）
 
-产物是 macOS App（`cute pet.app` 的 zip），由客户端自动更新机制拉取。发布 = 编译打包 → Ed25519 签名 → 上传 `101.96.248.75:/opt/petserver/dist/` → 更新 `latest.json`。
+两个独立的发布面：
+
+- **App 发版**：编译 macOS App → Ed25519 签名 → 上传安装包 → 客户端自动升级
+- **PetServer 部署**：交叉编译 Linux 二进制 → 上传 → 原子替换 → 重启 → 健康检查（失败自动回滚）
+
+若一次改动同时涉及接口与客户端，**先部署服务端（保持向后兼容），再发 App**。
 
 ## 一键发布
 
@@ -27,13 +32,42 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 
 若仓库有未提交改动而用户还没决定是否发布，先问；发布说明必须是**用户能读懂的中文**（例：「修复了天气提醒时间看不清的问题」），技术细节留在 commit message。
 
+## 部署服务端（PetServer）
+
+```bash
+./skills/deploy-cute-pet/scripts/deploy-server.sh --check     # 只检查 SSH/配置/连通性
+./skills/deploy-cute-pet/scripts/deploy-server.sh            # 编译并部署（含验证）
+```
+
+脚本流程与安全边界：
+
+1. `go vet` + `go test`（测试失败仅告警）
+2. `GOOS=linux GOARCH=amd64` 交叉编译
+3. **rsync 断点续传上传**（链路抖动可重试续传），最多 5 次
+4. **校验远端 sha256 == 本地构建**；不一致则放弃，绝不替换线上文件
+5. 备份当前二进制为 `petserver.bak` → 原子替换 → `systemctl restart`
+6. 重启后**在服务器内 curl `/api/ping` 做健康检查**，不通过则自动回滚并重启旧版
+7. 本地再从公网验证 `/api/ping`、`/api/devices`、`/api/app/latest`、`/api/weather`
+
+远端布局与运维：
+
+| 项 | 值 |
+| --- | --- |
+| 服务 | `systemctl {status,restart,logs} petserver`，监听 `:80` |
+| 二进制 | `/opt/petserver/petserver`（备份 `.bak`） |
+| 配置 | `/opt/petserver/petserver.env`（0600；后台密码、天气 Key） |
+| 数据 | `/opt/petserver/data/`（会话/设备快照/激活码/心跳日志/私钥） |
+| 日志 | `/var/log/petserver.log` |
+
+注意：`PETSERVER_LISTEN_ADDR` 默认 `:8080`，公网部署在 env 里设为 `:80`。重启不会丢数据（会话与设备列表均持久化）。
+
 ## 关键约束（容易踩）
 
 1. **版本号只能递增，同一版本号不要重复发布不同内容**。已升级到该版本的客户端不会再次下载，等于这批人永远收不到修复。
 2. **发布后不要 `rebuild.sh` 本机 App**，除非用户明确要求本机立即升级 —— 本机保持在旧版本才有得测更新流程。
 3. **签名私钥不可丢**：`~/.cute-pet-release/ed25519_private.pem`。丢失后无法再发布任何老客户端能接受的更新；泄露则可被伪造更新。
 4. **客户端与服务端成对绑定**：App 内嵌发布验签公钥（`UpdateService.swift`）、载荷加密公钥（`PayloadCrypto.swift`）、后端地址（`ServerConfig.swift`）。换服务器或换密钥必须同时改这三处并重新发版。
-5. **不要把密码/密钥写进仓库**：`scripts/check-secrets.sh` 的 pre-commit 钩子会拦截；发布私钥与上传助手只存 `~/.cute-pet-release/`。服务器密码在其 `.exp` 脚本里。
+5. **不要把密码/密钥写进仓库**：发布私钥与上传助手只存 `~/.cute-pet-release/`；服务器密码在其 `.exp` 脚本里，不入仓。
 6. 上传卡住/缺少目录：`release.sh` 已处理 `mkdir -p /opt/petserver/dist`；若仍失败，检查 `~/.cute-pet-release/{scp_put,ssh_run}.exp` 可执行且密码与服务端一致。
 
 ## 客户端何时升级
@@ -49,6 +83,7 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 | 版本号唯一来源 | `DesktopPetForMacApp/DesktopPetForMacApp/App/AppVersion.swift` |
 | 客户端更新器 / 内置公钥 | `.../Services/UpdateService.swift` |
 | 服务端下发接口 | `PetServer/internal/controller/release_controller.go` |
+| 服务端部署脚本 | `skills/deploy-cute-pet/scripts/deploy-server.sh` |
 | 线上版本查询 | `curl http://101.96.248.75/api/app/latest` |
 
 ## 排障
@@ -59,8 +94,17 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 | 客户端收不到更新 | 先 `curl /api/app/latest` 确认线上版本；客户端也可能尚未到检查时机（6h），让用户在设置里手动点「检查更新」 |
 | 客户端「验签失败」 | 发布私钥与 App 内置公钥不匹配（换过密钥/在别的机器发布）—— 用同一私钥重发，或换公钥后重新打包发版 |
 | 安装包 sha256 不一致 | 上传中断，重新执行发布脚本 |
+| 服务端部署卡在「上传中断」 | 到服务器链路很差（`curl` 下 3MB 也超时）。脚本会拒绝替换线上文件；待网络恢复后重跑即可，或用 `CUTE_PET_SSH_HOST` 换出口 |
+| 服务端部署后服务 SEGV/重启循环 | 通常是上传的二进制被截断。脚本的 sha 校验会拦住；若已发生：`mv petserver.bak petserver && systemctl restart petserver` |
+| rsync 报 `--append` 相关错误 | 已改用 `--partial --inplace`（目的文件不存在时 `--append-verify` 会报错） |
 | 服务器 404 `no release published` | `dist/latest.json` 不存在，先发布一次 |
 
 ## 注意区分：服务端部署是另一件事
 
 本 skill 只管 **App 发版**。`PetServer` 的部署是：本地 `GOOS=linux GOARCH=amd64 go build` → 上传到 `/opt/petserver/petserver.new` → `mv` 覆盖 → `systemctl restart petserver`（服务监听 :80，配置在 `/opt/petserver/petserver.env`）。
+
+## 深度参考
+
+完整的更新机制、安全模型、密钥生成、更新弹窗文案规范、客户端升级时机、常见排障等细节见：
+
+- [references/auto-update-and-release.md](references/auto-update-and-release.md) — 「自动更新与发布流程」全文（12 章节）

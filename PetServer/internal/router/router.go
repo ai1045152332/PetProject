@@ -19,6 +19,7 @@ func New(
 	cryptoCtrl *controller.CryptoController,
 	releaseCtrl *controller.ReleaseController,
 	weatherCtrl *controller.WeatherController,
+	filesCtrl *controller.FileController,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
@@ -34,6 +35,9 @@ func New(
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)
 	mux.HandleFunc("/api/admin/devices/note", adminCtrl.SetDeviceNote)
+	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)
+	mux.HandleFunc("/api/admin/files/preview", filesCtrl.Preview)
+	mux.HandleFunc("/api/admin/files/delete", filesCtrl.Delete)
 	mux.HandleFunc("/api/app/latest", releaseCtrl.Latest)
 	mux.HandleFunc("/download/", releaseCtrl.Download)
 
@@ -63,6 +67,12 @@ func New(
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		noCache(w)
 		w.Write(web.AdminCodesPage)
+	})
+	// 后台管理：文件管理页（查看/预览/删除服务器文件）
+	mux.HandleFunc("/admin/files", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		noCache(w)
+		w.Write(web.AdminFilesPage)
 	})
 	// 内置静态资源（Tabler 样式等，与接口同源）
 	mux.Handle("/static/", http.FileServer(http.FS(web.StaticFS)))

@@ -19,7 +19,6 @@ class HTMLAlertWindow: NSWindow {
     private var confirmHandler: ConfirmMessageHandler?
     private var targetWidth: CGFloat = 420
     private var targetMaxHeight: CGFloat = 640
-    private var webWindowSize: NSSize?
     private var hasSized = false
     private var dragOffset: NSPoint = .zero
     /// 附加业务 CSS（Todo 列表 / 热点新闻表格 / 喝水文案等），经 CardFrame 基类渲染
@@ -626,44 +625,6 @@ class HTMLAlertWindow: NSWindow {
         window.orderFrontRegardless()
     }
 
-    /// 显示内嵌网页弹窗（通过 iframe 嵌入外部 H5 页面，如小游戏）
-    /// 默认按手机竖屏比例取屏幕可用高度的 75%，宽度不足时等比缩窄
-    static func showWeb(title: String, urlString: String, maxHeightRatio: CGFloat = 0.75, onClose: (() -> Void)? = nil) {
-        let visible = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
-        var height = visible.height * maxHeightRatio
-        var width = height * 0.46
-        if width > visible.width * 0.92 {
-            width = visible.width * 0.92
-            height = width / 0.46
-        }
-        let windowSize = NSSize(width: width, height: height)
-        let window = HTMLAlertWindow(
-            contentRect: NSRect(x: -1000, y: -1000, width: windowSize.width, height: windowSize.height),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.hasShadow = false
-        window.title = title
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.targetWidth = windowSize.width
-        window.targetMaxHeight = windowSize.height
-        window.webWindowSize = windowSize
-        window.onClose = onClose
-
-        let escapedURL = urlString
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-        let htmlBody = """
-        <button class="game-close-btn" onclick="window.webkit.messageHandlers.close.postMessage('')">✕</button>
-        <iframe src="\(escapedURL)" style="width:100%;height:100%;border:none;border-radius:12px;background:#1a1a2e;" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock"></iframe>
-        """
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: false)
-        window.alphaValue = 0
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
-    }
-
     /// 显示背单词学习弹窗
     @discardableResult
     static func showWordLearning(title: String, htmlBody: String, width: CGFloat = 420, onNextQuiz: ((Bool) -> Void)? = nil, onRetryLearning: (() -> Void)? = nil, onSwitchCategory: ((String) -> Void)? = nil) -> HTMLAlertWindow {
@@ -848,36 +809,6 @@ class HTMLAlertWindow: NSWindow {
             frameConfig.fullBleed = true
             frameConfig.maxContentHeight = nil
             frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
-        } else if webWindowSize != nil {
-            // 小游戏：无标题栏、无底部按钮，游戏铺满窗口 + 右上角悬浮关闭
-            frameConfig.showHeader = false
-            frameConfig.showFooter = false
-            frameConfig.maxContentHeight = nil
-            frameConfig.cardWidth = targetWidth
-            frameConfig.extraCSS = """
-                .card { height: 100%; max-width: none; }
-                .card-content { padding: 0; min-height: 0; overflow: hidden; position: relative; }
-                .card-content iframe { display: block; }
-                .game-close-btn {
-                    position: absolute;
-                    top: 10px;
-                    right: 10px;
-                    width: 30px;
-                    height: 30px;
-                    border: none;
-                    border-radius: 50%;
-                    background: rgba(0, 0, 0, 0.45);
-                    color: rgba(255, 255, 255, 0.9);
-                    font-size: 15px;
-                    line-height: 30px;
-                    text-align: center;
-                    cursor: pointer;
-                    z-index: 10;
-                    -webkit-appearance: none;
-                    transition: background 0.2s;
-                }
-                .game-close-btn:hover { background: rgba(0, 0, 0, 0.7); }
-            """
         } else if isWordLearningMode {
             // 背单词：无边框窗口 + 渐变标题栏卡片 + 无底部按钮 + 标题栏可拖动
             frameConfig.showHeader = true
@@ -1025,7 +956,7 @@ extension HTMLAlertWindow: WKNavigationDelegate {
 
             let minH: CGFloat = 200
             let maxH = min(self.targetMaxHeight, (NSScreen.main?.visibleFrame.height ?? 800) * 0.75)
-            let targetH = self.webWindowSize?.height ?? max(minH, min(contentHeight + 24, maxH))
+            let targetH = max(minH, min(contentHeight + 24, maxH))
 
             var frame = self.frame
             frame.size.width = self.targetWidth
@@ -1035,7 +966,7 @@ extension HTMLAlertWindow: WKNavigationDelegate {
 
             // 所有无边框窗口（非可缩放）：sizing 完成后添加原生拖动条（此时 frame 已正确）
             // 可缩放标准窗口（热点新闻）的渐变标题栏已启用 -webkit-app-region: drag，无需原生拖动条
-            if self.todoEstimatedHeight == nil && self.webWindowSize == nil && !self.styleMask.contains(.resizable) {
+            if self.todoEstimatedHeight == nil && !self.styleMask.contains(.resizable) {
                 // 右侧须给标题栏 ✕ 按钮让位（窗口 padding 8 + 卡片内边距 18 + 按钮 26，共约 52px），
                 // 否则拖动条盖住 ✕ 左半部分，点击变成拖窗口（点好几次才能关掉）
                 let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 48, width: self.frame.width - 60, height: 48))

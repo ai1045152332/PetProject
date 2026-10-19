@@ -533,7 +533,7 @@ let arw = accessRow.bounds.width
         accessRow.addSubview(statusLabel)
         accessStatusLabel = statusLabel
 
-        let accessDesc = NSTextField(labelWithString: "输入校验码解锁全部功能（当前仅开放基础功能）")
+        let accessDesc = NSTextField(labelWithString: "输入校验码解锁全部功能；如需获取校验码，请添加微信：Ideal2020life")
         accessDesc.font = .systemFont(ofSize: 11)
         accessDesc.textColor = .tertiaryLabelColor
         accessDesc.frame = NSRect(x: 14, y: 32, width: arw - 28, height: 15)

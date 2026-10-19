@@ -124,7 +124,6 @@ enum ContextMenuPrefs {
     static let items: [(key: String, title: String)] = [
         ("pet", "抚摸 🐾"),
         ("feed", "喂猫条 🍡"),
-        ("game", "玩小游戏 🎮"),
         ("word", "背单词 📚"),
         ("problem", "苦练基本功 🧩"),
         ("news", "今日热点新闻 📰"),
@@ -916,7 +915,6 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
         let entries: [MenuEntry] = [
             ("pet", #selector(petAction(_:)), false),
             ("feed", #selector(feedAction(_:)), false),
-            ("game", #selector(playGameAction(_:)), false),
             ("word", #selector(wordLearningAction(_:)), true),
             ("problem", #selector(problemAction(_:)), true),
             ("news", #selector(hotNewsAction(_:)), true),
@@ -970,9 +968,6 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     /// 「解锁更多功能」：通知 AppDelegate 打开设置面板并锚定闪烁「权限」栏
     @objc private func unlockMoreAction(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: .init("DesktopPet.ShowAccessSettings"), object: nil)
-    }
-    @objc private func playGameAction(_ sender: NSMenuItem) {
-        HTMLAlertWindow.showWeb(title: "玩小游戏 🎮", urlString: "https://brake.tp0k.us/")
     }
     @objc private func wordLearningAction(_ sender: NSMenuItem) { viewModel?.startWordLearning() }
     @objc private func problemAction(_ sender: NSMenuItem) { showRandomProblem() }

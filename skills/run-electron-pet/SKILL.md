@@ -39,9 +39,12 @@ npm start            # 等价于 electron .
 
 ## 停止 / 关闭
 
-- **正常关闭**：直接关掉宠物窗口即退出（非 macOS 窗口全关即 `app.quit()`；macOS 目前也随主窗关闭而结束）。
-- **前台常驻**：在跑 `npm start` 的终端按 `Ctrl + C` 结束。
-- **残留进程强制清理**：`pkill -f "DesktopPetElectron"`（或先 `lsof`/`ps` 查到确切 PID 再 `kill`）。
+悬浮小猫是 `skipTaskbar: true` 的无边框透明窗，**Dock 里没有图标**，靠菜单栏托盘退出：
+
+- **推荐**：点顶部菜单栏的托盘图标 →「退出」（左键单击图标 = 显示/隐藏宠物，右键 = 弹菜单）；见 `src/main/tray.js`。
+- **前台常驻**：在跑 `npm start` 的终端按 `Ctrl + C`。
+- **残留进程强制清理**：按名 `pkill` 不可靠，先查 PID 再精确 kill——
+  `ps aux | grep -iE "DesktopPetElectron|cute pet.app" | grep -v grep` 找到主进程 PID（连外层 `node …/.bin/electron` 包装进程一起），再 `kill <pid>`；仍不退才 `kill -9`。
 
 ## 验证喝水提醒
 
@@ -73,6 +76,8 @@ npm run dist:win     # Windows：dist/*-setup.exe（NSIS）+ *.portable.exe
 npm run dist         # 按当前系统自动打对应包
 ```
 
+实测产物（arm64，version 0.0.1）：`dist/DesktopPet-0.0.1-arm64.dmg`、`dist/DesktopPet-0.0.1-arm64-mac.zip`、解包 bundle 在 `dist/mac-arm64/DesktopPet.app`。本机未配证书时为 ad-hoc 签名（`codesign -dv` 显示 `Identifier=Electron`），故需下面的去隔离处理。
+
 **macOS**：本机无开发者证书时加 `CSC_IDENTITY_AUTO_DISCOVERY=false` 跳过签名，否则构建中断。产物未签名，首次打开需在「隐私与安全性」点「仍要打开」或 `xattr -dr com.apple.quarantine DesktopPet.app`。
 
 **Windows**：
@@ -99,12 +104,15 @@ DesktopPetElectron/
 │   ├── pet-window.js           # 透明置顶悬浮窗（200×200）
 │   ├── reminder-window.js      # 喝水提醒独立弹窗（380×300 居中）
 │   ├── reminder-scheduler.js   # 提醒调度：对齐触发点 + 间隔重复 + 防叠加
+│   ├── tray.js                 # 菜单栏托盘：显示/隐藏 + 退出（悬浮窗 skipTaskbar 无 Dock 图标）
 │   └── config-store.js         # 极简 JSON 配置持久化（对标 UserDefaults）
 ├── src/renderer/
 │   ├── index.html / pet.css / pet.js         # 宠物窗：帧循环 + focus↔warn 状态机
 │   ├── preload.js              # petAPI（onDrinkWater / onDrinkWaterReset）
 │   ├── reminder.html/.css/.js + reminder-preload.js   # 提醒卡 UI + close
-└── assets/Sprites/             # 从 mac 工程拷贝的动画帧（focus/idel/warn/sleep/pet，各 8 帧 200×200）
+└── assets/
+    ├── Sprites/                # 从 mac 工程拷贝的动画帧（focus/idel/warn/sleep/pet，各 8 帧 200×200）
+    └── TrayIcon.png            # 菜单栏托盘图标（高约 40px，由 MenuBarIcon.png 缩放而来）
 ```
 
 ## 常见排障
@@ -115,6 +123,7 @@ DesktopPetElectron/
 | 弹窗内容显示不全 | 提醒窗固定尺寸，内容超高会被裁；已调 380×300 + body 留 18px 阴影边距，改尺寸看 `reminder-window.js` |
 | 透明窗出现白色方底 | body/html 背景必须 `transparent`；见 `pet.css`、`reminder.css` |
 | 快捷键触发不了 | `globalShortcut` 可能与系统快捷键冲突，改用 `PET_TEST_REMINDER=1` 启动验证 |
+| 看不到小猫但进程在跑 / 无法退出 | 悬浮窗 `skipTaskbar` 无 Dock 图标，看顶部菜单栏托盘图标→退出；无托盘则 `ps` 查 PID 后精确 `kill`（别 `pkill` 按名杀，易漏外层 npm 包装进程） |
 | 首次安装卡在下载 | 设 `ELECTRON_MIRROR` 镜像后重跑 `npm install` |
 
 ## 与其他 skill / 工程的关系
@@ -125,5 +134,5 @@ DesktopPetElectron/
 
 ## 当前进度
 
-已完成 **P0 悬浮窗 + 喝水提醒 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
-P1 完整动画状态机 → P2 拖拽/点击/托盘 → P3 右键菜单 → P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。
+已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
+P1 完整动画状态机 → P2 拖拽/点击/托盘（托盘✅）→ P3 右键菜单 → P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。

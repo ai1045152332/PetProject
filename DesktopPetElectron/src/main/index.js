@@ -7,6 +7,7 @@ const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
 const { createPetWindow } = require('./pet-window');
 const { openReminderWindow, closeReminderWindow } = require('./reminder-window');
 const { ReminderScheduler } = require('./reminder-scheduler');
+const { createTray } = require('./tray');
 const config = require('./config-store');
 
 let petWindow = null;
@@ -45,6 +46,22 @@ app.whenReady().then(() => {
   // 测试触发：Ctrl+Alt+W（Cmd+Alt+W on mac）立即弹一次，便于验证
   globalShortcut.register('CommandOrControl+Alt+W', () => {
     if (scheduler) scheduler.triggerNow();
+  });
+
+  // 切换宠物窗显示 / 隐藏（托盘用）
+  const togglePet = () => {
+    if (!petWindow || petWindow.isDestroyed()) {
+      petWindow = createPetWindow();
+      return;
+    }
+    if (petWindow.isVisible()) petWindow.hide();
+    else petWindow.show();
+  };
+
+  // 菜单栏托盘：提供可见图标 + 退出入口（悬浮窗 skipTaskbar，否则无 Dock 图标无法退出）
+  createTray({
+    togglePet,
+    quit: () => app.quit(),
   });
 
   // 仅测试用：PET_TEST_REMINDER=1 时启动 2 秒后自动弹一次提醒

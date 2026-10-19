@@ -117,6 +117,49 @@ final class FloatingWindow {
     }
 }
 
+// MARK: - 右键菜单项展示配置（设置面板 > 菜单设置 可勾选开关）
+
+enum ContextMenuPrefs {
+    /// 右键菜单功能项定义：key 为持久化标识（标题文案统一在此维护，菜单与设置面板共用）
+    static let items: [(key: String, title: String)] = [
+        ("pet", "抚摸 🐾"),
+        ("feed", "喂猫条 🍡"),
+        ("game", "玩小游戏 🎮"),
+        ("word", "背单词 📚"),
+        ("problem", "苦练基本功 🧩"),
+        ("news", "今日热点新闻 📰"),
+        ("weather", "查看天气 ☀️"),
+        ("todo", "Todo 清单 📝"),
+        ("stock", "输入股票代码查询 📈"),
+    ]
+
+    static func title(forKey key: String) -> String {
+        items.first { $0.key == key }?.title ?? key
+    }
+
+    /// 默认展示策略：除「苦练基本功」外全部展示
+    private static func defaultVisible(_ key: String) -> Bool {
+        key != "problem"
+    }
+
+    private static func prefsKey(_ key: String) -> String {
+        "settings.contextMenu.\(key)"
+    }
+
+    /// 读取某菜单项是否展示（未设置过时回退默认策略）
+    static func isVisible(key: String) -> Bool {
+        let pk = prefsKey(key)
+        if UserDefaults.standard.object(forKey: pk) == nil {
+            return defaultVisible(key)
+        }
+        return UserDefaults.standard.bool(forKey: pk)
+    }
+
+    static func setVisible(_ visible: Bool, key: String) {
+        UserDefaults.standard.set(visible, forKey: prefsKey(key))
+    }
+}
+
 // MARK: - 投喂期间的全屏拦截视图
 /// 透明全屏视图：投喂期间接住落在桌面/其他 App 区域的鼠标事件，取消投喂且事件不透传
 final class FeedOverlayView: NSView {
@@ -868,22 +911,25 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
 
         let fullAccess = AccessControl.isFullAccess
 
-        // 菜单项定义：标题、action、权限等级（fullOnly = 需校验码解锁的高级功能）
-        typealias MenuEntry = (title: String, action: Selector, fullOnly: Bool)
+        // 菜单项定义：标识 key、action、权限等级（fullOnly = 需校验码解锁的高级功能），标题由 ContextMenuPrefs 统一维护
+        typealias MenuEntry = (key: String, action: Selector, fullOnly: Bool)
         let entries: [MenuEntry] = [
-            ("抚摸 🐾", #selector(petAction(_:)), false),
-            ("喂猫条 🍡", #selector(feedAction(_:)), false),
-            ("玩小游戏 🎮", #selector(playGameAction(_:)), false),
-            ("背单词 📚", #selector(wordLearningAction(_:)), true),
-            ("苦练基本功 🧩", #selector(problemAction(_:)), true),
-            ("今日热点新闻 📰", #selector(hotNewsAction(_:)), true),
-            ("查看天气 ☀️", #selector(showWeatherAction(_:)), true),
-            ("Todo 清单 📝", #selector(todoAction(_:)), false),
-            ("输入股票代码查询 📈", #selector(stockAction(_:)), true),
+            ("pet", #selector(petAction(_:)), false),
+            ("feed", #selector(feedAction(_:)), false),
+            ("game", #selector(playGameAction(_:)), false),
+            ("word", #selector(wordLearningAction(_:)), true),
+            ("problem", #selector(problemAction(_:)), true),
+            ("news", #selector(hotNewsAction(_:)), true),
+            ("weather", #selector(showWeatherAction(_:)), true),
+            ("todo", #selector(todoAction(_:)), false),
+            ("stock", #selector(stockAction(_:)), true),
         ]
 
+        // 按「设置面板 > 菜单设置」的展示配置过滤（如「苦练基本功」默认不展示）
+        let visibleEntries = entries.filter { ContextMenuPrefs.isVisible(key: $0.key) }
+
         // 按权限处理：可用功能排最前，待解锁的置灰功能统一排到最后（组内保持原顺序）
-        let ordered = entries.enumerated()
+        let ordered = visibleEntries.enumerated()
             .sorted { a, b in
                 if a.element.fullOnly != b.element.fullOnly {
                     return !a.element.fullOnly
@@ -893,7 +939,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
             .map(\.element)
 
         for entry in ordered {
-            let item = NSMenuItem(title: entry.title, action: entry.action, keyEquivalent: "")
+            let item = NSMenuItem(title: ContextMenuPrefs.title(forKey: entry.key), action: entry.action, keyEquivalent: "")
             item.target = self
             item.isEnabled = entry.fullOnly ? fullAccess : true
             menu.addItem(item)

@@ -152,7 +152,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         contentView.addSubview(navBg)
 
         // 左侧导航项：固定从上往下顺序排列（不随高度自适应）
-        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置"]
+        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置", "🖱️ 菜单设置"]
         let itemH: CGFloat = 44
         let itemGap: CGFloat = 10
         let navTopPad: CGFloat = 12
@@ -179,13 +179,16 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let section0 = makeContentContainer(frame: contentFrame, in: contentView)
         let section1 = makeContentContainer(frame: contentFrame, in: contentView)
         let section2 = makeContentContainer(frame: contentFrame, in: contentView)
+        let section3 = makeContentContainer(frame: contentFrame, in: contentView)
         section1.isHidden = true
         section2.isHidden = true
-        contentViews = [section0, section1, section2]
+        section3.isHidden = true
+        contentViews = [section0, section1, section2, section3]
 
         fillStateSection(section0)
         fillGeneralSection(section1)
         fillReminderSection(section2)
+        fillMenuSettingsSection(section3)
 
         applyNavStyle()
     }
@@ -1068,6 +1071,74 @@ return row
         WeatherReminderService.shared.hour = comps.hour ?? WeatherReminderService.defaultHour
         WeatherReminderService.shared.minute = comps.minute ?? WeatherReminderService.defaultMinute
         refreshWeatherControls()
+    }
+
+    // MARK: - 分区 4：菜单设置（右键菜单项展示开关）
+
+    private func fillMenuSettingsSection(_ container: NSView) {
+        let cw = container.bounds.width
+        let ch = container.bounds.height
+
+        let titleLbl = NSTextField(labelWithString: "右键菜单")
+        titleLbl.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLbl.textColor = .labelColor
+        titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
+        container.addSubview(titleLbl)
+
+        let descLbl = NSTextField(labelWithString: "勾选小猫右键菜单中展示的功能项，取消勾选后菜单不再显示")
+        descLbl.font = .systemFont(ofSize: 11)
+        descLbl.textColor = .tertiaryLabelColor
+        descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
+        container.addSubview(descLbl)
+
+        let divider = NSBox(frame: NSRect(x: 16, y: ch - 66, width: cw - 32, height: 1))
+        divider.boxType = .separator
+        divider.autoresizingMask = .width
+        container.addSubview(divider)
+
+        // ── 卡片：菜单项复选框两列排布 ──
+        let rowH: CGFloat = 34
+        let rowCount = (ContextMenuPrefs.items.count + 1) / 2
+        let cardH = CGFloat(rowCount) * rowH + 24
+        let card = NSView(frame: NSRect(x: 16, y: ch - 66 - 14 - cardH, width: cw - 32, height: cardH))
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+        card.layer?.cornerRadius = 10
+        // 窗口拉高时卡片贴顶（与堆栈区行为一致）
+        card.autoresizingMask = [.width, .minYMargin]
+        container.addSubview(card)
+
+        let colW = (card.bounds.width - 28) / 2
+        for (i, item) in ContextMenuPrefs.items.enumerated() {
+            let col = i % 2
+            let row = i / 2
+            let cb = NSButton(checkboxWithTitle: item.title, target: self, action: #selector(contextMenuToggle(_:)))
+            cb.tag = i
+            cb.state = ContextMenuPrefs.isVisible(key: item.key) ? .on : .off
+            cb.font = .systemFont(ofSize: 13)
+            cb.frame = NSRect(
+                x: 14 + CGFloat(col) * colW,
+                y: card.bounds.height - 12 - CGFloat(row + 1) * rowH + (rowH - 18) / 2,
+                width: colW - 8,
+                height: 18
+            )
+            cb.autoresizingMask = .minYMargin
+            card.addSubview(cb)
+        }
+
+        // 尾部说明：「关闭」等基础项固定展示，不参与配置
+        let noteLbl = NSTextField(labelWithString: "注：「关闭 ❌」与「解锁更多功能 🔓」为固定项，始终展示")
+        noteLbl.font = .systemFont(ofSize: 11)
+        noteLbl.textColor = .tertiaryLabelColor
+        noteLbl.frame = NSRect(x: 16, y: ch - 66 - 14 - cardH - 24, width: cw - 32, height: 15)
+        noteLbl.autoresizingMask = [.width, .minYMargin]
+        container.addSubview(noteLbl)
+    }
+
+    /// 右键菜单项展示开关（即改即生效，下次弹出菜单即应用）
+    @objc private func contextMenuToggle(_ sender: NSButton) {
+        let item = ContextMenuPrefs.items[sender.tag]
+        ContextMenuPrefs.setVisible(sender.state == .on, key: item.key)
     }
 
     // MARK: - 左侧导航

@@ -166,9 +166,15 @@ final class PetViewModel: ObservableObject {
         startFrameLoop()
         startBehaviorLoop()
         startDrinkWaterReminder()
+        cloudRestoreObserver = NotificationCenter.default.addObserver(forName: AccessControl.accessLevelChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.restoreCloudPet() }
+        }
+        restoreCloudPet()
     }
     
     deinit {
+        cloudRestoreTask?.cancel()
+        if let cloudRestoreObserver { NotificationCenter.default.removeObserver(cloudRestoreObserver) }
         frameTimer?.invalidate()
         behaviorTimer?.invalidate()
         drinkWaterTimer?.invalidate()
@@ -201,35 +207,39 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    func setCustomSprite(_ image: NSImage, for state: CatAnimationState) throws {
-        try CustomSpriteStore.save(image, for: state)
-        installSprite(image, for: state)
-    }
-
-    func resetCustomSprite(for state: CatAnimationState) throws {
-        let url = CustomSpriteStore.url(for: state)
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+    @MainActor
+    func applyPetLibrary(_ library: PetImageLibrary) async throws {
+        if library.currentId.isEmpty {
+            try CustomSpriteStore.clearCurrent()
+        } else {
+            let data = try await PetImageService.image(library.currentId)
+            try Task.checkCancellation()
+            try CustomSpriteStore.saveCurrent(data)
         }
-        let sheet = SpriteSheet(state: state)
-        if let sheet {
-            spriteSheets[state] = sheet
-            flippedFrames[state] = sheet.frames.map(Self.mirrorImage)
-        }
+        loadSpriteSheets()
         spriteRevision += 1
         currentFrameIndex = 0
     }
 
-    private func installSprite(_ image: NSImage, for state: CatAnimationState) {
-        let sheet = SpriteSheet(state: state, image: image)
-        spriteSheets[state] = sheet
-        flippedFrames[state] = sheet.frames.map(Self.mirrorImage)
-        spriteRevision += 1
-        if animationState == state {
-            currentFrameIndex = 0
+    private var cloudRestoreObserver: NSObjectProtocol?
+    private var cloudRestoreTask: Task<Void, Never>?
+
+    func cancelCloudRestore() { cloudRestoreTask?.cancel() }
+
+    func restoreCloudPet() {
+        cloudRestoreTask?.cancel()
+        cloudRestoreTask = Task { @MainActor [weak self] in
+            guard AccessControl.serverActivationCode != nil else { return }
+            do {
+                let library = try await PetImageService.library()
+                try Task.checkCancellation()
+                try await self?.applyPetLibrary(library)
+            } catch {
+                FileLogger.log("[PetImages] 恢复失败，保留离线缓存: \(error.localizedDescription)")
+            }
         }
     }
-    
+
     /// 生成水平镜像图片（一次性预渲染，避免运行期翻转绘制）
     /// 使用 CoreGraphics 字节级镜像，最稳定可靠
     private static func mirrorImage(_ image: NSImage) -> NSImage {

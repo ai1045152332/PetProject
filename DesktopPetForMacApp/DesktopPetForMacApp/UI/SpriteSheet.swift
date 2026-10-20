@@ -264,26 +264,22 @@ enum CustomSpriteStore {
     }
 
     static func load(for state: CatAnimationState) -> NSImage? {
-        let url = directoryURL.appendingPathComponent("\(state.rawValue).png")
-        return NSImage(contentsOf: url)
+        return NSImage(contentsOf: currentURL)
     }
 
-    static func hasCustomImage(for state: CatAnimationState) -> Bool {
-        load(for: state) != nil
-    }
+}
 
-    static func url(for state: CatAnimationState) -> URL {
-        directoryURL.appendingPathComponent("\(state.rawValue).png")
-    }
-
-    static func save(_ image: NSImage, for state: CatAnimationState) throws {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-
+// A single cache file is shared by every animation state. Server history is the source of truth.
+extension CustomSpriteStore {
+    static var currentURL: URL { directoryURL.appendingPathComponent("current.png") }
+    static func saveCurrent(_ data: Data) throws {
+        guard NSImage(data: data) != nil else { throw CocoaError(.fileReadCorruptFile) }
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        try pngData.write(to: url(for: state), options: .atomic)
+        try data.write(to: currentURL, options: .atomic)
+    }
+    static func clearCurrent() throws {
+        if FileManager.default.fileExists(atPath: currentURL.path) {
+            try FileManager.default.removeItem(at: currentURL)
+        }
     }
 }

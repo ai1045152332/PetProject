@@ -46,6 +46,11 @@ enum AccessControl {
         UserDefaults.standard.string(forKey: prefsKey) == fullLevel
     }
 
+    static var serverActivationCode: String? {
+        guard isFullAccess, let code = UserDefaults.standard.string(forKey: codeKey), code != fullCode else { return nil }
+        return normalizedCode(code)
+    }
+
     /// 定时复核结果
     enum RevalidateResult {
         case ok         // 复核通过
@@ -144,6 +149,8 @@ enum AccessControl {
         UserDefaults.standard.set(fullLevel, forKey: prefsKey)
         if let code {
             UserDefaults.standard.set(code, forKey: codeKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: codeKey)
         }
         notifyAccessLevelChanged()
     }

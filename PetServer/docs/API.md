@@ -575,3 +575,16 @@ cd DesktopPetForMacApp
 | `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间） |
 | `GET /admin/files` | 菜单三：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
 | `GET /online`（或 `/`） | 手机版在线宠物页（免登录） |
+
+## 自定义宠物图片
+
+全部使用 `POST /api/pet-images/<action>`，响应禁止缓存。身份凭证为 `{ "code": "服务端激活码", "deviceId": "设备ID", "id": "图片ID（可选）" }`，macOS 使用现有 RSA/AES 加密信封传输凭证。服务端仅接受仍有效且已绑定该设备的激活码，不在图片接口中绑定新设备。本地快捷码无效。
+
+| action | 请求 | 返回 |
+| --- | --- | --- |
+| `list` | 加密凭证 JSON | `{code:0,msg:"ok",data:{currentId,images:[{id,name,contentType,createdAt}]}}`，历史由新到旧 |
+| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件 | 同上；写入文件和历史后将新图片设为当前图片 |
+| `select` | 加密凭证 JSON，包含 `id`；空字符串恢复默认 | 同上，保留历史 |
+| `content` | 加密凭证 JSON，包含 `id` | 原始图片字节，`Content-Type: image/png` 或 `image/jpeg` |
+
+每张图片最大 10 MiB，宽高必须有效且总像素不超过 4000 万，服务端检查实际文件内容并完整解码验证。图片不公开挂载静态 URL，所有读取均经过设备授权；不能读取或选择其他设备的图片。400 表示参数/图片无效，403 表示未授权，404 表示图片不存在，405 表示方法不支持。恢复接口不依赖本地缓存，重装后同设备重新激活即可获取原历史。

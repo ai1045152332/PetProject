@@ -214,3 +214,25 @@ func maskDeviceID(id string) string {
 	}
 	return id[:4] + "****" + id[len(id)-4:]
 }
+
+// AuthorizedDevice checks existing binding without binding a new device or accepting local bypass codes.
+func (s *AccessService) AuthorizedDevice(code, deviceID string) bool {
+	if deviceID == "" || deviceID == "unknown-device" {
+		return false
+	}
+	codes, err := s.store.Load()
+	if err != nil {
+		return false
+	}
+	for _, c := range codes {
+		if c.Code != normalizeCode(code) || c.Expired(time.Now()) {
+			continue
+		}
+		for _, d := range c.Devices {
+			if d == deviceID {
+				return true
+			}
+		}
+	}
+	return false
+}

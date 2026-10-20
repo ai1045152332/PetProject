@@ -90,8 +90,10 @@ func New(
 	releaseCtrl *controller.ReleaseController,
 	weatherCtrl *controller.WeatherController,
 	filesCtrl *controller.FileController,
+	petImages *controller.PetImageController,
 ) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/pet-images/", petImages.Handle)
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
 	mux.HandleFunc("/api/devices", devicesCtrl.List)
 	mux.HandleFunc("/api/access/verify", accessCtrl.Verify)

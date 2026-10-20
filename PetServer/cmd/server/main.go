@@ -116,7 +116,16 @@ func main() {
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl)
+	imageObjects, err := storage.NewLocalPetImageObjects("data/pet-images/objects")
+	if err != nil {
+		log.Fatal(err)
+	}
+	imageSvc, err := service.NewPetImageService("data/pet-images/libraries", imageObjects)
+	if err != nil {
+		log.Fatal(err)
+	}
+	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, imageCtrl)
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

@@ -224,8 +224,9 @@ class CatView: NSView {
         guard let image = currentImage else { return }
         let t = Date().timeIntervalSinceReferenceDate
         let breathe = 1.0 + 0.010 * sin(t * 2.0 * .pi / 4.0)
-        let w = bounds.width * breathe
-        let h = bounds.height * breathe
+        let scale = min(bounds.width / max(1, image.size.width), bounds.height / max(1, image.size.height)) * breathe
+        let w = image.size.width * scale
+        let h = image.size.height * scale
         let rect = NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
         image.draw(in: rect)
     }

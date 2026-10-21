@@ -1,0 +1,3 @@
+Background override for Seedream (takes precedence over every earlier mention of transparency):
+Render every background and margin as a perfectly uniform vivid chroma green RGB(0,255,0), hex #00FF00. Do NOT draw an alpha checkerboard or fake transparency. No gradients, texture, shadows, floor, grid lines, or green reflections on the animal. The pet must keep its original natural colors; do not add bright green accessories.
+All empty space, including between the legs, must have exactly the same chroma green. Leave clean separation between the subject and the background. For an animation sheet, every cell has this same green background and ample green padding. A server will remove this green background and produce true transparency after generation.

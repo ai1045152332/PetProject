@@ -311,37 +311,57 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             frame: NSRect(x: 16, y: 22, width: cw - 32, height: 152),
             in: container
         )
-        let spriteTitle = NSTextField(labelWithString: "自定义宠物照片")
+        let spriteTitle = NSTextField(labelWithString: "自定义状态图片")
         spriteTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         spriteTitle.textColor = .labelColor
         spriteTitle.frame = NSRect(x: 14, y: 126, width: 180, height: 18)
         spriteRow.addSubview(spriteTitle)
 
-        let spriteDesc = NSTextField(labelWithString: "一张照片用于所有状态 · PNG/JPEG · 最大 10 MB")
+        let spriteDesc = NSTextField(labelWithString: "选择状态上传，AI 生成 GIF，仅替换该状态 · 最大 10 MB")
         spriteDesc.font = .systemFont(ofSize: 11)
         spriteDesc.textColor = .tertiaryLabelColor
         spriteDesc.frame = NSRect(x: 14, y: 108, width: cw - 65, height: 15)
         spriteRow.addSubview(spriteDesc)
         spriteDescLabel = spriteDesc
 
-        let upload = NSButton(title: "上传宠物照片", target: self, action: #selector(uploadCustomSprite(_:)))
-        upload.frame = NSRect(x: 18, y: 35, width: 160, height: 62)
-        upload.bezelStyle = .rounded
-        upload.imagePosition = .imageLeft
-        upload.imageScaling = .scaleProportionallyDown
-        upload.image = customSpriteImage(for: .focus)
-        spriteRow.addSubview(upload)
-        customSpriteButtons[.focus] = upload
+        // Reuse the original five state upload buttons and their reset controls.
+        let customStates = CatAnimationState.allCases
+        let customButtonW: CGFloat = 76
+        let customButtonGap: CGFloat = 8
+        let customTotalW = CGFloat(customStates.count) * customButtonW + CGFloat(customStates.count - 1) * customButtonGap
+        var customX = max(14, (spriteRow.bounds.width - customTotalW) / 2)
+        for (index, state) in customStates.enumerated() {
+            let upload = NSButton(frame: NSRect(x: customX, y: 31, width: customButtonW, height: 72))
+            upload.title = state.displayName
+            upload.font = .systemFont(ofSize: 10, weight: .medium)
+            upload.alignment = .center
+            upload.bezelStyle = .rounded
+            upload.imagePosition = .imageAbove
+            upload.imageScaling = .scaleProportionallyDown
+            upload.image = customSpriteImage(for: state)
+            upload.tag = index
+            upload.target = self
+            upload.action = #selector(uploadCustomSprite(_:))
+            upload.toolTip = "上传照片，经 AI 提取美化并生成 GIF，仅替换\(state.displayName)状态"
+            spriteRow.addSubview(upload)
+            customSpriteButtons[state] = upload
+
+            let reset = NSButton(title: "恢复默认", target: self, action: #selector(resetCustomSprite(_:)))
+            reset.frame = NSRect(x: customX, y: 5, width: customButtonW, height: 22)
+            reset.font = .systemFont(ofSize: 9)
+            reset.bezelStyle = .rounded
+            reset.tag = index
+            reset.toolTip = "仅恢复\(state.displayName)状态"
+            spriteRow.addSubview(reset)
+            customSpriteResetButtons[state] = reset
+            customX += customButtonW + customButtonGap
+        }
         let history = NSButton(title: "历史图片…", target: self, action: #selector(showPetImageHistory(_:)))
-        history.frame = NSRect(x: 190, y: 48, width: 115, height: 32)
+        history.frame = NSRect(x: spriteRow.bounds.width - 104, y: 122, width: 92, height: 24)
+        history.font = .systemFont(ofSize: 10)
         history.bezelStyle = .rounded
         spriteRow.addSubview(history)
         petHistoryButton = history
-        let reset = NSButton(title: "恢复默认", target: self, action: #selector(resetCustomSprite(_:)))
-        reset.frame = NSRect(x: 320, y: 48, width: 100, height: 32)
-        reset.bezelStyle = .rounded
-        spriteRow.addSubview(reset)
-        customSpriteResetButtons[.focus] = reset
 
         refreshSpriteAccessUI()
     }
@@ -350,12 +370,14 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private func refreshSpriteAccessUI() {
         let unlocked = AccessControl.serverActivationCode != nil && !petImageBusy
         petHistoryButton?.isEnabled = unlocked
-        for button in customSpriteResetButtons.values { button.isEnabled = unlocked }
+        for (state, button) in customSpriteResetButtons {
+            button.isEnabled = unlocked && CustomSpriteStore.hasCustomImage(for: state)
+        }
         for state in CatAnimationState.allCases {
             customSpriteButtons[state]?.isEnabled = unlocked
         }
         if unlocked {
-            spriteDescLabel?.stringValue = "一张照片用于所有状态 · PNG/JPEG · 最大 10 MB"
+            spriteDescLabel?.stringValue = "选择状态上传，AI 生成 GIF，仅替换该状态 · 最大 10 MB"
             spriteDescLabel?.textColor = .tertiaryLabelColor
         } else {
             spriteDescLabel?.stringValue = "需服务端激活码解锁；本地快捷码不支持云端图片"
@@ -394,26 +416,38 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
     }
 
+    private func customSpriteState(for sender: NSButton) -> CatAnimationState? {
+        let states = CatAnimationState.allCases
+        guard states.indices.contains(sender.tag) else { return nil }
+        return states[sender.tag]
+    }
+
     @objc private func uploadCustomSprite(_ sender: NSButton) {
         guard AccessControl.serverActivationCode != nil else { showSpriteUnlockHint(); return }
+        guard let state = customSpriteState(for: sender) else { return }
         let panel = NSOpenPanel()
-        panel.title = "选择宠物照片"
-        panel.message = "PNG/JPEG，最大 10 MB；上传成功后应用于所有状态"
+        panel.title = "选择\(state.displayName)状态图片"
+        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型提取、美化并生成宠物 GIF，完成后仅替换\(state.displayName)状态"
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.beginSheetModal(for: self) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.runPetOperation { [weak self] in
-                let library = try await PetImageService.upload(url)
-                try await self?.viewModel?.applyPetLibrary(library)
+                let library = try await PetImageService.upload(url, for: state)
+                guard let item = library.images.first else { throw PetImageService.failure("未返回生成记录") }
+                let finished = try await PetImageService.waitForGeneration(item.id, initial: library) { [weak self] stage in
+                    self?.spriteDescLabel?.stringValue = stage
+                }
+                try await self?.viewModel?.applyPetLibrary(finished)
             }
         }
     }
 
     @objc private func resetCustomSprite(_ sender: NSButton) {
+        guard let state = customSpriteState(for: sender) else { return }
         runPetOperation { [weak self] in
-            let library = try await PetImageService.select("")
+            let library = try await PetImageService.select("", for: state)
             try await self?.viewModel?.applyPetLibrary(library)
         }
     }
@@ -429,30 +463,44 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 alert.beginSheetModal(for: self, completionHandler: nil)
                 return
             }
-            alert.informativeText = "选择图片并应用于所有状态；恢复默认会保留历史图片。"
+            alert.informativeText = "选择状态与历史记录；应用或重试只影响所选状态。"
             alert.addButton(withTitle: "应用")
+            alert.addButton(withTitle: "重试生成")
             alert.addButton(withTitle: "取消")
-            let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 380, height: 28))
-            for image in library.images {
-                picker.addItem(withTitle: "\(image.id == library.currentId ? "✓ " : "")\(image.createdAt) · \(image.name) · \(image.id.prefix(8))")
-            }
-            if let index = library.images.firstIndex(where: { $0.id == library.currentId }) { picker.selectItem(at: index) }
-            alert.accessoryView = picker
+            let historyView = PetImageHistoryView(library: library, initialState: self.viewModel?.animationState ?? .idel)
+            alert.accessoryView = historyView
             alert.beginSheetModal(for: self) { [weak self] response in
-                guard response == .alertFirstButtonReturn else { return }
-                let id = library.images[picker.indexOfSelectedItem].id
+                guard response == .alertFirstButtonReturn || response == .alertSecondButtonReturn else { return }
+                guard let item = historyView.selectedImage else { return }
+                let state = historyView.selectedState
                 self?.runPetOperation { [weak self] in
-                    // Download first so an unavailable history object cannot change the selection.
-                    _ = try await PetImageService.image(id)
-                    let selected = try await PetImageService.select(id)
-                    try await self?.viewModel?.applyPetLibrary(selected)
+                    if response == .alertSecondButtonReturn {
+                        guard item.status == "failed" else { throw PetImageService.failure("只有失败的任务可以重试") }
+                        let retried = try await PetImageService.retry(item.id, for: state)
+                        let finished = try await PetImageService.waitForGeneration(item.id, initial: retried) { [weak self] stage in
+                            self?.spriteDescLabel?.stringValue = stage
+                        }
+                        try await self?.viewModel?.applyPetLibrary(finished)
+                    } else if item.isGenerating {
+                        let finished = try await PetImageService.waitForGeneration(item.id, initial: library) { [weak self] stage in
+                            self?.spriteDescLabel?.stringValue = stage
+                        }
+                        try await self?.viewModel?.applyPetLibrary(finished)
+                    } else {
+                        guard item.isReady else { throw PetImageService.failure(item.error ?? "生成失败，请点击重试生成") }
+                        _ = try await PetImageService.image(item.id)
+                        let selected = try await PetImageService.select(item.id, for: state)
+                        try await self?.viewModel?.applyPetLibrary(selected)
+                    }
                 }
             }
         }
     }
 
     private func refreshCustomSpriteControls() {
-        customSpriteButtons[.focus]?.image = customSpriteImage(for: .focus)
+        for state in CatAnimationState.allCases {
+            customSpriteButtons[state]?.image = customSpriteImage(for: state)
+        }
     }
 
     private func showSpriteError(_ error: Error) {
@@ -1487,5 +1535,44 @@ final class ToggleSwitch: NSView {
         thumbLayer.shadowOffset = CGSize(width: 0, height: 0.5)
 
         CATransaction.commit()
+    }
+}
+
+
+@MainActor
+private final class PetImageHistoryView: NSView {
+    private let library: PetImageLibrary
+    private let statePicker = NSPopUpButton()
+    private let imagePicker = NSPopUpButton()
+    private var records: [PetImageRecord] = []
+    var selectedState: CatAnimationState { CatAnimationState.allCases[statePicker.indexOfSelectedItem] }
+    var selectedImage: PetImageRecord? {
+        let index = imagePicker.indexOfSelectedItem
+        return records.indices.contains(index) ? records[index] : nil
+    }
+    init(library: PetImageLibrary, initialState: CatAnimationState) {
+        self.library = library
+        super.init(frame: NSRect(x: 0, y: 0, width: 430, height: 66))
+        statePicker.frame = NSRect(x: 0, y: 35, width: 150, height: 28)
+        statePicker.addItems(withTitles: CatAnimationState.allCases.map(\.displayName))
+        statePicker.selectItem(at: CatAnimationState.allCases.firstIndex(of: initialState) ?? 0)
+        statePicker.target = self
+        statePicker.action = #selector(stateChanged)
+        addSubview(statePicker)
+        imagePicker.frame = NSRect(x: 0, y: 0, width: 430, height: 28)
+        addSubview(imagePicker)
+        stateChanged()
+    }
+    required init?(coder: NSCoder) { nil }
+    @objc private func stateChanged() {
+        records = library.history(for: selectedState)
+        imagePicker.removeAllItems()
+        let currentID = library.currentID(for: selectedState)
+        for image in records {
+            imagePicker.addItem(withTitle: "\(image.id == currentID ? "✓ " : "")\(image.stageLabel) · \(image.createdAt) · \(image.name) · \(image.id.prefix(8))")
+        }
+        if records.isEmpty { imagePicker.addItem(withTitle: "该状态暂无历史图片") }
+        imagePicker.isEnabled = !records.isEmpty
+        if let index = records.firstIndex(where: { $0.id == currentID }) { imagePicker.selectItem(at: index) }
     }
 }

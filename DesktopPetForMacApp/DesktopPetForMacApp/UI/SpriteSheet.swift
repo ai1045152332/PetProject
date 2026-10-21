@@ -5,11 +5,13 @@
 //   2. 扁平模式（SPM 兼容）: Resources/Sprites/{state}_0.png, {state}_1.png, ...
 
 import AppKit
+import ImageIO
 
 final class SpriteSheet {
     let state: CatAnimationState
     let frames: [NSImage]
     let frameCount: Int
+    var frameDurations: [TimeInterval] = []
 
     /// 从横向精灵图裁剪初始化（保留，暂未使用）
     init?(state: CatAnimationState,
@@ -57,9 +59,10 @@ final class SpriteSheet {
     init?(state: CatAnimationState) {
         self.state = state
 
-        if let customImage = CustomSpriteStore.load(for: state) {
-            self.frames = [customImage]
-            self.frameCount = 1
+        if let custom = CustomSpriteStore.loadAnimation(for: state) {
+            self.frames = custom.frames
+            self.frameCount = custom.frames.count
+            self.frameDurations = custom.durations
             NSLog("[DesktopPetForMacApp] ✓ Loaded custom image for state '%@'", state.rawValue)
             return
         }
@@ -263,23 +266,86 @@ enum CustomSpriteStore {
         return appSupport.appendingPathComponent(folderName, isDirectory: true)
     }
 
-    static func load(for state: CatAnimationState) -> NSImage? {
-        return NSImage(contentsOf: currentURL)
+    struct Animation {
+        let frames: [NSImage]
+        let durations: [TimeInterval]
     }
-
-}
-
-// A single cache file is shared by every animation state. Server history is the source of truth.
-extension CustomSpriteStore {
-    static var currentURL: URL { directoryURL.appendingPathComponent("current.png") }
-    static func saveCurrent(_ data: Data) throws {
-        guard NSImage(data: data) != nil else { throw CocoaError(.fileReadCorruptFile) }
-        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        try data.write(to: currentURL, options: .atomic)
-    }
-    static func clearCurrent() throws {
-        if FileManager.default.fileExists(atPath: currentURL.path) {
-            try FileManager.default.removeItem(at: currentURL)
+    static func decodeAnimation(_ data: Data) -> Animation? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 && count <= 120 else { return nil }
+        var frames: [NSImage] = []
+        var durations: [TimeInterval] = []
+        var totalPixels: Int64 = 0
+        for index in 0..<count {
+            guard let props = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [String: Any],
+                  let w = props[kCGImagePropertyPixelWidth as String] as? Int,
+                  let h = props[kCGImagePropertyPixelHeight as String] as? Int,
+                  w > 0, h > 0, w <= 8192, h <= 8192 else { return nil }
+            totalPixels += Int64(w) * Int64(h)
+            guard totalPixels <= 40_000_000,
+                  let image = CGImageSourceCreateImageAtIndex(source, index, nil) else { return nil }
+            frames.append(NSImage(cgImage: image, size: NSSize(width: w, height: h)))
+            let gif = props[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let duration = (gif?[kCGImagePropertyGIFUnclampedDelayTime as String] as? Double)
+                ?? (gif?[kCGImagePropertyGIFDelayTime as String] as? Double) ?? 0.1
+            durations.append(max(0.02, duration))
         }
+        return Animation(frames: frames, durations: durations)
+    }
+    static func loadAnimation(for state: CatAnimationState, directory: URL? = nil) -> Animation? {
+        let root = directory ?? directoryURL
+        let manifest = root.appendingPathComponent("cloud-selections.json")
+        let url: URL
+        if FileManager.default.fileExists(atPath: manifest.path) {
+            guard let data = try? Data(contentsOf: manifest),
+                  let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
+            if let id = selections[state.rawValue] {
+                guard validID(id) else { return nil } // Empty ID explicitly restores the built-in state.
+                url = root.appendingPathComponent("cloud-\(id).img")
+            } else {
+                return loadLegacyAnimation(for: state, directory: root)
+            }
+        } else {
+            return loadLegacyAnimation(for: state, directory: root)
+        }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return decodeAnimation(data)
+    }
+    private static func loadLegacyAnimation(for state: CatAnimationState, directory: URL) -> Animation? {
+        // Keep both the previous shared cloud cache and the app's original per-state uploads readable.
+        for name in ["current.png", "\(state.rawValue).png"] {
+            if let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
+               let animation = decodeAnimation(data) { return animation }
+        }
+        return nil
+    }
+    private static func validID(_ id: String) -> Bool {
+        id.count == 32 && id.allSatisfy { "0123456789abcdef".contains($0) }
+    }
+    static func hasCustomImage(for state: CatAnimationState) -> Bool { loadAnimation(for: state) != nil }
+
+    // Immutable files are staged first; one atomic manifest commit changes all selected states.
+    // Missing states keep their local images; an explicit empty ID means restore default.
+    static func installCloudImages(selections: [String: String], images: [String: Data], directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        let manifest = root.appendingPathComponent("cloud-selections.json")
+        var merged: [String: String] = [:]
+        if FileManager.default.fileExists(atPath: manifest.path) {
+            merged = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: manifest))
+        }
+        for (state, id) in selections {
+            guard CatAnimationState(rawValue: state) != nil,
+                  id.isEmpty || validID(id) else { throw CocoaError(.fileReadCorruptFile) }
+            if !id.isEmpty {
+                guard let data = images[id], decodeAnimation(data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+            }
+        }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for (id, data) in images where selections.values.contains(id) {
+            try data.write(to: root.appendingPathComponent("cloud-\(id).img"), options: .atomic)
+        }
+        for (state, id) in selections { merged[state] = id }
+        try JSONEncoder().encode(merged).write(to: manifest, options: .atomic)
     }
 }

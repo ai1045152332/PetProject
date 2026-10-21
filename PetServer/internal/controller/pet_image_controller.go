@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -49,6 +50,7 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 		Code     string `json:"code"`
 		DeviceID string `json:"deviceId"`
 		ID       string `json:"id"`
+		State    string `json:"state"`
 	}
 	if err != nil || json.Unmarshal(body, &req) != nil {
 		writeJSON(w, 400, Response{Code: 400, Msg: "invalid payload or upload too large"})
@@ -62,8 +64,10 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "list":
 		result, err = c.svc.List(req.DeviceID)
+	case "retry":
+		result, err = c.svc.Retry(req.DeviceID, req.ID, req.State)
 	case "select":
-		result, err = c.svc.Select(req.DeviceID, req.ID)
+		result, err = c.svc.Select(req.DeviceID, req.ID, req.State)
 	case "upload":
 		file, header, e := r.FormFile("image")
 		if e != nil {
@@ -76,7 +80,7 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 			err = e
 			break
 		}
-		result, err = c.svc.Upload(req.DeviceID, header.Filename, data)
+		result, err = c.svc.Upload(req.DeviceID, header.Filename, data, req.State)
 	case "content":
 		var data []byte
 		var mime string
@@ -93,6 +97,12 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		status := 400
+		if errors.Is(err, service.ErrPetGenerationDisabled) {
+			status = 503
+		}
+		if errors.Is(err, service.ErrPetGenerationBusy) {
+			status = 429
+		}
 		if os.IsNotExist(err) {
 			status = 404
 		}

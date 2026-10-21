@@ -124,6 +124,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if generator := service.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); generator != nil {
+		imageSvc.SetGenerator(generator)
+	} else {
+		log.Printf("[pet-images] 未配置 OPENROUTER_API_KEY，上传/重试将返回 503，历史读取不受影响")
+	}
+	defer imageSvc.Close()
 	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
 	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, imageCtrl)
 

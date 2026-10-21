@@ -578,13 +578,22 @@ cd DesktopPetForMacApp
 
 ## 自定义宠物图片
 
-全部使用 `POST /api/pet-images/<action>`，响应禁止缓存。身份凭证为 `{ "code": "服务端激活码", "deviceId": "设备ID", "id": "图片ID（可选）" }`，macOS 使用现有 RSA/AES 加密信封传输凭证。服务端仅接受仍有效且已绑定该设备的激活码，不在图片接口中绑定新设备。本地快捷码无效。
+全部使用 `POST /api/pet-images/<action>`，响应禁止缓存。身份凭证为 `{ "code": "服务端激活码", "deviceId": "设备ID", "id": "图片ID（可选）", "state": "focus" }`，macOS 使用现有 RSA/AES 加密信封传输凭证。服务端仅接受仍有效且已绑定该设备的激活码，不在图片接口中绑定新设备。本地快捷码无效。
 
 | action | 请求 | 返回 |
 | --- | --- | --- |
-| `list` | 加密凭证 JSON | `{code:0,msg:"ok",data:{currentId,images:[{id,name,contentType,createdAt}]}}`，历史由新到旧 |
-| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件 | 同上；写入文件和历史后将新图片设为当前图片 |
-| `select` | 加密凭证 JSON，包含 `id`；空字符串恢复默认 | 同上，保留历史 |
-| `content` | 加密凭证 JSON，包含 `id` | 原始图片字节，`Content-Type: image/png` 或 `image/jpeg` |
+| `list` | 加密凭证 JSON | `{code:0,msg:"ok",data:{currentId,currentIds:{focus:"图片ID"},images:[{id,state,name,contentType,createdAt,status,error,promptVersion}]}}`，历史由新到旧 |
+| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件 | 同上；返回 `beautifying` 任务，保存原图后异步生成，完成后才自动设为 `state` 对应状态的当前图片 |
+| `retry` | 加密凭证 JSON，包含失败任务的 `id` 和 `state` | 同上；保留原图和任务 ID，重新生成 |
+| `select` | 加密凭证 JSON，包含 `id` 和 `state`；空 ID 仅恢复该状态默认 | 同上，保留历史 |
+| `content` | 加密凭证 JSON，包含 `id` | 已完成的图片字节，生成结果为 `image/gif`；旧静态历史仍返回 `image/png` 或 `image/jpeg` |
 
-每张图片最大 10 MiB，宽高必须有效且总像素不超过 4000 万，服务端检查实际文件内容并完整解码验证。图片不公开挂载静态 URL，所有读取均经过设备授权；不能读取或选择其他设备的图片。400 表示参数/图片无效，403 表示未授权，404 表示图片不存在，405 表示方法不支持。恢复接口不依赖本地缓存，重装后同设备重新激活即可获取原历史。
+每张图片最大 10 MiB，宽高必须有效且总像素不超过 4000 万，服务端检查实际文件内容并完整解码验证。图片不公开挂载静态 URL，所有读取均经过设备授权；不能读取或选择其他设备的图片。400 表示参数/图片无效，403 表示未授权，404 表示图片不存在，405 表示方法不支持，429 表示并发任务已满，503 表示尚未配置 OpenRouter。未完成/失败任务不可选择或下载，返回 404。恢复接口不依赖本地缓存，重装后同设备重新激活即可获取原历史。
+
+
+`status` 为 `beautifying`（提取美化）、`animating`（动画帧生成）、`encoding`（合成 GIF）、`ready`（可使用）、`failed`（失败）。旧记录没有 `status` 时等同 `ready`。客户端按 `state` 筛选历史（无 `state` 的旧记录可供所有状态使用），并轮询 `list` 等待任务结束；失败记录的 `error` 为可展示原因，不包含上游原始响应或 API Key。任务在服务器重启后标为 `failed`，需显式 `retry`，不自动重试计费调用。
+
+上传/重试返回时选择保持原值。生成成功时更新 `currentIds[state]`；期间若发生对同一状态的 `select`（包括恢复默认），保留用户新选择，生成结果仍进入历史。操作其他状态不会阻止本状态结果自动应用。每设备同时 1 个生成任务，每 UTC 自然日最多 10 次，全服务最多同时生成 2 个任务。
+
+
+`state` 可取 `focus`、`idel`（沿用现有拼写）、`warn`、`sleep`、`pet`。新客户端上传、选择和重试均发送对应状态，不能把一个状态专属的结果应用到其他状态。下载仍按设备和图片 ID 授权。为兼容旧客户端，缺少 `state` 时保留旧的共享图片行为；`currentId` 是旧共享选择，`currentIds` 显式键优先（包括空值，表示该状态恢复默认）。

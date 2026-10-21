@@ -1,0 +1,77 @@
+import XCTest
+import AppKit
+import ImageIO
+import UniformTypeIdentifiers
+@testable import DesktopPetForMacApp
+
+final class PetAnimationTests: XCTestCase {
+    func testGIFDecodesDistinctFramesWithDurationsAndTransparency() throws {
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString, 2, nil))
+        for (index, delay) in [0.1, 0.2].enumerated() {
+            let space = CGColorSpaceCreateDeviceRGB()
+            let context = try XCTUnwrap(CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8,
+                bytesPerRow: 128, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(CGColor(red: index == 0 ? 1 : 0, green: index == 1 ? 1 : 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 8, y: 8, width: 16, height: 16))
+            let image = try XCTUnwrap(context.makeImage())
+            CGImageDestinationAddImage(destination, image, [kCGImagePropertyGIFDictionary:
+                [kCGImagePropertyGIFDelayTime: delay]] as CFDictionary)
+        }
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let animation = try XCTUnwrap(CustomSpriteStore.decodeAnimation(data as Data))
+        XCTAssertEqual(animation.frames.count, 2)
+        XCTAssertEqual(animation.durations[0], 0.1, accuracy: 0.001)
+        XCTAssertEqual(animation.durations[1], 0.2, accuracy: 0.001)
+        let first = try XCTUnwrap(animation.frames[0].tiffRepresentation)
+        let second = try XCTUnwrap(animation.frames[1].tiffRepresentation)
+        XCTAssertNotEqual(first, second)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: first))
+        XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 0, y: 0)).alphaComponent, 0)
+        XCTAssertEqual(bitmap.pixelsWide, 32)
+    }
+    func testCorruptAnimationIsRejected() {
+        XCTAssertNil(CustomSpriteStore.decodeAnimation(Data("broken GIF".utf8)))
+    }
+
+    private func imageData() throws -> Data {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 16, pixelsHigh: 16,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    }
+    func testStateCachesResetAndLegacyUploadsRemainIndependent() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        // The upload location from the original application already stored independent state files.
+        try image.write(to: directory.appendingPathComponent("sleep.png"))
+        let focusID = String(repeating: "a", count: 32)
+        try CustomSpriteStore.installCloudImages(selections: ["focus": focusID], images: [focusID: image], directory: directory)
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
+        XCTAssertNil(CustomSpriteStore.loadAnimation(for: .warn, directory: directory))
+        try CustomSpriteStore.installCloudImages(selections: ["focus": ""], images: [:], directory: directory)
+        XCTAssertNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
+        // Resetting a state must also block a legacy shared cache from showing through.
+        try image.write(to: directory.appendingPathComponent("current.png"))
+        XCTAssertNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .idel, directory: directory))
+        let sleepID = String(repeating: "b", count: 32)
+        XCTAssertThrowsError(try CustomSpriteStore.installCloudImages(selections: ["sleep": sleepID], images: [sleepID: Data()], directory: directory))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
+    }
+    func testCloudLibraryFiltersHistoryAndPreservesLegacySelection() throws {
+        let json = Data(#"{"currentId":"legacy","currentIds":{"focus":"focus-id","warn":""},"images":[{"id":"legacy","name":"old","createdAt":"date"},{"id":"focus-id","state":"focus","name":"focus","createdAt":"date","status":"ready"},{"id":"sleep-id","state":"sleep","name":"sleep","createdAt":"date","status":"ready"}]}"#.utf8)
+        let library = try JSONDecoder().decode(PetImageLibrary.self, from: json)
+        XCTAssertEqual(library.currentID(for: .focus), "focus-id")
+        XCTAssertEqual(library.currentID(for: .warn), "")
+        XCTAssertEqual(library.currentID(for: .sleep), "legacy")
+        XCTAssertEqual(library.history(for: .focus).map(\.id), ["legacy", "focus-id"])
+        XCTAssertEqual(library.selections["warn"], "")
+        let empty = try JSONDecoder().decode(PetImageLibrary.self, from: Data(#"{"currentId":"","images":[]}"#.utf8))
+        XCTAssertTrue(empty.selections.isEmpty, "An unused cloud library must preserve existing local state images")
+    }
+}

@@ -209,13 +209,14 @@ final class PetViewModel: ObservableObject {
 
     @MainActor
     func applyPetLibrary(_ library: PetImageLibrary) async throws {
-        if library.currentId.isEmpty {
-            try CustomSpriteStore.clearCurrent()
-        } else {
-            let data = try await PetImageService.image(library.currentId)
-            try Task.checkCancellation()
-            try CustomSpriteStore.saveCurrent(data)
+        let selections = library.selections
+        guard !selections.isEmpty else { return }
+        var images: [String: Data] = [:]
+        for id in Set(selections.values) where !id.isEmpty {
+            images[id] = try await PetImageService.image(id)
         }
+        try Task.checkCancellation()
+        try CustomSpriteStore.installCloudImages(selections: selections, images: images)
         loadSpriteSheets()
         spriteRevision += 1
         currentFrameIndex = 0
@@ -234,6 +235,10 @@ final class PetViewModel: ObservableObject {
                 let library = try await PetImageService.library()
                 try Task.checkCancellation()
                 try await self?.applyPetLibrary(library)
+                if let pending = library.images.first(where: { $0.isGenerating }) {
+                    let finished = try await PetImageService.waitForGeneration(pending.id, initial: library)
+                    try await self?.applyPetLibrary(finished)
+                }
             } catch {
                 FileLogger.log("[PetImages] 恢复失败，保留离线缓存: \(error.localizedDescription)")
             }
@@ -284,9 +289,18 @@ final class PetViewModel: ObservableObject {
         }
     }
     
+    private var frameElapsed: TimeInterval = 0
+    private var lastFrameTimestamp: TimeInterval = 0
+
     private func advanceFrame() {
         guard let sheet = spriteSheets[animationState] else { return }
         
+        let now = Date.timeIntervalSinceReferenceDate
+        frameElapsed += lastFrameTimestamp == 0 ? frameRate : min(0.25, now - lastFrameTimestamp)
+        lastFrameTimestamp = now
+        let duration = sheet.frameDurations.indices.contains(currentFrameIndex) ? sheet.frameDurations[currentFrameIndex] : frameRate
+        guard frameElapsed >= duration else { return }
+        frameElapsed -= duration
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
         // 一次性动画（pet / warn 等）播完自动切回基准状态：

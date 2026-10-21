@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -10,6 +11,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
+	"image/color"
+	"image/gif"
 	"image/png"
 	"mime/multipart"
 	"net/http/httptest"
@@ -40,6 +43,8 @@ func TestPetImageAuthorizationAndUpload(t *testing.T) {
 	access := service.NewAccessService(codes)
 	objects, _ := storage.NewLocalPetImageObjects(filepath.Join(dir, "objects"))
 	svc, _ := service.NewPetImageService(filepath.Join(dir, "libraries"), objects)
+	svc.SetGenerator(controllerPetGenerator{})
+	t.Cleanup(svc.Close)
 	ctrl := NewPetImageController(svc, access, nil)
 	for _, auth := range []string{
 		`{"code":"456","deviceId":"A"}`,
@@ -54,7 +59,7 @@ func TestPetImageAuthorizationAndUpload(t *testing.T) {
 			t.Fatalf("auth accepted: %s status %d", auth, w.Code)
 		}
 	}
-	auth := `{"code":"ABCD-EFGH-JKMP","deviceId":"A"}`
+	auth := `{"code":"ABCD-EFGH-JKMP","deviceId":"A","state":"focus"}`
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	_ = writer.WriteField("auth", auth)
@@ -74,8 +79,8 @@ func TestPetImageAuthorizationAndUpload(t *testing.T) {
 	if err = json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Data.CurrentID == "" {
-		t.Fatal("uploaded image not selected")
+	if len(response.Data.Images) != 1 || response.Data.Images[0].State != "focus" || response.Data.Images[0].Status != "beautifying" || response.Data.CurrentID != "" {
+		t.Fatal("upload must return pending job without replacing the pet")
 	}
 	w = httptest.NewRecorder()
 	ctrl.Handle(w, httptest.NewRequest("GET", "/api/pet-images/list", nil))
@@ -100,6 +105,8 @@ func TestPetImageEncryptedMultipart(t *testing.T) {
 	}
 	objects, _ := storage.NewLocalPetImageObjects(filepath.Join(dir, "objects"))
 	svc, _ := service.NewPetImageService(filepath.Join(dir, "libraries"), objects)
+	svc.SetGenerator(controllerPetGenerator{})
+	t.Cleanup(svc.Close)
 	ctrl := NewPetImageController(svc, service.NewAccessService(codes), key)
 	auth := []byte(`{"code":"ABCD-EFGH-JKMP","deviceId":"A"}`)
 	aesKey := make([]byte, 32)
@@ -129,4 +136,14 @@ func TestPetImageEncryptedMultipart(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("encrypted upload: %d %s", w.Code, w.Body.String())
 	}
+}
+
+type controllerPetGenerator struct{}
+
+func (controllerPetGenerator) Generate(context.Context, []byte, func(string)) ([]byte, error) {
+	pal := color.Palette{color.Transparent, color.White}
+	frame := image.NewPaletted(image.Rect(0, 0, 10, 10), pal)
+	var b bytes.Buffer
+	err := gif.EncodeAll(&b, &gif.GIF{Image: []*image.Paletted{frame, frame}, Delay: []int{10, 10}})
+	return b.Bytes(), err
 }

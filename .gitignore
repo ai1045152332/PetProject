@@ -39,3 +39,6 @@ PetServer/*.out
 DesktopPetForMacApp/dist/
 /DesktopPetElectron/dist/
 /DesktopPetElectron/node_modules/
+
+# Local integration-test app, credentials and server data
+/.local-test/

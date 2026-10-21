@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"petserver/internal/router"
 	"petserver/internal/service"
 	"petserver/internal/storage"
+	"petserver/internal/tlsreloader"
 )
 
 // 心跳日志清理任务参数
@@ -113,6 +115,19 @@ func main() {
 	log.Printf("[files] 文件管理根目录: %s", fileSvc.Root())
 	filesCtrl := controller.NewFileController(authSvc, fileSvc)
 
+	// 背单词词库下发：JSON 放在 wordbank/ 目录（可用 PETSERVER_WORDBANK_DIR 覆盖），
+	// 文件可在后台文件管理页维护，改词库无需重新发版
+	wordbankDir := os.Getenv("PETSERVER_WORDBANK_DIR")
+	if wordbankDir == "" {
+		wordbankDir = "wordbank"
+	}
+	wordbankSvc, err := service.NewWordBankService(wordbankDir)
+	if err != nil {
+		log.Fatalf("初始化词库服务失败: %v", err)
+	}
+	log.Printf("[wordbank] 词库目录: %s", wordbankSvc.Root())
+	wordbankCtrl := controller.NewWordBankController(wordbankSvc)
+
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc)
@@ -132,6 +147,58 @@ func main() {
 	defer imageSvc.Close()
 	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
 	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, imageCtrl)
+	systemSvc := service.NewSystemService()
+
+	// 接口调用计数：内存累加 + 定期落盘（data/api_metrics.json），重启不丢累计
+	metricsStore, err := storage.NewApiMetricsStore("data/api_metrics.json")
+	if err != nil {
+		log.Fatalf("初始化接口计数存储失败: %v", err)
+	}
+	metricsSvc := service.NewMetricsService(metricsStore)
+	metricsSvc.StartAutoFlush(30 * time.Second)
+	defer metricsSvc.Flush()
+
+	// ACME HTTP-01 验证目录（certbot webroot 模式写入 challenge 文件）
+	acmeDir := os.Getenv("PETSERVER_ACME_DIR")
+	if acmeDir == "" {
+		acmeDir = "data/acme-challenges"
+	}
+	_ = os.MkdirAll(acmeDir, 0o755)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir)
+
+	// HTTPS：证书/私钥文件存在时启用 443 监听，证书更新后自动热加载（配合 certbot 续期）
+	tlsCert := os.Getenv("PETSERVER_TLS_CERT")
+	tlsKey := os.Getenv("PETSERVER_TLS_KEY")
+	if tlsCert == "" {
+		tlsCert = "tls/fullchain.pem"
+	}
+	if tlsKey == "" {
+		tlsKey = "tls/privkey.pem"
+	}
+	tlsAddr := os.Getenv("PETSERVER_TLS_ADDR")
+	if tlsAddr == "" {
+		tlsAddr = ":443"
+	}
+	if _, err := os.Stat(tlsCert); err == nil {
+		if reloader, err := tlsreloader.New(tlsCert, tlsKey); err != nil {
+			log.Printf("[tls] HTTPS 未启用（证书加载失败）: %v", err)
+		} else {
+			tlsLn, err := net.Listen("tcp", tlsAddr)
+			if err != nil {
+				log.Printf("[tls] HTTPS 未启用（%s 监听失败）: %v", tlsAddr, err)
+			} else {
+				go func() {
+					srv := &http.Server{Handler: handler}
+					if err := srv.Serve(tls.NewListener(tlsLn, &tls.Config{GetCertificate: reloader.GetCertificate})); err != nil {
+						log.Printf("[tls] HTTPS 服务异常退出: %v", err)
+					}
+				}()
+				log.Printf("[tls] HTTPS 已启用，监听 %s（证书热加载: %s）", tlsAddr, tlsCert)
+			}
+		}
+	} else {
+		log.Printf("[tls] HTTPS 未启用（未找到证书 %s）", tlsCert)
+	}
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

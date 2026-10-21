@@ -412,7 +412,35 @@ curl -X POST http://101.96.248.75/api/admin/devices/note \
 > 备注持久化在 `data/device_notes.json`，服务重启/重新部署不丢。
 > `GET /api/devices` 返回的每台设备会带 `note` 字段。
 
-### 3.8 删除激活码
+### 3.8 删除设备记录
+
+从在线列表中移除某台设备的记录（内存 + 快照），备注一并清除。后台「在线宠物」页每行的删除按钮即调用此接口。
+
+```
+POST /api/admin/devices/delete
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| hostname | string | 是 | 设备主机名（取自设备列表） |
+
+请求示例：
+
+```bash
+curl -X POST http://101.96.248.75/api/admin/devices/delete \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: <管理密码>" \
+  -d '{"hostname": "mbp-xxx.local"}'
+```
+
+响应：`{"code":0,"msg":"ok"}`；记录不存在返回 `{"code":404,"msg":"device not found"}`。
+
+> ⚠️ 心跳每 1 分钟上报一次，**仍在运行的设备删除后约 1 分钟内会重新出现**；
+> 本接口用于清理长期离线、换机、重装系统留下的残留记录。
+
+### 3.9 删除激活码
 
 
 ```
@@ -438,7 +466,7 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 
 > 删除不可恢复，已绑定的设备记录会一并清除。
 
-### 3.9 管理接口错误
+### 3.10 管理接口错误
 
 
 
@@ -449,7 +477,7 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 | 会话失效/凭证缺失 | 401 | `{"code":401,"msg":"unauthorized"}` |
 | 参数非法 | 400 | `{"code":400,"msg":"count must be 1~100"}` |
 
-### 3.10 文件管理：列出目录
+### 3.11 文件管理：列出目录
 
 ```
 GET /api/admin/files/list?path=相对目录
@@ -477,7 +505,7 @@ GET /api/admin/files/list?path=相对目录
 }
 ```
 
-### 3.11 文件管理：预览文件
+### 3.12 文件管理：预览文件
 
 ```
 GET /api/admin/files/preview?path=相对文件路径
@@ -486,7 +514,7 @@ GET /api/admin/files/preview?path=相对文件路径
 响应：`data` 为 `{"path","content","size","truncated"}`；最多读取前 200 KB，
 超出时 `truncated=true`（大文件/二进制文件不建议预览）。
 
-### 3.12 文件管理：删除文件
+### 3.13 文件管理：删除文件
 
 ```
 POST /api/admin/files/delete
@@ -510,6 +538,52 @@ curl -X POST http://101.96.248.75/api/admin/files/delete \
 响应：`{"code":0,"msg":"ok"}`。
 
 > ⚠️ 删除不可恢复；目录会递归删除；根目录本身禁止删除；敏感文件（`.env`/`.pem`/`.key`/`sessions.json`）禁止删除。
+
+### 3.14 接口调用统计
+
+服务端对所有请求做一层计数（中间件实现），按 `METHOD /path` 聚合调用次数、
+成功/4xx/5xx 个数与耗时。只记接口名和数字，**不记录查询参数、请求体、响应体、IP、主机名**。
+
+```
+GET  /api/admin/metrics          # 查询统计（按调用次数倒序）
+POST /api/admin/metrics/reset    # 清零，从当前时刻重新统计
+```
+
+请求示例：
+
+```bash
+curl http://101.96.248.75/api/admin/metrics \
+  -H "X-Admin-Token: <管理密码>"
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "generatedAt": "2026-10-21 16:44:05",
+    "sinceAt": "2026-10-21 16:43:30",
+    "totalCalls": 6,
+    "errorCalls": 2,
+    "endpoints": [
+      {"key": "GET /api/devices", "total": 3, "success": 3, "clientErr": 0, "serverErr": 0,
+       "latencyUs": 210, "maxLatencyUs": 90, "avgLatencyMs": 0.07, "maxLatencyMs": 0.09,
+       "lastAt": "2026-10-21 16:44:01"}
+    ]
+  }
+}
+```
+
+统计规则：
+
+- 仅 `/api/*` 与 `/download/*` 按接口逐个统计；其余（官网页面、静态资源、后台 HTML、扫描探测）
+  统一归入 `其他（页面/静态资源）`，避免噪声掩盖真实流量
+- `GET /api/admin/metrics` 自身不计数（后台页每 10 秒轮询一次，计入会顶到榜首）
+- 接口 key 上限 300 个，超限后新出现的未知路径并入噪声桶（防止随机路径刷爆内存）
+- 计数内存累加，每 30 秒落盘到 `data/api_metrics.json`，**服务重启不丢累计**；清零会立即落盘
+- 后台「服务器状态」页（`/admin/status`）底部有可视化表格与「清零重统计」按钮
 
 ## 4. App 更新接口
 
@@ -566,7 +640,37 @@ cd DesktopPetForMacApp
 > 已装客户端接受的更新**（客户端内置的对应公钥不可更改，只能强制用户重装）。
 > 公钥内嵌在 `DesktopPetForMacApp/DesktopPetForMacApp/Services/UpdateService.swift`。
 
-## 5. 后台页面
+## 5. 背单词词库接口
+
+词库以 JSON 文件存放在服务器 `wordbank/` 目录（可用 `PETSERVER_WORDBANK_DIR` 覆盖），
+通过后台文件管理页（/admin/files）维护，改词库无需重新发版。客户端启动后后台同步，
+按文件字节数增量下载并缓存到本地，离线时使用缓存/内置词库。接口免登录。
+
+### 5.1 词库列表
+
+```
+GET /api/wordbank/list
+```
+
+响应（`size` 为文件字节数，客户端据此判断是否需要重新下载）：
+
+```json
+{"code":0,"msg":"ok","data":{"banks":[{"name":"cet4","size":26817},{"name":"travel","size":7408}]}}
+```
+
+### 5.2 下载词库
+
+```
+GET /api/wordbank/get?name=cet4
+```
+
+直接返回词库 JSON 原文（`[{"word","meaning"}]` 数组）。词库名仅允许小写字母/数字/连字符
+（`^[a-z0-9][a-z0-9-]*$`），非法名或不存在返回 `{"code":400,...}`。
+
+> 首次部署需把词库文件上传一次：
+> `rsync -a DesktopPetForMacApp/DesktopPetForMacApp/Resources/WordBank/ root@<host>:/opt/petserver/wordbank/`
+
+## 6. 后台页面
 
 | 路径 | 说明 |
 | --- | --- |
@@ -574,6 +678,7 @@ cd DesktopPetForMacApp
 | `GET /admin` | 菜单一：小猫在线列表 |
 | `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间） |
 | `GET /admin/files` | 菜单三：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
+| `GET /admin/status` | 菜单四：服务器状态（CPU/内存/网络流量 + 接口调用统计） |
 | `GET /online`（或 `/`） | 手机版在线宠物页（免登录） |
 
 ## 自定义宠物图片

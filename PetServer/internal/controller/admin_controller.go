@@ -10,14 +10,17 @@ import (
 
 // AdminController 管理接口控制器（激活码/设备备注等），需登录会话或管理密码
 type AdminController struct {
-	accessSvc *service.AccessService
-	authSvc   *service.AuthService
-	noteSvc   *service.DeviceNoteService
+	accessSvc  *service.AccessService
+	authSvc    *service.AuthService
+	noteSvc    *service.DeviceNoteService
+	systemSvc  *service.SystemService
+	hbSvc      *service.HeartbeatService
+	metricsSvc *service.MetricsService
 }
 
 // NewAdminController 创建管理控制器
-func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService) *AdminController {
-	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc}
+func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService, hbSvc *service.HeartbeatService, metricsSvc *service.MetricsService) *AdminController {
+	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc, hbSvc: hbSvc, metricsSvc: metricsSvc}
 }
 
 // authorized 校验管理身份：
@@ -216,5 +219,87 @@ func (c *AdminController) SetDeviceNote(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// DeviceDeleteRequest 删除设备记录请求
+type DeviceDeleteRequest struct {
+	Hostname string `json:"hostname"`
+}
+
+// DeleteDevice 处理 POST /api/admin/devices/delete：从设备列表与快照中删除，同时清掉备注
+// 设备仍在运行时下次心跳会重新登记，用于清理长期离线/换机的残留记录
+func (c *AdminController) DeleteDevice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	var req DeviceDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
+		return
+	}
+	if req.Hostname == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: hostname"})
+		return
+	}
+
+	if !c.hbSvc.Remove(req.Hostname) {
+		writeJSON(w, http.StatusNotFound, Response{Code: 404, Msg: "device not found"})
+		return
+	}
+	// 备注一并清理（失败不影响删除结果，仅记日志语义由 noteSvc 内部保证）
+	_ = c.noteSvc.Set(req.Hostname, "")
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// SystemStatus 处理 GET /api/admin/system/status（CPU/内存/网络流量监控）
+func (c *AdminController) SystemStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	status, err := c.systemSvc.Snapshot()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "collect failed: " + err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: status})
+}
+
+// ApiMetrics 处理 GET /api/admin/metrics：接口调用统计（次数/失败数/耗时）
+func (c *AdminController) ApiMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: c.metricsSvc.Snapshot()})
+}
+
+// ResetApiMetrics 处理 POST /api/admin/metrics/reset：清零全部接口计数，重新开始统计
+func (c *AdminController) ResetApiMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	c.metricsSvc.Reset()
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
 }

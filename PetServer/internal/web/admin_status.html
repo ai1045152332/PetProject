@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>服务器状态 · cute pet 后台</title>
+  <link rel="stylesheet" href="/static/tabler.min.css" />
+  <style>
+    .metric-value { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+    .metric-unit { font-size: .9rem; color: var(--tblr-secondary); font-weight: 400; }
+    .metric-label { color: var(--tblr-secondary); margin-bottom: .25rem; }
+    canvas.spark { width: 100%; height: 64px; display: block; }
+    .net-arrow { font-weight: 700; }
+  </style>
+  <script>
+    if (!localStorage.getItem('petAdminSession')) location.replace('/admin/login');
+  </script>
+</head>
+<body class="antialiased">
+  <div class="page">
+    <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
+      <div class="container-xl">
+        <span class="navbar-brand">🐾 cute pet 后台管理</span>
+        <div class="navbar-nav flex-row ms-auto align-items-center">
+          <a class="nav-link" href="/admin">在线宠物</a>
+          <a class="nav-link" href="/admin/codes">激活码管理</a>
+          <a class="nav-link" href="/admin/files">文件管理</a>
+          <a class="nav-link active fw-bold" href="/admin/status">服务器状态</a>
+          <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <h2 class="page-title">服务器状态</h2>
+              <div class="text-secondary mt-1" id="status">加载中…</div>
+            </div>
+            <div class="col-auto ms-auto text-secondary" id="uptime"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards">
+            <div class="col-12 col-md-4">
+              <div class="card">
+                <div class="card-body">
+                  <div class="metric-label">CPU 使用率</div>
+                  <div class="metric-value"><span id="cpuPct">–</span><span class="metric-unit"> %</span></div>
+                  <div class="text-secondary" id="cpuMeta">核心数 –</div>
+                  <canvas id="cpuChart" class="spark mt-2"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="card">
+                <div class="card-body">
+                  <div class="metric-label">内存使用</div>
+                  <div class="metric-value"><span id="memPct">–</span><span class="metric-unit"> %</span></div>
+                  <div class="text-secondary" id="memMeta">–</div>
+                  <canvas id="memChart" class="spark mt-2"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="card">
+                <div class="card-body">
+                  <div class="metric-label">网络速率</div>
+                  <div class="metric-value" style="font-size:1.4rem">
+                    <span class="net-arrow text-green">↑</span><span id="txRate">–</span>
+                    <span class="net-arrow text-blue ms-2">↓</span><span id="rxRate">–</span>
+                  </div>
+                  <div class="text-secondary">发送 / 接收（实时）</div>
+                  <canvas id="netChart" class="spark mt-2"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
+                  <div class="row">
+                    <div class="col-6 col-md-3"><div class="metric-label">累计发送</div><div id="txTotal" class="fw-bold">–</div></div>
+                    <div class="col-6 col-md-3"><div class="metric-label">累计接收</div><div id="rxTotal" class="fw-bold">–</div></div>
+                    <div class="col-6 col-md-3"><div class="metric-label">负载（1/5/15 分钟）</div><div id="load" class="fw-bold">–</div></div>
+                    <div class="col-6 col-md-3"><div class="metric-label">主机</div><div id="hostname" class="fw-bold text-truncate">–</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">每日流量（vnstat）</h3>
+                  <div class="card-actions text-secondary" id="vnstatNote"></div>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table">
+                    <thead>
+                      <tr>
+                        <th>日期</th>
+                        <th>接收 ↓</th>
+                        <th>发送 ↑</th>
+                        <th>合计</th>
+                      </tr>
+                    </thead>
+                    <tbody id="vnstatBody"></tbody>
+                  </table>
+                </div>
+                <div class="card-body text-secondary text-center" id="vnstatEmpty" style="display:none">
+                  暂无 vnstat 数据
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">接口调用统计</h3>
+                  <div class="card-actions">
+                    <span class="text-secondary me-2" id="metricMeta"></span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadMetrics()">刷新</button>
+                    <button class="btn btn-sm btn-outline-danger ms-2" onclick="resetMetrics()">清零重统计</button>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table">
+                    <thead>
+                      <tr>
+                        <th>接口</th>
+                        <th>调用次数</th>
+                        <th>成功</th>
+                        <th>4xx</th>
+                        <th>5xx</th>
+                        <th>平均耗时</th>
+                        <th>最大耗时</th>
+                        <th>最近调用</th>
+                      </tr>
+                    </thead>
+                    <tbody id="metricBody"></tbody>
+                  </table>
+                </div>
+                <div class="card-body text-secondary text-center" id="metricEmpty" style="display:none">
+                  暂无调用数据
+                </div>
+                <div class="card-body text-secondary" style="font-size:.8rem">
+                  仅统计接口名、次数、状态码与耗时，不记录请求参数、内容、IP 等任何用户信息；计数在服务端重启后不丢，点「清零」重新开始。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer footer-transparent d-print-none">
+        <div class="container-xl text-center text-secondary">
+          cute pet 后端服务 · UI 基于 Tabler（MIT）
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const HISTORY = 60;               // 曲线保留点数
+    const cpuHist = [], memHist = [], txHist = [], rxHist = [];
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      ));
+    }
+    function session() { return localStorage.getItem('petAdminSession') || ''; }
+
+    async function logout() {
+      const token = session();
+      localStorage.removeItem('petAdminSession');
+      localStorage.removeItem('petAdminSessionExp');
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Session-Token': token } });
+      } catch (e) { /* 忽略网络异常 */ }
+      location.href = '/admin/login';
+    }
+
+    async function api(path, options) {
+      const resp = await fetch(path, Object.assign({
+        headers: { 'Content-Type': 'application/json', 'X-Session-Token': session() }
+      }, options));
+      if (resp.status === 401) {
+        localStorage.removeItem('petAdminSession');
+        location.replace('/admin/login');
+        throw new Error('unauthorized');
+      }
+      const body = await resp.json();
+      if (body.code !== 0) throw new Error(body.msg || 'request failed');
+      return body.data;
+    }
+
+    function fmtBytes(n) {
+      if (n < 1024) return n.toFixed(0) + ' B';
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let v = n / 1024, i = 0;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return v.toFixed(v >= 100 ? 0 : 1) + ' ' + units[i];
+    }
+    function fmtRate(n) { return fmtBytes(n) + '/s'; }
+    function fmtUptime(sec) {
+      const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+      return (d > 0 ? d + ' 天 ' : '') + h + ' 小时 ' + m + ' 分钟';
+    }
+
+    // 简易曲线图：无外部依赖，支持多序列，按数值比例绘制折线
+    function drawSpark(canvas, series, maxOverride) {
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const data = series[0].data;
+      if (data.length < 2) return;
+      let max = maxOverride || Math.max(...series.flatMap(s => s.data), 1);
+      if (max <= 0) max = 1;
+      const step = w / (HISTORY - 1);
+      const offset = HISTORY - data.length; // 不足时右侧对齐
+      series.forEach(s => {
+        ctx.beginPath();
+        s.data.forEach((v, i) => {
+          const x = (offset + i) * step, y = h - (v / max) * (h - 4) - 2;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+
+    function push(hist, v) { hist.push(v); if (hist.length > HISTORY) hist.shift(); }
+
+    async function refresh() {
+      try {
+        const d = await api('/api/admin/system/status');
+        document.getElementById('cpuPct').textContent = d.cpuPercent.toFixed(1);
+        document.getElementById('cpuMeta').textContent = d.cores + ' 核心 · 负载 ' + d.load1.toFixed(2);
+        document.getElementById('memPct').textContent = d.memUsedPercent.toFixed(1);
+        document.getElementById('memMeta').textContent = fmtBytes(d.memUsed) + ' / ' + fmtBytes(d.memTotal);
+        document.getElementById('txRate').textContent = fmtRate(d.net.txRate);
+        document.getElementById('rxRate').textContent = fmtRate(d.net.rxRate);
+        document.getElementById('txTotal').textContent = fmtBytes(d.net.txBytes);
+        document.getElementById('rxTotal').textContent = fmtBytes(d.net.rxBytes);
+        document.getElementById('load').textContent = d.load1.toFixed(2) + ' / ' + d.load5.toFixed(2) + ' / ' + d.load15.toFixed(2);
+        document.getElementById('hostname').textContent = esc(d.hostname);
+        document.getElementById('uptime').textContent = '已运行 ' + fmtUptime(d.uptimeSeconds);
+        document.getElementById('status').textContent = '每 2 秒自动刷新';
+
+        const days = d.vnstatDaily || [];
+        const tbody = document.getElementById('vnstatBody');
+        if (days.length === 0) {
+          tbody.innerHTML = '';
+          document.getElementById('vnstatEmpty').style.display = '';
+          document.getElementById('vnstatNote').textContent = '';
+        } else {
+          document.getElementById('vnstatEmpty').style.display = 'none';
+          document.getElementById('vnstatNote').textContent = '最近 ' + days.length + ' 天';
+          tbody.innerHTML = days.map(day => `
+            <tr>
+              <td>${esc(day.date)}</td>
+              <td class="text-blue">${fmtBytes(day.rx)}</td>
+              <td class="text-green">${fmtBytes(day.tx)}</td>
+              <td class="fw-bold">${fmtBytes(day.rx + day.tx)}</td>
+            </tr>`).join('');
+        }
+
+        push(cpuHist, d.cpuPercent);
+        push(memHist, d.memUsedPercent);
+        push(txHist, d.net.txRate);
+        push(rxHist, d.net.rxRate);
+        const netMax = Math.max(...txHist, ...rxHist, 1);
+        drawSpark(document.getElementById('cpuChart'), [{ data: cpuHist, color: '#206bc4' }], 100);
+        drawSpark(document.getElementById('memChart'), [{ data: memHist, color: '#d63939' }], 100);
+        drawSpark(document.getElementById('netChart'), [
+          { data: txHist, color: '#2fb344' },
+          { data: rxHist, color: '#206bc4' },
+        ], netMax);
+      } catch (e) {
+        document.getElementById('status').textContent = '刷新失败：' + e.message;
+      }
+    }
+
+    refresh();
+    setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 2000);
+    window.addEventListener('resize', () => refresh());
+
+    // ---------- 接口调用统计（每 10 秒刷新，比系统指标低频）----------
+    function fmtMs(v) {
+      if (v == null || isNaN(v)) return '–';
+      return (v < 1 ? v.toFixed(2) : v.toFixed(1)) + ' ms';
+    }
+
+    function renderMetrics(items) {
+      const tbody = document.getElementById('metricBody');
+      if (!items || items.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('metricEmpty').style.display = '';
+        return;
+      }
+      document.getElementById('metricEmpty').style.display = 'none';
+      tbody.innerHTML = items.map(it => {
+        return `
+          <tr>
+            <td class="text-truncate" style="max-width:22rem">${esc(it.key)}</td>
+            <td class="fw-bold">${it.total}</td>
+            <td class="text-green">${it.success}</td>
+            <td${it.clientErr ? ' class="text-orange fw-bold"' : ''}>${it.clientErr}</td>
+            <td${it.serverErr ? ' class="text-red fw-bold"' : ''}>${it.serverErr}</td>
+            <td>${fmtMs(it.avgLatencyMs)}</td>
+            <td>${fmtMs(it.maxLatencyMs)}</td>
+            <td class="text-secondary">${esc(it.lastAt || '–')}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    async function loadMetrics() {
+      try {
+        const d = await api('/api/admin/metrics');
+        renderMetrics(d.endpoints);
+        document.getElementById('metricMeta').textContent =
+          '总调用 ' + d.totalCalls + ' 次 · 失败 ' + d.errorCalls + ' 次 · 自 ' + d.sinceAt + ' 起累计';
+      } catch (e) {
+        document.getElementById('metricMeta').textContent = '统计加载失败：' + e.message;
+      }
+    }
+
+    async function resetMetrics() {
+      if (!confirm('确定清零全部接口计数？将从现在这一刻重新开始统计。')) return;
+      try {
+        await api('/api/admin/metrics/reset', { method: 'POST' });
+        loadMetrics();
+      } catch (e) {
+        alert('清零失败：' + e.message);
+      }
+    }
+
+    loadMetrics();
+    setInterval(() => { if (document.visibilityState === 'visible') loadMetrics(); }, 10000);
+  </script>
+</body>
+</html>

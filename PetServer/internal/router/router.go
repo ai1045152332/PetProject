@@ -6,11 +6,14 @@ import (
 	"compress/gzip"
 	"io/fs"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"petserver/internal/controller"
+	"petserver/internal/service"
 	"petserver/internal/web"
 )
 
@@ -90,6 +93,9 @@ func New(
 	releaseCtrl *controller.ReleaseController,
 	weatherCtrl *controller.WeatherController,
 	filesCtrl *controller.FileController,
+	wordbankCtrl *controller.WordBankController,
+	metricsSvc *service.MetricsService,
+	acmeDir string,
 	petImages *controller.PetImageController,
 ) http.Handler {
 	mux := http.NewServeMux()
@@ -107,11 +113,43 @@ func New(
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)
 	mux.HandleFunc("/api/admin/devices/note", adminCtrl.SetDeviceNote)
+	mux.HandleFunc("/api/admin/devices/delete", adminCtrl.DeleteDevice)
+	mux.HandleFunc("/api/admin/system/status", adminCtrl.SystemStatus)
+	// 接口调用统计（需登录）：查看各接口被调用次数/失败数/耗时，可清零重新计数
+	mux.HandleFunc("/api/admin/metrics", adminCtrl.ApiMetrics)
+	mux.HandleFunc("/api/admin/metrics/reset", adminCtrl.ResetApiMetrics)
 	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)
 	mux.HandleFunc("/api/admin/files/preview", filesCtrl.Preview)
 	mux.HandleFunc("/api/admin/files/delete", filesCtrl.Delete)
 	mux.HandleFunc("/api/app/latest", releaseCtrl.Latest)
 	mux.HandleFunc("/download/", releaseCtrl.Download)
+	// 背单词词库下发（免登录）：列表用于增量判断，get 返回词库 JSON 原文
+	mux.HandleFunc("/api/wordbank/list", wordbankCtrl.List)
+	mux.HandleFunc("/api/wordbank/get", wordbankCtrl.Get)
+	// ACME HTTP-01 验证（Let's Encrypt 签发/续期），从磁盘目录读取 challenge 文件
+	if acmeDir != "" {
+		mux.HandleFunc("/.well-known/acme-challenge/", func(w http.ResponseWriter, r *http.Request) {
+			name := strings.TrimPrefix(r.URL.Path, "/.well-known/acme-challenge/")
+			if name == "" || strings.Contains(name, "..") || strings.ContainsAny(name, "/\\") {
+				http.NotFound(w, r)
+				return
+			}
+			// 标准 webroot 语义：URL 路径映射到 acmeDir 下的同名文件
+			// （certbot 会写入 <webroot>/.well-known/acme-challenge/<token>）
+			full := filepath.Join(acmeDir, filepath.Clean("/"+r.URL.Path))
+			if !strings.HasPrefix(full, filepath.Clean(acmeDir)+string(os.PathSeparator)) {
+				http.NotFound(w, r)
+				return
+			}
+			data, err := os.ReadFile(full)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write(data)
+		})
+	}
 
 	// H5 在线宠物列表页（内置静态页面，与接口同源，免跨域）
 	mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +184,12 @@ func New(
 		noCache(w)
 		w.Write(web.AdminFilesPage)
 	})
+	// 后台管理：服务器状态页（CPU/内存/网络流量实时监控）
+	mux.HandleFunc("/admin/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		noCache(w)
+		w.Write(web.AdminStatusPage)
+	})
 	// 内置静态资源（Tabler 样式等）：gzip + 长缓存，链路上只需传输一次
 	mux.HandleFunc("/static/", serveStatic)
 	// 官网落地页：根路径 / 直接托管嵌入的静态站点（index.html + assets），后台管理保留在 /admin
@@ -153,6 +197,14 @@ func New(
 	if err != nil {
 		panic("加载内置官网失败: " + err.Error())
 	}
-	mux.Handle("/", http.FileServer(http.FS(siteFS)))
-	return mux
+	siteHandler := http.FileServer(http.FS(siteFS))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 官网 HTML 不缓存：避免部署新版本后浏览器仍用旧页面，导致下载链接指向过期版本；图片等资源仍可正常缓存
+		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
+			noCache(w)
+		}
+		siteHandler.ServeHTTP(w, r)
+	}))
+	// 最外层挂接口计数：所有请求（含 404/405）都会被统计到
+	return metricsMiddleware(metricsSvc, mux)
 }

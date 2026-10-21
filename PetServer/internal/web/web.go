@@ -28,6 +28,11 @@ var AdminCodesPage []byte
 //go:embed admin_files.html
 var AdminFilesPage []byte
 
+// AdminStatusPage 后台管理：服务器状态页（CPU/内存/网络监控）
+//
+//go:embed admin_status.html
+var AdminStatusPage []byte
+
 // StaticFS 内置静态资源（Tabler 后台 UI 框架样式等）
 //
 //go:embed static

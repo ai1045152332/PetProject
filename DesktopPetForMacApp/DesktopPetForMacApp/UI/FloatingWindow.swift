@@ -64,6 +64,11 @@ final class FloatingWindow {
         viewModel.onStartWordLearning = { [weak cv] in
             cv?.startWordLearning()
         }
+
+        // 设置主动搭话回调：用头顶粉色气泡展示台词（结合新闻 / Todo）
+        viewModel.onPetSay = { [weak cv] text in
+            cv?.catSay(text)
+        }
         
         // 设置初始帧
         cv.updateLayerImage()
@@ -266,8 +271,16 @@ class CatView: NSView {
 
     // MARK: - Mouse Events
     
+    /// 用户互动的唯一入口：所有鼠标事件（点击/拖动/右键菜单/投喂取消）都经这里上报给 ViewModel，
+    /// 由 ViewModel 统一负责重置空闲计时、必要时唤醒，避免埋点散落漏埋
+    func registerInteraction() {
+        viewModel?.markInteraction()
+    }
+    
     override func mouseDown(with event: NSEvent) {
         guard let win = windowRef else { return }
+        // 任何对宠物的点击/拖动都算互动：统一走 registerInteraction 漏斗
+        registerInteraction()
         dragOffset = event.locationInWindow
         isDragging = false
     }
@@ -522,13 +535,18 @@ isFeeding = false
         bubbleWin.backgroundColor = .clear
         bubbleWin.isOpaque = false
         bubbleWin.hasShadow = false
-        // 层级高于小猫窗口（.popUpMenu），悬浮在小猫头顶；纯展示不挡小猫的点击
+        // 层级高于小猫窗口（.popUpMenu），悬浮在小猫头顶；开启点击：点气泡即关闭
         bubbleWin.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
-        bubbleWin.ignoresMouseEvents = true
+        bubbleWin.ignoresMouseEvents = false
         bubbleWin.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         bubbleWin.isReleasedWhenClosed = false
         bubbleWin.hidesOnDeactivate = false
         bubbleWin.contentView = bubbleView
+        // 点击气泡→立即淡出关闭（只关当前这颗，防旧回调误关新气泡）
+        bubbleView.onClick = { [weak self, weak bubbleWin] in
+            guard let self, let bubbleWin, self.speechBubbleWindow === bubbleWin else { return }
+            self.dismissSpeechBubble(animated: true, fade: 0.3)
+        }
 
         speechBubbleWindow = bubbleWin
         repositionSpeechBubble()
@@ -621,13 +639,16 @@ isFeeding = false
 
 /// 拦截层点击取消投喂：左键（单击）取消说“猫条掉地上啦”，右键（双击）取消说“为什么不喂我～”
 func requestCancelFeeding(byRightClick: Bool) {
+registerInteraction()
 cancelFeeding()
 catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
 }
 
-    /// 小猫说话：统一走粉色对话框（弹入 → 悬浮 2s → 1s 淡出）
-    private func catSay(_ text: String) {
-        showFeedBubble(text: text, hold: 2.0, fade: 1.0)
+    /// 小猫说话：统一走粉色对话框（弹入 → 悬浮 → 1s 淡出）
+    /// 停留时长按文案长度自适应：短语气词约 4s，热搜/搭话等长文案给充足阅读时间（上限 18s）
+    func catSay(_ text: String) {
+        let hold = min(18.0, max(4.0, Double(text.count) * 0.6))
+        showFeedBubble(text: text, hold: hold, fade: 1.0)
     }
 
     /// 飘心特效：3 颗爱心从小猫身上缓缓升起并淡出
@@ -901,6 +922,8 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     }
     
     override func rightMouseDown(with event: NSEvent) {
+        // 打开右键菜单也算互动：统一走 registerInteraction 漏斗
+        registerInteraction()
         // 投喂模式中右键：取消投喂，不弹菜单
         if isFeeding {
             cancelFeeding()
@@ -1544,6 +1567,9 @@ final class SpeechBubbleView: NSView {
     /// 文案排版后的实际尺寸（init 时计算，draw 时用于居中）
     private let textSize: NSSize
 
+    /// 点击气泡回调（外层用它关闭气泡）
+    var onClick: (() -> Void)?
+
     /// 文案字体：系统圆体更贴近素材的手绘感
     private static var textFont: NSFont {
         let base = NSFont.systemFont(ofSize: 13, weight: .semibold)
@@ -1623,6 +1649,13 @@ final class SpeechBubbleView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // 允许点击关闭：首击即响应（无需先激活 App），手型光标提示可点
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard bounds.width > 8, bounds.height > 8 else { return }
 
@@ -1630,6 +1663,7 @@ final class SpeechBubbleView: NSView {
         if let img = Self.assetImage {
             img.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
             drawText(centerY: bounds.height * 0.52, textWidth: bounds.width * 0.90, textX: bounds.width * 0.05)
+            drawCloseHint()
             return
         }
 
@@ -1704,6 +1738,18 @@ final class SpeechBubbleView: NSView {
 
         // 文案：泡泡身体垂直居中
         drawText(centerY: (y0 + y1) / 2, textWidth: bw, textX: x0)
+        drawCloseHint()
+    }
+
+    /// 右上角小「✕」关闭提示（素材/矢量两种模式共用）
+    private func drawCloseHint() {
+        let d: CGFloat = 14
+        let rect = NSRect(x: bounds.maxX - d - 6, y: bounds.maxY - d - 4, width: d, height: d)
+        let attr = NSAttributedString(string: "✕", attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: Self.strokeColor.withAlphaComponent(0.65)
+        ])
+        attr.draw(in: rect)
     }
 
     /// 居中绘制文案（自动换行；素材模式 / 矢量模式共用）

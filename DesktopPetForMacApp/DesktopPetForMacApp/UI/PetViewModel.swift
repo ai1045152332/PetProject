@@ -76,31 +76,38 @@ final class PetViewModel: ObservableObject {
     /// 帧率：12 FPS
     private let frameRate: TimeInterval = 1.0 / 12.0
     
-    /// 动画定时器
-    private var frameTimer: Timer?
-    
-    /// 行为决策定时器（眨眼、伸懒腰等）
-    private var behaviorTimer: Timer?
-    
+    /// 统一定时器调度器（frame / behavior / oneShot / idleSleep / 喝水 / 主动搭话 全部走这里）
+    private let timers = PetTimerScheduler()
+
+    /// 定时器名字常量，集中管理避免拼写漂移
+    private enum TimerName {
+        static let frame = "frame"
+        static let behavior = "behavior"
+        static let oneShot = "oneShot"
+        static let idleSleep = "idleSleep"
+        static let waterFirst = "waterFirst"
+        static let waterRepeat = "waterRepeat"
+        static let chatFirst = "chatFirst"
+        static let chatRepeat = "chatRepeat"
+        static let newsRefresh = "newsRefresh"
+    }
+
     /// 鼠标位置
     private var mousePosition: CGPoint = .zero
     
     /// 当前是否在执行一次性动画（如 jump）
     private var isPlayingOneShot: Bool = false
-    
+
+    /// 空闲进入睡觉的时长（秒）：连续无人互动超过该时长即进入睡觉状态
+    static let idleSleepSeconds: TimeInterval = 1800
+
     /// 系统勿扰/专注模式是否开启（决定一次性动画播完后回到哪个基准状态）
     /// true = 专注（勿扰中），false = 休闲
     var systemFocusActive: Bool = false
 
     /// 朝向是否被锁定（喝水提醒期间禁止鼠标翻转）
     private var isFacingLocked: Bool = false
-    
-    /// 喝水提醒定时器（每小时重复的那个）
-    private var drinkWaterTimer: Timer?
-    
-    /// 首次等到整点的定时器
-    private var firstWaterTimer: Timer?
-    
+
     /// 上次喝水提醒时间（防重复弹窗）
     private var lastWaterReminderTime: Date?
     /// 喝水弹窗是否正在显示（未关闭则不弹下一次）
@@ -166,6 +173,8 @@ final class PetViewModel: ObservableObject {
         startFrameLoop()
         startBehaviorLoop()
         startDrinkWaterReminder()
+        resetIdleSleepTimer()
+        startProactiveChat()
         cloudRestoreObserver = NotificationCenter.default.addObserver(forName: AccessControl.accessLevelChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.restoreCloudPet() }
         }
@@ -179,6 +188,7 @@ final class PetViewModel: ObservableObject {
         behaviorTimer?.invalidate()
         drinkWaterTimer?.invalidate()
         firstWaterTimer?.invalidate()
+        timers.invalidateAll()
     }
     
     // MARK: - Sprite Sheet Loading
@@ -281,11 +291,8 @@ final class PetViewModel: ObservableObject {
     // MARK: - Frame Animation Loop
     
     private func startFrameLoop() {
-        frameTimer = Timer.scheduledTimer(withTimeInterval: frameRate, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.advanceFrame()
-            }
+        timers.schedule(name: TimerName.frame, interval: frameRate, repeats: true) { [weak self] in
+            self?.advanceFrame()
         }
     }
     
@@ -303,9 +310,9 @@ final class PetViewModel: ObservableObject {
         frameElapsed -= duration
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
-        // 一次性动画（pet / warn 等）播完自动切回基准状态：
-        // 系统勿扰开启时回专注，否则回休闲
-        if isPlayingOneShot && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
+        // 一次性动画（pet / warn 等）多帧素材播完自动切回基准状态：
+        // 系统勿扰开启时回专注，否则回休闲（单帧素材由 oneShotTimer 负责回退，这里不处理）
+        if isPlayingOneShot && sheet.frameCount > 1 && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
             isPlayingOneShot = false
             transitionTo(systemFocusActive ? .focus : .idel)
             return
@@ -324,12 +331,8 @@ final class PetViewModel: ObservableObject {
     
     private func scheduleNextBehavior() {
         let delay = 1800.0 // 每 30 分钟触发一次
-        behaviorTimer?.invalidate()
-        behaviorTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.performRandomBehavior()
-            }
+        timers.schedule(name: TimerName.behavior, interval: delay, repeats: false) { [weak self] in
+            self?.performRandomBehavior()
         }
     }
     
@@ -354,22 +357,57 @@ final class PetViewModel: ObservableObject {
         animationState = newState
         currentFrameIndex = 0
         isPlayingOneShot = false
+        timers.cancel(TimerName.oneShot)
         // currentFrameImage 由计算属性根据当前 orientation 自动提供
         FileLogger.log("[DesktopPet] transitionTo(\((newState.displayName)), frameCount=\(spriteSheets[newState]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil)")
         onStateChanged?(newState)
     }
     
-    func playOneShot(_ state: CatAnimationState) {
+    /// 播放一次性动画
+    /// - 多帧素材：靠帧循环播完最后一帧自动回退（见 advanceFrame）
+    /// - 单帧素材：frameCount==1 无法靠帧推进回退，用 hold 定时保持展示，避免"点了没反应"
+    func playOneShot(_ state: CatAnimationState, hold: TimeInterval = 1.5) {
         isPlayingOneShot = true
         animationState = state
         currentFrameIndex = 0
+        timers.cancel(TimerName.oneShot)
         // currentFrameImage 由计算属性根据当前 orientation 自动提供
-        FileLogger.log("[DesktopPet] playOneShot(\(state.displayName), frameCount=\(spriteSheets[state]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil)")
+        FileLogger.log("[DesktopPet] playOneShot(\(state.displayName), frameCount=\(spriteSheets[state]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil))")
         onStateChanged?(state)
+
+        // 单帧素材没有可推进的帧序列，用定时器等价"播完"后回到基准状态
+        if spriteSheets[state]?.frameCount ?? 0 <= 1 {
+            timers.schedule(name: TimerName.oneShot, interval: hold, repeats: false) { [weak self] in
+                guard let self, self.isPlayingOneShot, self.animationState == state else { return }
+                self.isPlayingOneShot = false
+                self.transitionTo(self.systemFocusActive ? .focus : .idel)
+            }
+        }
     }
     
     // MARK: - Mouse Interaction
-    
+
+    // MARK: - 空闲自动睡觉
+
+    /// 记录一次互动：重置空闲计时；若正在睡觉则唤醒回基准状态（勿扰中→专注，否则→休闲）
+    /// 由视图层在点击 / 拖动 / 右键菜单等交互时调用
+    func markInteraction() {
+        if animationState == .sleep {
+            transitionTo(systemFocusActive ? .focus : .idel)
+        }
+        resetIdleSleepTimer()
+    }
+
+    /// 重新开始空闲计时，超时后进入睡觉
+    private func resetIdleSleepTimer() {
+        timers.schedule(name: TimerName.idleSleep, interval: Self.idleSleepSeconds, repeats: false) { [weak self] in
+            guard let self else { return }
+            // 一次性动画（提醒 / 喝水 / 抚摸）播放中不打断，顺延到其结束后再判定
+            guard !self.isPlayingOneShot else { self.resetIdleSleepTimer(); return }
+            self.transitionTo(.sleep)
+        }
+    }
+
     func updateMousePosition(_ point: CGPoint) {
         mousePosition = point
         guard !isFacingLocked else { return }
@@ -406,8 +444,8 @@ final class PetViewModel: ObservableObject {
     
     func pet() {
         showContextMenu = false
-        // 如果 pet 没有有效帧（只有1帧占位图），fallback 到 warn 动画
-        if let sheet = spriteSheets[.pet], sheet.frameCount > 1 {
+        // 抚摸：有 pet 素材（单帧也算有效）就播放抚摸动画，缺失才回退到提醒
+        if spriteSheets[.pet] != nil {
             playOneShot(.pet)
         } else {
             playOneShot(.warn)
@@ -431,11 +469,9 @@ final class PetViewModel: ObservableObject {
 
     /// 启动喝水提醒（间隔由 reminderInterval 配置，默认 30 分钟）
     func startDrinkWaterReminder() {
-        // 取消所有已存在的定时器，避免重复触发
-        drinkWaterTimer?.invalidate()
-        drinkWaterTimer = nil
-        firstWaterTimer?.invalidate()
-        firstWaterTimer = nil
+        // 取消所有已存在的喝水定时器，避免重复触发
+        timers.cancel(TimerName.waterFirst)
+        timers.cancel(TimerName.waterRepeat)
 
         let intervalMinutes = reminderInterval
         let intervalSeconds = TimeInterval(intervalMinutes * 60)
@@ -457,17 +493,11 @@ final class PetViewModel: ObservableObject {
         let effectiveDelay = delay > 0 ? delay : intervalSeconds
 
         // 首次等到下一个触发点，之后按配置间隔重复
-        firstWaterTimer = Timer.scheduledTimer(withTimeInterval: effectiveDelay, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.triggerDrinkWaterReminder()
-                self.drinkWaterTimer?.invalidate()
-                self.drinkWaterTimer = Timer.scheduledTimer(withTimeInterval: intervalSeconds, repeats: true) { [weak self] _ in
-                    guard let self = self else { return }
-                    Task { @MainActor in
-                        self.triggerDrinkWaterReminder()
-                    }
-                }
+        timers.schedule(name: TimerName.waterFirst, interval: effectiveDelay, repeats: false) { [weak self] in
+            guard let self else { return }
+            self.triggerDrinkWaterReminder()
+            self.timers.schedule(name: TimerName.waterRepeat, interval: intervalSeconds, repeats: true) { [weak self] in
+                self?.triggerDrinkWaterReminder()
             }
         }
     }
@@ -508,5 +538,157 @@ final class PetViewModel: ObservableObject {
         showContextMenu = false
         transitionTo(.focus) // 进入专注状态
         onStartWordLearning?()
+    }
+
+    // MARK: - 主动搭话（结合新闻 / Todo 的陪伴式提示）
+
+    /// 主动搭话回调（供视图层用气泡展示台词）
+    var onPetSay: ((String) -> Void)?
+
+    static let proactiveChatKey = "settings.proactiveChat.enabled"
+    /// 是否开启主动搭话（默认开启），持久化到 UserDefaults
+    var proactiveChatEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Self.proactiveChatKey) == nil { return true }
+            return UserDefaults.standard.bool(forKey: Self.proactiveChatKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.proactiveChatKey) }
+    }
+
+    /// 启动后首次搭话延迟（秒），给热搜缓存拉取留出时间
+    static let chatFirstDelaySeconds: TimeInterval = 20
+
+    static let chatIntervalKey = "settings.proactiveChat.interval"
+    static let defaultChatInterval: Int = 30
+    /// 周期搭话间隔（分钟），持久化到 UserDefaults
+    var chatIntervalMinutes: Int {
+        get {
+            let v = UserDefaults.standard.integer(forKey: Self.chatIntervalKey)
+            return v >= 1 ? v : Self.defaultChatInterval
+        }
+        set {
+            let clamped = max(1, min(newValue, 720))
+            UserDefaults.standard.set(clamped, forKey: Self.chatIntervalKey)
+        }
+    }
+    /// 热搜缓存刷新间隔（秒）
+    static let newsRefreshSeconds: TimeInterval = 1800
+
+    /// 缓存的热搜标题列表（后台刷新，搭话时随机挑一条，避免总是 Top1）
+    private var cachedNewsHeadlines: [String] = []
+    /// 上次搭话播过的热搜（连续两次不弹同一条）
+    private var lastSpokenHeadline: String?
+    /// 搭话轮换计数（新闻 / Todo 交替，避免总是同一主题）
+    private var chatTick: Int = 0
+
+    /// 启动主动搭话：先后台拉一次热搜做缓存，再安排首句与周期搭话
+    private func startProactiveChat() {
+        refreshNewsCache()
+        // 周期刷新热搜缓存
+        timers.schedule(name: TimerName.newsRefresh, interval: Self.newsRefreshSeconds, repeats: true) { [weak self] in
+            self?.refreshNewsCache()
+        }
+        // 启动后一句：时段问候 +（若有）今日 Todo 数量；之后进入周期搭话
+        timers.schedule(name: TimerName.chatFirst, interval: Self.chatFirstDelaySeconds, repeats: false) { [weak self] in
+            guard let self else { return }
+            self.sayGreeting()
+            self.timers.schedule(name: TimerName.chatRepeat, interval: TimeInterval(self.chatIntervalMinutes * 60), repeats: true) { [weak self] in
+                self?.performProactiveChat()
+            }
+        }
+    }
+
+    /// 修改间隔后重建周期搭话定时器（按新节奏立即生效，不重新跑启动首句）
+    func restartProactiveChat() {
+        timers.cancel(TimerName.chatRepeat)
+        timers.schedule(name: TimerName.chatRepeat, interval: TimeInterval(chatIntervalMinutes * 60), repeats: true) { [weak self] in
+            self?.performProactiveChat()
+        }
+    }
+
+    /// 后台刷新热搜缓存（NewsFetcher 是阻塞网络请求，必须离开主线程）
+    private func refreshNewsCache() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let titles = NewsFetcher.fetchHotNews().prefix(10).map { $0.title }
+            FileLogger.log("[DesktopPet] 热搜缓存刷新: \(titles.count) 条\(titles.isEmpty ? "" : "，首条「\(titles[0])」")")
+            DispatchQueue.main.async {
+                self?.cachedNewsHeadlines = titles
+            }
+        }
+    }
+
+    /// 从缓存热搜里随机挑一条（非空，且避开上次播过的一条）
+    private func randomNewsHeadline() -> String? {
+        let pool = cachedNewsHeadlines.filter { !$0.isEmpty }
+        guard !pool.isEmpty else { return nil }
+        // 连续两次不弹同一条（与刷题抽题避重同一策略）；只剩一条候选时忽略该规则
+        var candidates = pool
+        if let last = lastSpokenHeadline, pool.count > 1 {
+            candidates = pool.filter { $0 != last }
+        }
+        let picked = candidates.randomElement()
+        lastSpokenHeadline = picked
+        return picked
+    }
+
+    /// 启动首句：时段问候 +（若有）今日 Todo 数量
+    private func sayGreeting() {
+        guard proactiveChatEnabled, !systemFocusActive, animationState != .sleep else { return }
+        let todoCount = TodoManager.shared.load().count
+        let greet = Self.timeGreeting()
+        if todoCount > 0 {
+            onPetSay?("\(greet)｜今天你有 \(todoCount) 个 Todo 📝")
+        } else {
+            onPetSay?("\(greet)｜今天没有待办，轻松一下～")
+        }
+    }
+
+    /// 周期主动搭话：在新闻 / Todo 之间轮换，勿扰或睡觉时不打扰
+    private func performProactiveChat() {
+        guard proactiveChatEnabled else { return }
+        // 陪伴式搭话只在“宠物醒着且未播动画”时进行，不打扰专注/勿扰，也不把睡觉的自己喊醒
+        guard !systemFocusActive, animationState != .sleep, !isPlayingOneShot else { return }
+
+        chatTick += 1
+        let todoCount = TodoManager.shared.load().count
+
+        // 偶数优先聊热搜，奇数优先聊 Todo；缺失数据时相互兜底（热搜随机挑一条）
+        if chatTick % 2 == 0, let headline = randomNewsHeadline() {
+            FileLogger.log("[DesktopPet] 搭话热搜: 「\(headline)」池内\(cachedNewsHeadlines.count)条")
+            onPetSay?("热搜在聊「\(Self.truncate(headline, 20))」🔥 右键看今日热点～")
+            return
+        }
+        if todoCount > 0 {
+            onPetSay?("今天你还有 \(todoCount) 个 Todo 没完成 📝 加油～")
+            return
+        }
+        if let headline = randomNewsHeadline() {
+            onPetSay?("热搜在聊「\(Self.truncate(headline, 20))」🔥")
+            return
+        }
+        onPetSay?(Self.encouragement())
+    }
+
+    /// 按时段给出问候语
+    private static func timeGreeting() -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<11:  return "早上好 ☀️"
+        case 11..<13: return "中午好 🍚"
+        case 13..<18: return "下午好 ☕"
+        case 18..<23: return "晚上好 🌙"
+        default:      return "夜深了 🌌"
+        }
+    }
+
+    /// 兜底鼓励语（随机）
+    private static func encouragement() -> String {
+        let lines = ["休息一下，看看远处 🌿", "喝口水吧 💧", "你专注的样子很好看 ✨", "别太累，摸我一下放松下 🐾"]
+        return lines.randomElement() ?? "喵～"
+    }
+
+    /// 截断过长标题，避免气泡过宽
+    private static func truncate(_ text: String, _ limit: Int) -> String {
+        text.count <= limit ? text : String(text.prefix(limit)) + "…"
     }
 }

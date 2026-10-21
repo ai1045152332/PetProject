@@ -120,7 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         HeartbeatService.shared.attach(viewModel: vm)
         HeartbeatService.shared.start()
         
-        // 9. 启动自动更新检查（启动后延迟检查，之后每 6 小时一次）
+        // 9. 启动自动更新检查（启动后延迟检查，之后每 24 小时一次）
         UpdateService.shared.start()
         
         // 10. 启动每日天气提醒（已开启且已解锁时生效）

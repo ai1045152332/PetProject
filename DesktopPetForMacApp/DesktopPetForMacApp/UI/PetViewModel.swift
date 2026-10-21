@@ -548,6 +548,8 @@ final class PetViewModel: ObservableObject {
 
     /// 缓存的热搜标题列表（后台刷新，搭话时随机挑一条，避免总是 Top1）
     private var cachedNewsHeadlines: [String] = []
+    /// 上次搭话播过的热搜（连续两次不弹同一条）
+    private var lastSpokenHeadline: String?
     /// 搭话轮换计数（新闻 / Todo 交替，避免总是同一主题）
     private var chatTick: Int = 0
 
@@ -580,15 +582,25 @@ final class PetViewModel: ObservableObject {
     private func refreshNewsCache() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let titles = NewsFetcher.fetchHotNews().prefix(10).map { $0.title }
+            FileLogger.log("[DesktopPet] 热搜缓存刷新: \(titles.count) 条\(titles.isEmpty ? "" : "，首条「\(titles[0])」")")
             DispatchQueue.main.async {
                 self?.cachedNewsHeadlines = titles
             }
         }
     }
 
-    /// 从缓存热搜里随机挑一条（非空）
+    /// 从缓存热搜里随机挑一条（非空，且避开上次播过的一条）
     private func randomNewsHeadline() -> String? {
-        cachedNewsHeadlines.filter { !$0.isEmpty }.randomElement()
+        let pool = cachedNewsHeadlines.filter { !$0.isEmpty }
+        guard !pool.isEmpty else { return nil }
+        // 连续两次不弹同一条（与刷题抽题避重同一策略）；只剩一条候选时忽略该规则
+        var candidates = pool
+        if let last = lastSpokenHeadline, pool.count > 1 {
+            candidates = pool.filter { $0 != last }
+        }
+        let picked = candidates.randomElement()
+        lastSpokenHeadline = picked
+        return picked
     }
 
     /// 启动首句：时段问候 +（若有）今日 Todo 数量
@@ -614,6 +626,7 @@ final class PetViewModel: ObservableObject {
 
         // 偶数优先聊热搜，奇数优先聊 Todo；缺失数据时相互兜底（热搜随机挑一条）
         if chatTick % 2 == 0, let headline = randomNewsHeadline() {
+            FileLogger.log("[DesktopPet] 搭话热搜: 「\(headline)」池内\(cachedNewsHeadlines.count)条")
             onPetSay?("热搜在聊「\(Self.truncate(headline, 20))」🔥 右键看今日热点～")
             return
         }

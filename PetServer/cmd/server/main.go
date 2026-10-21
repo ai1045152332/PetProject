@@ -142,13 +142,29 @@ func main() {
 	defer metricsSvc.Flush()
 
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc, heartbeatSvc, metricsSvc)
+	imageObjects, err := storage.NewLocalPetImageObjects("data/pet-images/objects")
+	if err != nil {
+		log.Fatal(err)
+	}
+	imageSvc, err := service.NewPetImageService("data/pet-images/libraries", imageObjects)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if generator := service.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); generator != nil {
+		imageSvc.SetGenerator(generator)
+	} else {
+		log.Printf("[pet-images] 未配置 OPENROUTER_API_KEY，上传/重试将返回 503，历史读取不受影响")
+	}
+	defer imageSvc.Close()
+	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
+
 	// ACME HTTP-01 验证目录（certbot webroot 模式写入 challenge 文件）
 	acmeDir := os.Getenv("PETSERVER_ACME_DIR")
 	if acmeDir == "" {
 		acmeDir = "data/acme-challenges"
 	}
 	_ = os.MkdirAll(acmeDir, 0o755)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir, imageCtrl)
 
 	// HTTPS：证书/私钥文件存在时启用 443 监听，证书更新后自动热加载（配合 certbot 续期）
 	tlsCert := os.Getenv("PETSERVER_TLS_CERT")

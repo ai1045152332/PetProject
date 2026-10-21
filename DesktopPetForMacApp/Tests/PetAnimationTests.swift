@@ -74,4 +74,65 @@ final class PetAnimationTests: XCTestCase {
         let empty = try JSONDecoder().decode(PetImageLibrary.self, from: Data(#"{"currentId":"","images":[]}"#.utf8))
         XCTAssertTrue(empty.selections.isEmpty, "An unused cloud library must preserve existing local state images")
     }
+
+    /// 共享图（一次 AI 生成、无单状态选中）应展开覆盖全部 5 个状态。
+    func testSharedImageSelectionExpandsToAllStates() throws {
+        let sharedID = String(repeating: "c", count: 32)
+        let json = Data(#"{"currentId":"""# + sharedID + #"","images":[{"id":"""# + sharedID + #"","name":"shared","createdAt":"date","status":"ready"}]}"#.utf8)
+        let library = try JSONDecoder().decode(PetImageLibrary.self, from: json)
+        for state in CatAnimationState.allCases {
+            XCTAssertEqual(library.selections[state.rawValue], sharedID, "Shared image must cover \(state.displayName)")
+        }
+    }
+
+    /// 本地直传优先级最高：写入后覆盖云端/legacy 图，移除后按原顺序回退。
+    func testLocalDirectUploadTakesPriorityAndFallsBack() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        // Legacy shared upload remains readable through the local namespace.
+        try image.write(to: directory.appendingPathComponent("current.png"))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .idel, directory: directory))
+        try CustomSpriteStore.installLocalImage(image, for: .idel, directory: directory)
+        XCTAssertTrue(CustomSpriteStore.hasLocalImage(for: .idel))
+
+        // A cloud manifest selection must not shadow the local direct upload.
+        let focusID = String(repeating: "a", count: 32)
+        try CustomSpriteStore.installCloudImages(selections: ["focus": focusID, "idel": focusID], images: [focusID: image], directory: directory)
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .idel, directory: directory))
+
+        // Removing the local image falls the state back to the cloud selection, other states keep both layers.
+        try CustomSpriteStore.removeLocalImage(for: .idel, directory: directory)
+        XCTAssertFalse(CustomSpriteStore.hasLocalImage(for: .idel))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .idel, directory: directory))
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
+        // An explicit reset still blocks the legacy shared image (existing product semantics).
+        try CustomSpriteStore.installCloudImages(selections: ["idel": ""], images: [:], directory: directory)
+        XCTAssertNil(CustomSpriteStore.loadAnimation(for: .idel, directory: directory))
+    }
+
+    /// 本地直传接受多帧 GIF（带帧时长），拒绝损坏数据。
+    func testLocalDirectUploadAcceptsAnimatedGIFAndRejectsCorruptData() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString, 2, nil))
+        for delay in [0.1, 0.2] {
+            let space = CGColorSpaceCreateDeviceRGB()
+            let context = try XCTUnwrap(CGContext(data: nil, width: 16, height: 16, bitsPerComponent: 8,
+                bytesPerRow: 64, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 2, y: 2, width: 12, height: 12))
+            CGImageDestinationAddImage(destination, try XCTUnwrap(context.makeImage()), [kCGImagePropertyGIFDictionary:
+                [kCGImagePropertyGIFDelayTime: delay]] as CFDictionary)
+        }
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        try CustomSpriteStore.installLocalImage(data as Data, for: .pet, directory: directory)
+        let animation = try XCTUnwrap(CustomSpriteStore.loadAnimation(for: .pet, directory: directory))
+        XCTAssertEqual(animation.frames.count, 2)
+        XCTAssertEqual(animation.durations[1], 0.2, accuracy: 0.001)
+        XCTAssertThrowsError(try CustomSpriteStore.installLocalImage(Data("broken GIF".utf8), for: .pet, directory: directory))
+    }
 }

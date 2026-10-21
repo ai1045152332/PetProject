@@ -213,6 +213,14 @@ final class PetViewModel: ObservableObject {
         }
     }
 
+    /// 供设置面板本地直传/清除图片后即时重建素材并刷新宠物窗口
+    @MainActor
+    func reloadSpriteSheets() {
+        loadSpriteSheets()
+        spriteRevision += 1
+        currentFrameIndex = 0
+    }
+
     @MainActor
     func applyPetLibrary(_ library: PetImageLibrary) async throws {
         let selections = library.selections

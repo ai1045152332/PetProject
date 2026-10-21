@@ -95,23 +95,29 @@ enum PetImageService {
     static func select(_ id: String, for state: CatAnimationState) async throws -> PetImageLibrary {
         try JSONDecoder().decode(Envelope.self, from: await request("select", id: id, state: state)).data
     }
-    static func upload(_ url: URL, for state: CatAnimationState) async throws -> PetImageLibrary {
+    /// Reads and validates a local PNG/JPEG file for cloud upload (size and pixel bounds).
+    /// Keep the original pixels and alpha; only the displayed image is scaled.
+    static func validatedImageFile(_ url: URL, allowsGIF: Bool = false) throws -> (Data, String) {
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 0 && size <= 10 * 1024 * 1024 else { throw failure("图片不得超过 10 MB") }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         guard data.count <= 10 * 1024 * 1024,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source),
-              [UTType.png.identifier, UTType.jpeg.identifier].contains(type as String),
+              ([UTType.png.identifier, UTType.jpeg.identifier].contains(type as String)
+                || (allowsGIF && type as String == UTType.gif.identifier)),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
               let width = props[kCGImagePropertyPixelWidth as String] as? Int,
               let height = props[kCGImagePropertyPixelHeight as String] as? Int,
               width > 0, height > 0, Int64(width) * Int64(height) <= 40_000_000 else {
-            throw failure("请选择有效的 PNG/JPEG 图片，像素不得超过 4000 万")
+            throw failure(allowsGIF ? "请选择有效的 PNG/JPEG/GIF 图片，像素不得超过 4000 万" : "请选择有效的 PNG/JPEG 图片，像素不得超过 4000 万")
         }
-        // Keep the original pixels and alpha; only the displayed image is scaled.
         let name = url.lastPathComponent.replacingOccurrences(of: "\"", with: "_")
             .replacingOccurrences(of: "\r", with: "_").replacingOccurrences(of: "\n", with: "_")
+        return (data, name)
+    }
+    static func upload(_ url: URL, for state: CatAnimationState?) async throws -> PetImageLibrary {
+        let (data, name) = try validatedImageFile(url)
         return try JSONDecoder().decode(Envelope.self, from: await request("upload", state: state, upload: (data, name))).data
     }
     static func retry(_ id: String, for state: CatAnimationState) async throws -> PetImageLibrary {

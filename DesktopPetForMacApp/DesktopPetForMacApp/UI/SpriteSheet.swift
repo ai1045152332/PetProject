@@ -295,6 +295,10 @@ enum CustomSpriteStore {
     }
     static func loadAnimation(for state: CatAnimationState, directory: URL? = nil) -> Animation? {
         let root = directory ?? directoryURL
+        // A local direct upload always wins over any cloud or legacy image for that state.
+        if localSelections(in: root)[state.rawValue] != nil,
+           let data = try? Data(contentsOf: root.appendingPathComponent("local-\(state.rawValue).img")),
+           let animation = decodeAnimation(data) { return animation }
         let manifest = root.appendingPathComponent("cloud-selections.json")
         let url: URL
         if FileManager.default.fileExists(atPath: manifest.path) {
@@ -324,6 +328,35 @@ enum CustomSpriteStore {
         id.count == 32 && id.allSatisfy { "0123456789abcdef".contains($0) }
     }
     static func hasCustomImage(for state: CatAnimationState) -> Bool { loadAnimation(for: state) != nil }
+    static func hasLocalImage(for state: CatAnimationState) -> Bool {
+        let root = directoryURL
+        return localSelections(in: root)[state.rawValue] != nil
+            && FileManager.default.fileExists(atPath: root.appendingPathComponent("local-\(state.rawValue).img").path)
+    }
+    private static func localSelections(in root: URL) -> [String: String] {
+        let manifest = root.appendingPathComponent("local-selections.json")
+        guard let data = try? Data(contentsOf: manifest),
+              let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return selections
+    }
+
+    // Direct uploads stay on this machine: validated pixels are staged first, then the manifest commits.
+    static func installLocalImage(_ data: Data, for state: CatAnimationState, directory: URL? = nil) throws {
+        guard decodeAnimation(data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+        let root = directory ?? directoryURL
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try data.write(to: root.appendingPathComponent("local-\(state.rawValue).img"), options: .atomic)
+        var merged = localSelections(in: root)
+        merged[state.rawValue] = "1"
+        try JSONEncoder().encode(merged).write(to: root.appendingPathComponent("local-selections.json"), options: .atomic)
+    }
+    static func removeLocalImage(for state: CatAnimationState, directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        var merged = localSelections(in: root)
+        merged.removeValue(forKey: state.rawValue)
+        try JSONEncoder().encode(merged).write(to: root.appendingPathComponent("local-selections.json"), options: .atomic)
+        try? FileManager.default.removeItem(at: root.appendingPathComponent("local-\(state.rawValue).img"))
+    }
 
     // Immutable files are staged first; one atomic manifest commit changes all selected states.
     // Missing states keep their local images; an explicit empty ID means restore default.

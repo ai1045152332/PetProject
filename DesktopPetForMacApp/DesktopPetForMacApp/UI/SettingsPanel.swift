@@ -48,8 +48,10 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
     private weak var viewModel: PetViewModel?
     private var stateButtons: [CatAnimationState: NSButton] = [:]
+    private var spritePreviewButtons: [CatAnimationState: NSButton] = [:]
     private var customSpriteButtons: [CatAnimationState: NSButton] = [:]
     private var customSpriteResetButtons: [CatAnimationState: NSButton] = [:]
+    private var aiStatusLabel: NSTextField?
     private var navButtons: [NSButton] = []
     private var contentViews: [NSView] = []
     private var currentSection = 0
@@ -312,79 +314,110 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
 
         let spriteRow = makeSettingRow(
-            frame: NSRect(x: 16, y: 22, width: cw - 32, height: 152),
+            frame: NSRect(x: 16, y: 22, width: cw - 32, height: 178),
             in: container
         )
         let spriteTitle = NSTextField(labelWithString: "自定义状态图片")
         spriteTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         spriteTitle.textColor = .labelColor
-        spriteTitle.frame = NSRect(x: 14, y: 126, width: 180, height: 18)
+        spriteTitle.frame = NSRect(x: 14, y: 152, width: 180, height: 18)
         spriteRow.addSubview(spriteTitle)
 
-        let spriteDesc = NSTextField(labelWithString: "选择状态上传，AI 生成 GIF，仅替换该状态 · 最大 10 MB")
+        let spriteDesc = NSTextField(labelWithString: "直接上传：本机即时生效；AI 生成：一次生成覆盖全部状态 · 最大 10 MB")
         spriteDesc.font = .systemFont(ofSize: 11)
         spriteDesc.textColor = .tertiaryLabelColor
-        spriteDesc.frame = NSRect(x: 14, y: 108, width: cw - 65, height: 15)
+        spriteDesc.frame = NSRect(x: 14, y: 133, width: cw - 65, height: 15)
         spriteRow.addSubview(spriteDesc)
         spriteDescLabel = spriteDesc
 
-        // Reuse the original five state upload buttons and their reset controls.
+        // Each state column: preview + name, direct upload (local only), per-state reset.
         let customStates = CatAnimationState.allCases
         let customButtonW: CGFloat = 76
         let customButtonGap: CGFloat = 8
         let customTotalW = CGFloat(customStates.count) * customButtonW + CGFloat(customStates.count - 1) * customButtonGap
         var customX = max(14, (spriteRow.bounds.width - customTotalW) / 2)
         for (index, state) in customStates.enumerated() {
-            let upload = NSButton(frame: NSRect(x: customX, y: 31, width: customButtonW, height: 72))
-            upload.title = state.displayName
+            let preview = NSButton(frame: NSRect(x: customX, y: 64, width: customButtonW, height: 62))
+            preview.title = state.displayName
+            preview.font = .systemFont(ofSize: 10, weight: .medium)
+            preview.alignment = .center
+            preview.bezelStyle = .rounded
+            preview.imagePosition = .imageAbove
+            preview.imageScaling = .scaleProportionallyDown
+            preview.image = customSpriteImage(for: state)
+            preview.isEnabled = false
+            preview.toolTip = "\(state.displayName)状态当前生效的图片"
+            spriteRow.addSubview(preview)
+            spritePreviewButtons[state] = preview
+
+            let upload = NSButton(title: "直接上传", target: self, action: #selector(directUploadCustomSprite(_:)))
+            upload.frame = NSRect(x: customX, y: 42, width: customButtonW, height: 20)
             upload.font = .systemFont(ofSize: 10, weight: .medium)
-            upload.alignment = .center
             upload.bezelStyle = .rounded
-            upload.imagePosition = .imageAbove
-            upload.imageScaling = .scaleProportionallyDown
-            upload.image = customSpriteImage(for: state)
+            upload.controlSize = .small
             upload.tag = index
-            upload.target = self
-            upload.action = #selector(uploadCustomSprite(_:))
-            upload.toolTip = "上传照片，经 AI 提取美化并生成 GIF，仅替换\(state.displayName)状态"
+            upload.toolTip = "原图（含 GIF 动图）直接作为\(state.displayName)状态图片，仅保存在本机"
             spriteRow.addSubview(upload)
             customSpriteButtons[state] = upload
 
             let reset = NSButton(title: "恢复默认", target: self, action: #selector(resetCustomSprite(_:)))
-            reset.frame = NSRect(x: customX, y: 5, width: customButtonW, height: 22)
+            reset.frame = NSRect(x: customX, y: 20, width: customButtonW, height: 18)
             reset.font = .systemFont(ofSize: 9)
             reset.bezelStyle = .rounded
             reset.tag = index
-            reset.toolTip = "仅恢复\(state.displayName)状态"
+            reset.toolTip = "清除\(state.displayName)状态的本地直传图，并恢复服务端默认"
             spriteRow.addSubview(reset)
             customSpriteResetButtons[state] = reset
             customX += customButtonW + customButtonGap
         }
+
+        // One AI job covers all five states through the server's shared-image mode.
+        let aiButton = NSButton(title: "🪄 上传照片 · AI 生成全部状态", target: self, action: #selector(generateAllStatesWithAI(_:)))
+        aiButton.frame = NSRect(x: 14, y: 6, width: 260, height: 22)
+        aiButton.font = .systemFont(ofSize: 11, weight: .medium)
+        aiButton.bezelStyle = .rounded
+        aiButton.toolTip = "上传一张照片，AI 生成一张动画 GIF 并同时应用到全部 5 个状态；消耗每日生成次数，生成姿态为休闲"
+        spriteRow.addSubview(aiButton)
+        aiGenerateAllButton = aiButton
+
+        let aiStatus = NSTextField(labelWithString: "")
+        aiStatus.font = .systemFont(ofSize: 10)
+        aiStatus.textColor = .secondaryLabelColor
+        aiStatus.lineBreakMode = .byTruncatingTail
+        aiStatus.frame = NSRect(x: 282, y: 9, width: spriteRow.bounds.width - 296, height: 15)
+        spriteRow.addSubview(aiStatus)
+        aiStatusLabel = aiStatus
+
         let history = NSButton(title: "历史图片…", target: self, action: #selector(showPetImageHistory(_:)))
-        history.frame = NSRect(x: spriteRow.bounds.width - 104, y: 122, width: 92, height: 24)
+        history.frame = NSRect(x: spriteRow.bounds.width - 104, y: 148, width: 92, height: 24)
         history.font = .systemFont(ofSize: 10)
         history.bezelStyle = .rounded
+        history.autoresizingMask = .minXMargin
         spriteRow.addSubview(history)
         petHistoryButton = history
 
         refreshSpriteAccessUI()
     }
 
-    /// 云端图片操作需要有效服务端激活码。
+    /// 云端图片操作（AI 生成 / 历史 / 清云端选中）需要有效服务端激活码；本地直传不需要。
     private func refreshSpriteAccessUI() {
-        let unlocked = AccessControl.serverActivationCode != nil && !petImageBusy
-        petHistoryButton?.isEnabled = unlocked
-        for (state, button) in customSpriteResetButtons {
-            button.isEnabled = unlocked && CustomSpriteStore.hasCustomImage(for: state)
-        }
+        let hasCode = AccessControl.serverActivationCode != nil
+        petHistoryButton?.isEnabled = hasCode && !petImageBusy
+        aiGenerateAllButton?.isEnabled = hasCode && !petImageBusy
         for state in CatAnimationState.allCases {
-            customSpriteButtons[state]?.isEnabled = unlocked
+            customSpriteButtons[state]?.isEnabled = !petImageBusy
+            spritePreviewButtons[state]?.image = customSpriteImage(for: state)
+            // Mark states whose current image came from a local direct upload.
+            let hasLocal = CustomSpriteStore.hasLocalImage(for: state)
+            customSpriteButtons[state]?.title = hasLocal ? "● 直接上传" : "直接上传"
+            customSpriteResetButtons[state]?.isEnabled =
+                !petImageBusy && (hasLocal || CustomSpriteStore.hasCustomImage(for: state))
         }
-        if unlocked {
-            spriteDescLabel?.stringValue = "选择状态上传，AI 生成 GIF，仅替换该状态 · 最大 10 MB"
+        if hasCode {
+            spriteDescLabel?.stringValue = "直接上传：本机即时生效；AI 生成：一次生成覆盖全部状态 · 最大 10 MB"
             spriteDescLabel?.textColor = .tertiaryLabelColor
         } else {
-            spriteDescLabel?.stringValue = "需服务端激活码解锁；本地快捷码不支持云端图片"
+            spriteDescLabel?.stringValue = "直接上传随时可用；AI 生成与历史需服务端激活码（本地快捷码不支持）"
             spriteDescLabel?.textColor = .systemOrange
         }
     }
@@ -392,7 +425,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private func showSpriteUnlockHint() {
         let alert = NSAlert()
         alert.messageText = "该功能需要解锁"
-        alert.informativeText = "请在「通用设置 → 权限」输入有效的服务端激活码；本地快捷码不支持上传、历史和恢复。"
+        alert.informativeText = "请在「通用设置 → 权限」输入有效的服务端激活码；本地快捷码不支持 AI 生成、历史图片和清云端选中（本地直传不受影响）。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "好")
         NSApp.activate(ignoringOtherApps: true)
@@ -400,10 +433,11 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     }
 
     private func customSpriteImage(for state: CatAnimationState) -> NSImage? {
-        viewModel?.spriteSheets[state]?.frame(at: 0)
+        return viewModel?.spriteSheets[state]?.frame(at: 0)
     }
 
     private weak var petHistoryButton: NSButton?
+    private weak var aiGenerateAllButton: NSButton?
     private var petImageBusy = false
 
     private func runPetOperation(_ operation: @escaping @MainActor () async throws -> Void) {
@@ -426,30 +460,70 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         return states[sender.tag]
     }
 
-    @objc private func uploadCustomSprite(_ sender: NSButton) {
-        guard AccessControl.serverActivationCode != nil else { showSpriteUnlockHint(); return }
-        guard let state = customSpriteState(for: sender) else { return }
+    /// 直接上传：原图（含 GIF 动图）仅存本机，不需要激活码、不占生成配额、即时生效。
+    @objc private func directUploadCustomSprite(_ sender: NSButton) {
+        guard !petImageBusy, let state = customSpriteState(for: sender) else { return }
         let panel = NSOpenPanel()
         panel.title = "选择\(state.displayName)状态图片"
-        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型提取、美化并生成宠物 GIF，完成后仅替换\(state.displayName)状态"
+        panel.message = "PNG/JPEG/GIF，最大 10 MB；原图直接作为\(state.displayName)状态图片，仅保存在本机"
+        panel.allowedContentTypes = [.png, .jpeg, .gif]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: self) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            do {
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                guard data.count > 0, data.count <= 10 * 1024 * 1024 else {
+                    throw PetImageService.failure("图片不得超过 10 MB")
+                }
+                try CustomSpriteStore.installLocalImage(data, for: state)
+                self.viewModel?.reloadSpriteSheets()
+                self.refreshSpriteAccessUI()
+                self.aiStatusLabel?.stringValue = "已更新\(state.displayName)状态图片（仅本机）"
+            } catch {
+                self.showSpriteError(error)
+            }
+        }
+    }
+
+    /// AI 生成：一张照片经服务端生成动画 GIF，同时覆盖全部 5 个状态（服务端共享图模式）。
+    @objc private func generateAllStatesWithAI(_ sender: Any?) {
+        guard AccessControl.serverActivationCode != nil else { showSpriteUnlockHint(); return }
+        let panel = NSOpenPanel()
+        panel.title = "选择宠物照片"
+        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型提取、美化并生成一张动画 GIF，同时应用到全部 5 个状态（生成姿态为休闲）"
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.beginSheetModal(for: self) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.runPetOperation { [weak self] in
-                let library = try await PetImageService.upload(url, for: state)
+                let library = try await PetImageService.upload(url, for: nil)
                 guard let item = library.images.first else { throw PetImageService.failure("未返回生成记录") }
                 let finished = try await PetImageService.waitForGeneration(item.id, initial: library) { [weak self] stage in
-                    self?.spriteDescLabel?.stringValue = stage
+                    self?.aiStatusLabel?.stringValue = stage
                 }
                 try await self?.viewModel?.applyPetLibrary(finished)
+                self?.aiStatusLabel?.stringValue = "已生成并应用到全部状态"
             }
         }
     }
 
     @objc private func resetCustomSprite(_ sender: NSButton) {
         guard let state = customSpriteState(for: sender) else { return }
+        // Step 1: clear the local direct upload (works without a server activation code).
+        if CustomSpriteStore.hasLocalImage(for: state) {
+            do {
+                try CustomSpriteStore.removeLocalImage(for: state)
+                viewModel?.reloadSpriteSheets()
+            } catch {
+                showSpriteError(error)
+                return
+            }
+            aiStatusLabel?.stringValue = "已清除\(state.displayName)状态的本机图片"
+        }
+        // Step 2: drop this state's cloud selection; shared images keep affecting other states.
+        guard AccessControl.serverActivationCode != nil else { return }
         runPetOperation { [weak self] in
             let library = try await PetImageService.select("", for: state)
             try await self?.viewModel?.applyPetLibrary(library)
@@ -482,12 +556,12 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                         guard item.status == "failed" else { throw PetImageService.failure("只有失败的任务可以重试") }
                         let retried = try await PetImageService.retry(item.id, for: state)
                         let finished = try await PetImageService.waitForGeneration(item.id, initial: retried) { [weak self] stage in
-                            self?.spriteDescLabel?.stringValue = stage
+                            self?.aiStatusLabel?.stringValue = stage
                         }
                         try await self?.viewModel?.applyPetLibrary(finished)
                     } else if item.isGenerating {
                         let finished = try await PetImageService.waitForGeneration(item.id, initial: library) { [weak self] stage in
-                            self?.spriteDescLabel?.stringValue = stage
+                            self?.aiStatusLabel?.stringValue = stage
                         }
                         try await self?.viewModel?.applyPetLibrary(finished)
                     } else {
@@ -502,9 +576,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     }
 
     private func refreshCustomSpriteControls() {
-        for state in CatAnimationState.allCases {
-            customSpriteButtons[state]?.image = customSpriteImage(for: state)
-        }
+        refreshSpriteAccessUI()
     }
 
     private func showSpriteError(_ error: Error) {

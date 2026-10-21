@@ -32,6 +32,10 @@ func testPetSheet(t *testing.T) []byte {
 func TestOpenRouterPetGenerationContractAndGIF(t *testing.T) {
 	sheet := testPetSheet(t)
 	original := testImage(t, "jpeg")
+	portraitPrompt, animationPrompt, err := petPromptsForState("focus")
+	if err != nil {
+		t.Fatal(err)
+	}
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -94,11 +98,11 @@ func TestOpenRouterPetGenerationContractAndGIF(t *testing.T) {
 		var prompt string
 		_ = json.Unmarshal(payload["prompt"], &prompt)
 		if calls == 1 {
-			if !bytes.Equal(input, original) || prompt != petPortraitPrompt {
+			if !bytes.Equal(input, original) || prompt != portraitPrompt {
 				t.Error("portrait must reference original upload")
 			}
 		} else if calls == 2 {
-			if !bytes.Equal(input, sheet) || prompt != petAnimationPrompt {
+			if !bytes.Equal(input, sheet) || prompt != animationPrompt {
 				t.Error("animation must reference beautified portrait")
 			}
 		} else {
@@ -110,7 +114,7 @@ func TestOpenRouterPetGenerationContractAndGIF(t *testing.T) {
 	generator := NewOpenRouterPetImageGenerator("test-key", "openai/gpt-image-2.5-sunburst")
 	generator.endpoint = server.URL + "/api/v1/images"
 	var stages []string
-	data, err := generator.Generate(context.Background(), original, func(stage string) { stages = append(stages, stage) })
+	data, err := generator.Generate(context.Background(), original, "focus", func(stage string) { stages = append(stages, stage) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +149,7 @@ func TestOpenRouterPetFailuresAreSafe(t *testing.T) {
 			defer server.Close()
 			generator := NewOpenRouterPetImageGenerator("secret-key", "")
 			generator.endpoint = server.URL
-			_, err := generator.Generate(context.Background(), testImage(t, "png"), func(string) {})
+			_, err := generator.Generate(context.Background(), testImage(t, "png"), "idel", func(string) {})
 			if err == nil || strings.Contains(err.Error(), "secret-key") {
 				t.Fatal("upstream failure ignored or leaked")
 			}
@@ -160,7 +164,7 @@ func TestOpenRouterPetFailuresAreSafe(t *testing.T) {
 	generator.endpoint = server.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := generator.Generate(ctx, testImage(t, "png"), func(string) {}); err == nil {
+	if _, err := generator.Generate(ctx, testImage(t, "png"), "idel", func(string) {}); err == nil {
 		t.Fatal("cancelled generation succeeded")
 	}
 }
@@ -229,7 +233,7 @@ func TestSeedreamContractAndChromaGIF(t *testing.T) {
 	defer server.Close()
 	generator := NewOpenRouterPetImageGenerator("test-key", "")
 	generator.endpoint = server.URL
-	output, err := generator.Generate(context.Background(), testImage(t, "jpeg"), func(string) {})
+	output, err := generator.Generate(context.Background(), testImage(t, "jpeg"), "sleep", func(string) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +294,7 @@ func TestOpenRouter400DoesNotBlamePhoto(t *testing.T) {
 	defer server.Close()
 	generator := NewOpenRouterPetImageGenerator("test-key", "")
 	generator.endpoint = server.URL
-	_, err := generator.Generate(context.Background(), testImage(t, "png"), func(string) {})
+	_, err := generator.Generate(context.Background(), testImage(t, "png"), "idel", func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "2K") || strings.Contains(err.Error(), "清晰") {
 		t.Fatalf("misleading error: %v", err)
 	}

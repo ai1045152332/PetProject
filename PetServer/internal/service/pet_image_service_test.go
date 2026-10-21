@@ -43,7 +43,7 @@ func newImageTestService(t *testing.T, dir string) *PetImageService {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, func(string)) ([]byte, error) { return testPetGIF(t), nil }))
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return testPetGIF(t), nil }))
 	t.Cleanup(svc.Close)
 	return svc
 }
@@ -132,7 +132,7 @@ func TestPetImagesStorageFailureDoesNotSelect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, func(string)) ([]byte, error) { return nil, nil }))
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return nil, nil }))
 	defer svc.Close()
 	if _, err = svc.Upload("device", "cat.png", testImage(t, "png")); err == nil {
 		t.Fatal("storage failure ignored")
@@ -143,10 +143,10 @@ func TestPetImagesStorageFailureDoesNotSelect(t *testing.T) {
 	}
 }
 
-type testPetGenerator func(context.Context, []byte, func(string)) ([]byte, error)
+type testPetGenerator func(context.Context, []byte, string, func(string)) ([]byte, error)
 
-func (f testPetGenerator) Generate(ctx context.Context, b []byte, p func(string)) ([]byte, error) {
-	return f(ctx, b, p)
+func (f testPetGenerator) Generate(ctx context.Context, b []byte, state string, p func(string)) ([]byte, error) {
+	return f(ctx, b, state, p)
 }
 func testPetGIF(t *testing.T) []byte {
 	t.Helper()
@@ -181,7 +181,9 @@ func awaitPet(t *testing.T, svc *PetImageService, device, id string) PetImageLib
 }
 func TestPetGenerationFailureRetryAndManualSelection(t *testing.T) {
 	svc := newImageTestService(t, t.TempDir())
-	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, func(string)) ([]byte, error) { return nil, fmt.Errorf("model failed") }))
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) {
+		return nil, fmt.Errorf("model failed")
+	}))
 	lib, err := svc.Upload("A", "cat.png", testImage(t, "png"))
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +200,7 @@ func TestPetGenerationFailureRetryAndManualSelection(t *testing.T) {
 		t.Fatal("failed result selectable")
 	}
 	release := make(chan struct{})
-	svc.SetGenerator(testPetGenerator(func(ctx context.Context, _ []byte, p func(string)) ([]byte, error) {
+	svc.SetGenerator(testPetGenerator(func(ctx context.Context, _ []byte, _ string, p func(string)) ([]byte, error) {
 		p("animating")
 		select {
 		case <-release:
@@ -286,7 +288,7 @@ func TestPetImagesSelectAndResetOnlyTheirState(t *testing.T) {
 func TestPetStateGenerationRespectsOnlyTargetStateSelection(t *testing.T) {
 	svc := newImageTestService(t, t.TempDir())
 	release := make(chan struct{})
-	svc.SetGenerator(testPetGenerator(func(ctx context.Context, _ []byte, _ func(string)) ([]byte, error) {
+	svc.SetGenerator(testPetGenerator(func(ctx context.Context, _ []byte, _ string, _ func(string)) ([]byte, error) {
 		select {
 		case <-release:
 			return testPetGIF(t), nil
@@ -326,7 +328,7 @@ func TestPetStateRetryAndLegacySharedImage(t *testing.T) {
 	if lib.selectedID("focus") != "" || lib.selectedID("sleep") != legacyID {
 		t.Fatal("reset fell back to legacy shared image")
 	}
-	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, func(string)) ([]byte, error) { return nil, fmt.Errorf("failed") }))
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return nil, fmt.Errorf("failed") }))
 	failed, err := svc.Upload("A", "bad.png", testImage(t, "png"), "warn")
 	if err != nil {
 		t.Fatal(err)
@@ -336,7 +338,7 @@ func TestPetStateRetryAndLegacySharedImage(t *testing.T) {
 	if _, err = svc.Retry("A", id, "pet"); err == nil {
 		t.Fatal("cross-state retry accepted")
 	}
-	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, func(string)) ([]byte, error) { return testPetGIF(t), nil }))
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return testPetGIF(t), nil }))
 	if _, err = svc.Retry("A", id, "warn"); err != nil {
 		t.Fatal(err)
 	}

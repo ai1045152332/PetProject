@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const PetPromptVersion = "pet-seedream-v2"
+const PetPromptVersion = "pet-seedream-state-v3"
 const DefaultPetImageModel = "bytedance-seed/seedream-4.5"
 
 //go:embed prompts/pet_portrait_v1.txt
@@ -27,7 +27,7 @@ var petPortraitPrompt string
 var petAnimationPrompt string
 
 type PetImageGenerator interface {
-	Generate(context.Context, []byte, func(string)) ([]byte, error)
+	Generate(context.Context, []byte, string, func(string)) ([]byte, error)
 }
 
 type OpenRouterPetImageGenerator struct {
@@ -44,9 +44,12 @@ func NewOpenRouterPetImageGenerator(key, model string) *OpenRouterPetImageGenera
 	}
 	return &OpenRouterPetImageGenerator{key: strings.TrimSpace(key), model: model, endpoint: "https://openrouter.ai/api/v1/images", client: &http.Client{Timeout: 4 * time.Minute}}
 }
-func (g *OpenRouterPetImageGenerator) Generate(ctx context.Context, original []byte, progress func(string)) ([]byte, error) {
+func (g *OpenRouterPetImageGenerator) Generate(ctx context.Context, original []byte, state string, progress func(string)) ([]byte, error) {
+	portraitPrompt, animationPrompt, err := petPromptsForState(state)
+	if err != nil {
+		return nil, err
+	}
 	progress("beautifying")
-	portraitPrompt, animationPrompt := petPortraitPrompt, petAnimationPrompt
 	seedream := strings.HasPrefix(g.model, "bytedance-seed/seedream-")
 	if seedream {
 		portraitPrompt = seedreamPrompt(portraitPrompt)

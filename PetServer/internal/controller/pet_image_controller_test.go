@@ -140,7 +140,7 @@ func TestPetImageEncryptedMultipart(t *testing.T) {
 
 type controllerPetGenerator struct{}
 
-func (controllerPetGenerator) Generate(context.Context, []byte, func(string)) ([]byte, error) {
+func (controllerPetGenerator) Generate(context.Context, []byte, string, func(string)) ([]byte, error) {
 	pal := color.Palette{color.Transparent, color.White}
 	frame := image.NewPaletted(image.Rect(0, 0, 10, 10), pal)
 	var b bytes.Buffer

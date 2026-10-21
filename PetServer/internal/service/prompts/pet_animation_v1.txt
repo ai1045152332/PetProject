@@ -1,5 +1,8 @@
-Using this canonical pet character as the exact identity reference, create one production-ready animation sprite sheet.
-Output exactly 1024 by 1024 pixels, a regular 4-column by 4-row grid, exactly 16 frames in row-major order. Each invisible cell is exactly 256 by 256 pixels. No drawn grid, separators, labels, frame numbers, floor, shadows, or background.
-Every cell contains exactly one complete instance of the SAME pet, centered at the SAME position, SAME body scale, SAME ground baseline, SAME camera and SAME light. Preserve the exact coat markings, face, anatomy and illustration style from the reference. Leave at least 16 transparent pixels of padding inside every cell on all sides; no part may cross a cell boundary.
-The frames form a very subtle idle motion: natural breathing, a gentle blink and tiny ear or tail movement. The animal remains planted in place. No walking, turning, camera movement, large deformation, changing markings, extra limbs, duplicate heads or changing body scale. Advance smoothly through the motion; all 16 cells must contain a finished frame.
-Use a true transparent alpha background throughout, including all cell margins. Never paint a checkerboard. The sprite sheet will be sliced by code at exact grid boundaries and played forward then backward as a quiet continuous desktop animation.
+以上一张状态基准图为唯一身份与造型锚点，为同一只宠物生成“{{STATE_NAME}}（{{STATE_KEY}}）”状态的循环GIF动画帧。必须保持基准图的3头身Q版卡通可爱风格、毛色、斑纹、五官、姿态、道具和光线一致，不重新设计宠物。
+目标姿态：{{STATE_POSE}}
+本状态动作：{{STATE_MOTION}}
+布局为一个严格4列×4行的网格，共16帧，按从左到右、从上到下顺序播放。输出正方形；服务端将整体缩放到1024×1024后，按每格256×256精确裁切。不要绘制网格线、分隔线、文字标签、编号或边框。
+每个格子只能有一个完整的宠物主体及该状态允许的道具。各帧的主体中心、身体尺度、朝向、镜头角度和接地基线固定，禁止逐帧放大缩小、漂移、跳位、肢体增减或斑纹变化。宠物和道具的最外侧轮廓到每格四边至少保留格子宽度约8%的纯背景，不得跨格或裁切。
+动作小幅、自然、连续，16帧必须有符合本状态的可见动作变化，不得复制16张完全相同的静态图。服务端会正向再反向播放形成安静的循环，请避免走动、旋转、抛物、不可逆事件、突然切换姿势或镜头运动。
+只生成目标状态，所有帧均处于该状态；不要从工作切换休闲，也不要让睡觉的宠物醒来。不要人物、人的手、其他动物、地面、地面阴影、投影、文字、水印、徽标或气泡。除状态指定道具外不添加物体。脚下不要地面阴影、不要投影、不要影子。
+背景保持真正透明，格子边缘及主体间空隙也必须透明，不要假透明棋盘格。

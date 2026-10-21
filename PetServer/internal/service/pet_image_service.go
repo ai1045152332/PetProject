@@ -294,7 +294,7 @@ func (s *PetImageService) launch(key string, item PetImage) {
 		source, err := s.objects.Get(key + "/" + item.SourceID)
 		var output []byte
 		if err == nil {
-			output, err = generator.Generate(ctx, source, progress)
+			output, err = generator.Generate(ctx, source, item.State, progress)
 		}
 		if err == nil {
 			var animation *gif.GIF

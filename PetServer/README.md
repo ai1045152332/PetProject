@@ -77,7 +77,7 @@ go build -o petserver ./cmd/server && ./petserver
 
 ## AI 自定义宠物（macOS）
 
-macOS「设置 → 宠物信息 → 自定义状态图片」沿用原有五个状态按钮（专注/休闲/提醒/睡觉/抚摸）上传 PNG/JPEG（最大 10 MiB、4000 万像素）后，服务器通过 OpenRouter Images API 调用 Seedream 4.5 图片模型：先提取、美化为透明背景的轻度卡通宠物，再生成 4×4 待机动画帧网格，切为 256×256 帧并合成约 3 秒的透明循环 GIF。完成后仅替换上传按钮对应的状态，其他状态保持原样。原图不会在生成期间替换旧宠物。
+macOS「设置 → 宠物信息 → 自定义状态图片」沿用原有五个状态按钮（专注/休闲/提醒/睡觉/抚摸）上传 PNG/JPEG（最大 10 MiB、4000 万像素）后，服务器通过 OpenRouter Images API 调用 Seedream 4.5 图片模型：先提取、美化为透明背景的3头身Q版宠物状态基准图，再生成该状态的4×4动画帧网格，切为 256×256 帧并合成约 3 秒的透明循环 GIF。完成后仅替换上传按钮对应的状态，其他状态保持原样。原图不会在生成期间替换旧宠物。
 
 ### OpenRouter 配置
 
@@ -90,7 +90,7 @@ export PETSERVER_OPENROUTER_IMAGE_MODEL="bytedance-seed/seedream-4.5"  # 可选�
 
 systemd 部署时在现有 EnvironmentFile 中添加上述配置并重启服务。本程序不会自动读取 `.env` 文件。使用 OpenRouter API Key 和余额计费；不再读取旧的 `OPENAI_API_KEY`，ChatGPT 订阅不能代替 API Key。默认模型为 `bytedance-seed/seedream-4.5`（支持参考图编辑，透明背景由服务端绿幕提取完成）。Seedream 使用 `resolution=2K`、`aspect_ratio=1:1`，不发送原生透明背景或质量参数；Seedream 4.5 实际要求至少 3,686,400 输出像素（1K 会返回 HTTP 400）。生成统一绿幕背景后，服务端移除与边界相连的绿幕并归一化为 1024×1024。其他模型需要具有图片编辑、PNG 和透明背景输出能力；更换模型后需重新验证。未配置 Key 时，上传/重试返回 503，历史读取与切换仍可使用。
 
-- Prompt 版本为 `pet-seedream-v2`，模板位于 `internal/service/prompts/pet_portrait_v1.txt` 和 `pet_animation_v1.txt`，绿幕覆盖指令位于 `pet_chroma_v2.txt`，由 `go:embed` 打包，修改后重新编译服务端。
+- Prompt 版本为 `pet-seedream-state-v3`，模板位于 `internal/service/prompts/pet_portrait_v1.txt` 和 `pet_animation_v1.txt`，绿幕覆盖指令位于 `pet_chroma_v2.txt`，由 `go:embed` 打包，修改后重新编译服务端。状态姿态和动作位于 `internal/service/prompts/pet_states_v3.json`，参考 `skills/meijing-pet-prompts/references/prompts.md` 的风格与约束；上传状态会传入两次模型请求，旧版无状态上传默认休闲。
 - 每次尝试最多两次 OpenRouter 图片生成请求，不自动重试付费请求。全服务最多同时生成 2 个任务，每设备同时 1 个任务、每 UTC 自然日最多 10 次（含手动重试）。生成全过程最多 9 分钟。
 - 任务状态：`beautifying` → `animating` → `encoding` → `ready` 或 `failed`；客户端每 3 秒轮询。失败不替换旧宠物，可在历史中先选择状态，再选择失败任务并点击「重试生成」。服务器重启会将未完成任务标为失败，避免自动重复计费；保留原图供手动重试。
 - 模型输出会检查尺寸、透明度、空帧和边界裁切。格式检查无法保证宠物身份、风格和帧间动作完全一致，实际效果需要使用真实照片验证；原始照片不应包含多个同等突出的宠物。
@@ -108,3 +108,15 @@ systemd 部署时在现有 EnvironmentFile 中添加上述配置并重启服务�
 OpenRouter 接口使用 `POST https://openrouter.ai/api/v1/images`，JSON 中的 `input_references` 以 Base64 data URL 传入原图/美化图，输出读取 `data[0].b64_json`。不沿用 OpenAI multipart 请求，也不使用普通文本聊天模型。固定模型并关闭提供商自动 fallback。接口依据：[OpenRouter 图片生成文档](https://openrouter.ai/docs/guides/overview/multimodal/image-generation)。
 
 Seedream 的背景提取使用边界连通的绿幕识别，保留不与背景相连的绿色眼睛等细节。绿色主体、复杂毛发和封闭背景区域仍可能出现残留或边缘损失，需要真实照片验证。
+
+### 状态专属 GIF
+
+| 上传状态 | 姿态和循环动作 |
+| --- | --- |
+| 专注 `focus` | 端坐在小笔记本电脑前，前爪交替轻打键盘、专注看屏幕，道具位置固定且无文字/徽标 |
+| 休闲 `idel` | 四脚站立放松，轻微呼吸、眨眼、尾尖摆动 |
+| 提醒 `warn` | 竖耳睁眼、尾巴蓬松，轻微抬头和耳朵动作 |
+| 睡觉 `sleep` | 蜷缩趴卧、全程闭眼，只做缓慢呼吸，不醒来 |
+| 抚摸 `pet` | 眯眼放松坐姿、轻歪头蹭空气，全程不出现人的手 |
+
+共同采用3头身Q版卡通可爱风格，保留上传宠物的毛色、斑纹与五官，禁止地面阴影、人物、水印和状态串换。参考文档的单帧方案仅作为风格/姿态依据，本功能按产品需求继续输出多帧循环 GIF；多帧一致性仍需真实生成验证。已生成的历史图片不会因改 Prompt 自动变化，需新上传照片；失败任务重试使用新版本 Prompt。

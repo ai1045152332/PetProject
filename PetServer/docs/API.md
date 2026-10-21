@@ -566,7 +566,37 @@ cd DesktopPetForMacApp
 > 已装客户端接受的更新**（客户端内置的对应公钥不可更改，只能强制用户重装）。
 > 公钥内嵌在 `DesktopPetForMacApp/DesktopPetForMacApp/Services/UpdateService.swift`。
 
-## 5. 后台页面
+## 5. 背单词词库接口
+
+词库以 JSON 文件存放在服务器 `wordbank/` 目录（可用 `PETSERVER_WORDBANK_DIR` 覆盖），
+通过后台文件管理页（/admin/files）维护，改词库无需重新发版。客户端启动后后台同步，
+按文件字节数增量下载并缓存到本地，离线时使用缓存/内置词库。接口免登录。
+
+### 5.1 词库列表
+
+```
+GET /api/wordbank/list
+```
+
+响应（`size` 为文件字节数，客户端据此判断是否需要重新下载）：
+
+```json
+{"code":0,"msg":"ok","data":{"banks":[{"name":"cet4","size":26817},{"name":"travel","size":7408}]}}
+```
+
+### 5.2 下载词库
+
+```
+GET /api/wordbank/get?name=cet4
+```
+
+直接返回词库 JSON 原文（`[{"word","meaning"}]` 数组）。词库名仅允许小写字母/数字/连字符
+（`^[a-z0-9][a-z0-9-]*$`），非法名或不存在返回 `{"code":400,...}`。
+
+> 首次部署需把词库文件上传一次：
+> `rsync -a DesktopPetForMacApp/DesktopPetForMacApp/Resources/WordBank/ root@<host>:/opt/petserver/wordbank/`
+
+## 6. 后台页面
 
 | 路径 | 说明 |
 | --- | --- |

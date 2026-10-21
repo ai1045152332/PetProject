@@ -115,6 +115,19 @@ func main() {
 	log.Printf("[files] 文件管理根目录: %s", fileSvc.Root())
 	filesCtrl := controller.NewFileController(authSvc, fileSvc)
 
+	// 背单词词库下发：JSON 放在 wordbank/ 目录（可用 PETSERVER_WORDBANK_DIR 覆盖），
+	// 文件可在后台文件管理页维护，改词库无需重新发版
+	wordbankDir := os.Getenv("PETSERVER_WORDBANK_DIR")
+	if wordbankDir == "" {
+		wordbankDir = "wordbank"
+	}
+	wordbankSvc, err := service.NewWordBankService(wordbankDir)
+	if err != nil {
+		log.Fatalf("初始化词库服务失败: %v", err)
+	}
+	log.Printf("[wordbank] 词库目录: %s", wordbankSvc.Root())
+	wordbankCtrl := controller.NewWordBankController(wordbankSvc)
+
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	systemSvc := service.NewSystemService()
@@ -125,7 +138,7 @@ func main() {
 		acmeDir = "data/acme-challenges"
 	}
 	_ = os.MkdirAll(acmeDir, 0o755)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, acmeDir)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, acmeDir)
 
 	// HTTPS：证书/私钥文件存在时启用 443 监听，证书更新后自动热加载（配合 certbot 续期）
 	tlsCert := os.Getenv("PETSERVER_TLS_CERT")

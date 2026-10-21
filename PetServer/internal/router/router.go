@@ -92,6 +92,7 @@ func New(
 	releaseCtrl *controller.ReleaseController,
 	weatherCtrl *controller.WeatherController,
 	filesCtrl *controller.FileController,
+	wordbankCtrl *controller.WordBankController,
 	acmeDir string,
 ) http.Handler {
 	mux := http.NewServeMux()
@@ -114,6 +115,9 @@ func New(
 	mux.HandleFunc("/api/admin/files/delete", filesCtrl.Delete)
 	mux.HandleFunc("/api/app/latest", releaseCtrl.Latest)
 	mux.HandleFunc("/download/", releaseCtrl.Download)
+	// 背单词词库下发（免登录）：列表用于增量判断，get 返回词库 JSON 原文
+	mux.HandleFunc("/api/wordbank/list", wordbankCtrl.List)
+	mux.HandleFunc("/api/wordbank/get", wordbankCtrl.Get)
 	// ACME HTTP-01 验证（Let's Encrypt 签发/续期），从磁盘目录读取 challenge 文件
 	if acmeDir != "" {
 		mux.HandleFunc("/.well-known/acme-challenge/", func(w http.ResponseWriter, r *http.Request) {

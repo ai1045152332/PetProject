@@ -14,6 +14,8 @@ metadata:
 
 若一次改动同时涉及接口与客户端，**先部署服务端（保持向后兼容），再发 App**。
 
+**服务端新接口刚上线时，不要立即发 App**：先用带新功能的 App 对线上服务端完成本地测试（接口连通、鉴权、生成链路等），测稳后再走 `deploy.sh` 发客户端。原因：App 一旦发布就无法撤回，已升级到该版本的用户会立刻命中未经线上验证的功能；而本地 `rebuild.sh` 随便折腾，不影响任何线上用户。
+
 ## 一键发布
 
 本 skill 存放在仓库 `skills/deploy-cute-pet/`，并在 `~/.codex/skills/` 建了符号链接供 Codex 自动发现（新会话可直接触发）。脚本会从自身位置推断仓库根目录，两种调用方式等价：
@@ -65,10 +67,11 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 
 1. **版本号只能递增，同一版本号不要重复发布不同内容**。已升级到该版本的客户端不会再次下载，等于这批人永远收不到修复。
 2. **发布后不要 `rebuild.sh` 本机 App**，除非用户明确要求本机立即升级 —— 本机保持在旧版本才有得测更新流程。
-3. **签名私钥不可丢**：`~/.cute-pet-release/ed25519_private.pem`。丢失后无法再发布任何老客户端能接受的更新；泄露则可被伪造更新。
-4. **客户端与服务端成对绑定**：App 内嵌发布验签公钥（`UpdateService.swift`）、载荷加密公钥（`PayloadCrypto.swift`）、后端地址（`ServerConfig.swift`）。换服务器或换密钥必须同时改这三处并重新发版。
-5. **不要把密码/密钥写进仓库**：发布私钥与上传助手只存 `~/.cute-pet-release/`；服务器密码在其 `.exp` 脚本里，不入仓。
-6. 上传卡住/缺少目录：`release.sh` 已处理 `mkdir -p /opt/petserver/dist`；若仍失败，检查 `~/.cute-pet-release/{scp_put,ssh_run}.exp` 可执行且密码与服务端一致。
+3. **新接口先发服务端、后发 App**：服务端部署对旧客户端无感（纯增量路由），可安全先行；App 侧必须等本地对线上环境测稳再发版（见上节）。
+4. **签名私钥不可丢**：`~/.cute-pet-release/ed25519_private.pem`。丢失后无法再发布任何老客户端能接受的更新；泄露则可被伪造更新。
+5. **客户端与服务端成对绑定**：App 内嵌发布验签公钥（`UpdateService.swift`）、载荷加密公钥（`PayloadCrypto.swift`）、后端地址（`ServerConfig.swift`）。换服务器或换密钥必须同时改这三处并重新发版。
+6. **不要把密码/密钥写进仓库**：发布私钥与上传助手只存 `~/.cute-pet-release/`；服务器密码在其 `.exp` 脚本里，不入仓。
+7. 上传卡住/缺少目录：`release.sh` 已处理 `mkdir -p /opt/petserver/dist`；若仍失败，检查 `~/.cute-pet-release/{scp_put,ssh_run}.exp` 可执行且密码与服务端一致。
 
 ## 客户端何时升级
 

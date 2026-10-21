@@ -184,10 +184,6 @@ final class PetViewModel: ObservableObject {
     deinit {
         cloudRestoreTask?.cancel()
         if let cloudRestoreObserver { NotificationCenter.default.removeObserver(cloudRestoreObserver) }
-        frameTimer?.invalidate()
-        behaviorTimer?.invalidate()
-        drinkWaterTimer?.invalidate()
-        firstWaterTimer?.invalidate()
         timers.invalidateAll()
     }
     

@@ -118,6 +118,42 @@
                 </div>
               </div>
             </div>
+
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">接口调用统计</h3>
+                  <div class="card-actions">
+                    <span class="text-secondary me-2" id="metricMeta"></span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadMetrics()">刷新</button>
+                    <button class="btn btn-sm btn-outline-danger ms-2" onclick="resetMetrics()">清零重统计</button>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table">
+                    <thead>
+                      <tr>
+                        <th>接口</th>
+                        <th>调用次数</th>
+                        <th>成功</th>
+                        <th>4xx</th>
+                        <th>5xx</th>
+                        <th>平均耗时</th>
+                        <th>最大耗时</th>
+                        <th>最近调用</th>
+                      </tr>
+                    </thead>
+                    <tbody id="metricBody"></tbody>
+                  </table>
+                </div>
+                <div class="card-body text-secondary text-center" id="metricEmpty" style="display:none">
+                  暂无调用数据
+                </div>
+                <div class="card-body text-secondary" style="font-size:.8rem">
+                  仅统计接口名、次数、状态码与耗时，不记录请求参数、内容、IP 等任何用户信息；计数在服务端重启后不丢，点「清零」重新开始。
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -259,6 +295,59 @@
     refresh();
     setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 2000);
     window.addEventListener('resize', () => refresh());
+
+    // ---------- 接口调用统计（每 10 秒刷新，比系统指标低频）----------
+    function fmtMs(v) {
+      if (v == null || isNaN(v)) return '–';
+      return (v < 1 ? v.toFixed(2) : v.toFixed(1)) + ' ms';
+    }
+
+    function renderMetrics(items) {
+      const tbody = document.getElementById('metricBody');
+      if (!items || items.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('metricEmpty').style.display = '';
+        return;
+      }
+      document.getElementById('metricEmpty').style.display = 'none';
+      tbody.innerHTML = items.map(it => {
+        return `
+          <tr>
+            <td class="text-truncate" style="max-width:22rem">${esc(it.key)}</td>
+            <td class="fw-bold">${it.total}</td>
+            <td class="text-green">${it.success}</td>
+            <td${it.clientErr ? ' class="text-orange fw-bold"' : ''}>${it.clientErr}</td>
+            <td${it.serverErr ? ' class="text-red fw-bold"' : ''}>${it.serverErr}</td>
+            <td>${fmtMs(it.avgLatencyMs)}</td>
+            <td>${fmtMs(it.maxLatencyMs)}</td>
+            <td class="text-secondary">${esc(it.lastAt || '–')}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    async function loadMetrics() {
+      try {
+        const d = await api('/api/admin/metrics');
+        renderMetrics(d.endpoints);
+        document.getElementById('metricMeta').textContent =
+          '总调用 ' + d.totalCalls + ' 次 · 失败 ' + d.errorCalls + ' 次 · 自 ' + d.sinceAt + ' 起累计';
+      } catch (e) {
+        document.getElementById('metricMeta').textContent = '统计加载失败：' + e.message;
+      }
+    }
+
+    async function resetMetrics() {
+      if (!confirm('确定清零全部接口计数？将从现在这一刻重新开始统计。')) return;
+      try {
+        await api('/api/admin/metrics/reset', { method: 'POST' });
+        loadMetrics();
+      } catch (e) {
+        alert('清零失败：' + e.message);
+      }
+    }
+
+    loadMetrics();
+    setInterval(() => { if (document.visibilityState === 'visible') loadMetrics(); }, 10000);
   </script>
 </body>
 </html>

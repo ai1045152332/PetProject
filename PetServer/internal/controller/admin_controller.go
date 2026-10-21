@@ -10,16 +10,17 @@ import (
 
 // AdminController 管理接口控制器（激活码/设备备注等），需登录会话或管理密码
 type AdminController struct {
-	accessSvc *service.AccessService
-	authSvc   *service.AuthService
-	noteSvc   *service.DeviceNoteService
-	systemSvc *service.SystemService
-	hbSvc     *service.HeartbeatService
+	accessSvc  *service.AccessService
+	authSvc    *service.AuthService
+	noteSvc    *service.DeviceNoteService
+	systemSvc  *service.SystemService
+	hbSvc      *service.HeartbeatService
+	metricsSvc *service.MetricsService
 }
 
 // NewAdminController 创建管理控制器
-func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService, hbSvc *service.HeartbeatService) *AdminController {
-	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc, hbSvc: hbSvc}
+func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService, hbSvc *service.HeartbeatService, metricsSvc *service.MetricsService) *AdminController {
+	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc, hbSvc: hbSvc, metricsSvc: metricsSvc}
 }
 
 // authorized 校验管理身份：
@@ -274,4 +275,31 @@ func (c *AdminController) SystemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: status})
+}
+
+// ApiMetrics 处理 GET /api/admin/metrics：接口调用统计（次数/失败数/耗时）
+func (c *AdminController) ApiMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: c.metricsSvc.Snapshot()})
+}
+
+// ResetApiMetrics 处理 POST /api/admin/metrics/reset：清零全部接口计数，重新开始统计
+func (c *AdminController) ResetApiMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	c.metricsSvc.Reset()
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
 }

@@ -131,14 +131,24 @@ func main() {
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	systemSvc := service.NewSystemService()
-	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc, heartbeatSvc)
+
+	// 接口调用计数：内存累加 + 定期落盘（data/api_metrics.json），重启不丢累计
+	metricsStore, err := storage.NewApiMetricsStore("data/api_metrics.json")
+	if err != nil {
+		log.Fatalf("初始化接口计数存储失败: %v", err)
+	}
+	metricsSvc := service.NewMetricsService(metricsStore)
+	metricsSvc.StartAutoFlush(30 * time.Second)
+	defer metricsSvc.Flush()
+
+	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc, heartbeatSvc, metricsSvc)
 	// ACME HTTP-01 验证目录（certbot webroot 模式写入 challenge 文件）
 	acmeDir := os.Getenv("PETSERVER_ACME_DIR")
 	if acmeDir == "" {
 		acmeDir = "data/acme-challenges"
 	}
 	_ = os.MkdirAll(acmeDir, 0o755)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, acmeDir)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir)
 
 	// HTTPS：证书/私钥文件存在时启用 443 监听，证书更新后自动热加载（配合 certbot 续期）
 	tlsCert := os.Getenv("PETSERVER_TLS_CERT")

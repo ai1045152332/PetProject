@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"petserver/internal/controller"
+	"petserver/internal/service"
 	"petserver/internal/web"
 )
 
@@ -93,6 +94,7 @@ func New(
 	weatherCtrl *controller.WeatherController,
 	filesCtrl *controller.FileController,
 	wordbankCtrl *controller.WordBankController,
+	metricsSvc *service.MetricsService,
 	acmeDir string,
 ) http.Handler {
 	mux := http.NewServeMux()
@@ -111,6 +113,9 @@ func New(
 	mux.HandleFunc("/api/admin/devices/note", adminCtrl.SetDeviceNote)
 	mux.HandleFunc("/api/admin/devices/delete", adminCtrl.DeleteDevice)
 	mux.HandleFunc("/api/admin/system/status", adminCtrl.SystemStatus)
+	// 接口调用统计（需登录）：查看各接口被调用次数/失败数/耗时，可清零重新计数
+	mux.HandleFunc("/api/admin/metrics", adminCtrl.ApiMetrics)
+	mux.HandleFunc("/api/admin/metrics/reset", adminCtrl.ResetApiMetrics)
 	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)
 	mux.HandleFunc("/api/admin/files/preview", filesCtrl.Preview)
 	mux.HandleFunc("/api/admin/files/delete", filesCtrl.Delete)
@@ -198,5 +203,6 @@ func New(
 		}
 		siteHandler.ServeHTTP(w, r)
 	}))
-	return mux
+	// 最外层挂接口计数：所有请求（含 404/405）都会被统计到
+	return metricsMiddleware(metricsSvc, mux)
 }

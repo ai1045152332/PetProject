@@ -539,6 +539,52 @@ curl -X POST http://101.96.248.75/api/admin/files/delete \
 
 > ⚠️ 删除不可恢复；目录会递归删除；根目录本身禁止删除；敏感文件（`.env`/`.pem`/`.key`/`sessions.json`）禁止删除。
 
+### 3.14 接口调用统计
+
+服务端对所有请求做一层计数（中间件实现），按 `METHOD /path` 聚合调用次数、
+成功/4xx/5xx 个数与耗时。只记接口名和数字，**不记录查询参数、请求体、响应体、IP、主机名**。
+
+```
+GET  /api/admin/metrics          # 查询统计（按调用次数倒序）
+POST /api/admin/metrics/reset    # 清零，从当前时刻重新统计
+```
+
+请求示例：
+
+```bash
+curl http://101.96.248.75/api/admin/metrics \
+  -H "X-Admin-Token: <管理密码>"
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "generatedAt": "2026-10-21 16:44:05",
+    "sinceAt": "2026-10-21 16:43:30",
+    "totalCalls": 6,
+    "errorCalls": 2,
+    "endpoints": [
+      {"key": "GET /api/devices", "total": 3, "success": 3, "clientErr": 0, "serverErr": 0,
+       "latencyUs": 210, "maxLatencyUs": 90, "avgLatencyMs": 0.07, "maxLatencyMs": 0.09,
+       "lastAt": "2026-10-21 16:44:01"}
+    ]
+  }
+}
+```
+
+统计规则：
+
+- 仅 `/api/*` 与 `/download/*` 按接口逐个统计；其余（官网页面、静态资源、后台 HTML、扫描探测）
+  统一归入 `其他（页面/静态资源）`，避免噪声掩盖真实流量
+- `GET /api/admin/metrics` 自身不计数（后台页每 10 秒轮询一次，计入会顶到榜首）
+- 接口 key 上限 300 个，超限后新出现的未知路径并入噪声桶（防止随机路径刷爆内存）
+- 计数内存累加，每 30 秒落盘到 `data/api_metrics.json`，**服务重启不丢累计**；清零会立即落盘
+- 后台「服务器状态」页（`/admin/status`）底部有可视化表格与「清零重统计」按钮
+
 ## 4. App 更新接口
 
 ### 4.1 查询最新版本
@@ -632,4 +678,5 @@ GET /api/wordbank/get?name=cet4
 | `GET /admin` | 菜单一：小猫在线列表 |
 | `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间） |
 | `GET /admin/files` | 菜单三：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
+| `GET /admin/status` | 菜单四：服务器状态（CPU/内存/网络流量 + 接口调用统计） |
 | `GET /online`（或 `/`） | 手机版在线宠物页（免登录） |

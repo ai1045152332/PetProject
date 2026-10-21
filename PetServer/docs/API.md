@@ -412,7 +412,35 @@ curl -X POST http://101.96.248.75/api/admin/devices/note \
 > 备注持久化在 `data/device_notes.json`，服务重启/重新部署不丢。
 > `GET /api/devices` 返回的每台设备会带 `note` 字段。
 
-### 3.8 删除激活码
+### 3.8 删除设备记录
+
+从在线列表中移除某台设备的记录（内存 + 快照），备注一并清除。后台「在线宠物」页每行的删除按钮即调用此接口。
+
+```
+POST /api/admin/devices/delete
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| hostname | string | 是 | 设备主机名（取自设备列表） |
+
+请求示例：
+
+```bash
+curl -X POST http://101.96.248.75/api/admin/devices/delete \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: <管理密码>" \
+  -d '{"hostname": "mbp-xxx.local"}'
+```
+
+响应：`{"code":0,"msg":"ok"}`；记录不存在返回 `{"code":404,"msg":"device not found"}`。
+
+> ⚠️ 心跳每 1 分钟上报一次，**仍在运行的设备删除后约 1 分钟内会重新出现**；
+> 本接口用于清理长期离线、换机、重装系统留下的残留记录。
+
+### 3.9 删除激活码
 
 
 ```
@@ -438,7 +466,7 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 
 > 删除不可恢复，已绑定的设备记录会一并清除。
 
-### 3.9 管理接口错误
+### 3.10 管理接口错误
 
 
 
@@ -449,7 +477,7 @@ curl -X POST http://101.96.248.75/api/admin/codes/delete \
 | 会话失效/凭证缺失 | 401 | `{"code":401,"msg":"unauthorized"}` |
 | 参数非法 | 400 | `{"code":400,"msg":"count must be 1~100"}` |
 
-### 3.10 文件管理：列出目录
+### 3.11 文件管理：列出目录
 
 ```
 GET /api/admin/files/list?path=相对目录
@@ -477,7 +505,7 @@ GET /api/admin/files/list?path=相对目录
 }
 ```
 
-### 3.11 文件管理：预览文件
+### 3.12 文件管理：预览文件
 
 ```
 GET /api/admin/files/preview?path=相对文件路径
@@ -486,7 +514,7 @@ GET /api/admin/files/preview?path=相对文件路径
 响应：`data` 为 `{"path","content","size","truncated"}`；最多读取前 200 KB，
 超出时 `truncated=true`（大文件/二进制文件不建议预览）。
 
-### 3.12 文件管理：删除文件
+### 3.13 文件管理：删除文件
 
 ```
 POST /api/admin/files/delete

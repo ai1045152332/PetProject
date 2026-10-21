@@ -76,6 +76,7 @@
                     <th>最近心跳</th>
                     <th>备注</th>
                     <th class="w-1">在线</th>
+                    <th class="w-1">操作</th>
                   </tr>
                 </thead>
                 <tbody id="list"></tbody>
@@ -157,6 +158,9 @@
             'placeholder="点击填写备注" value="' + esc(d.note || '') + '" ' +
             'data-host="' + esc(d.hostname) + '" onchange="saveNote(this)"></td>' +
           '<td>' + badge + '</td>' +
+          '<td><button class="btn btn-sm btn-outline-danger" data-host="' + esc(d.hostname) + '" ' +
+            'data-online="' + (d.online ? '1' : '0') + '" data-pet="' + esc(d.petName) + '" ' +
+            'onclick="deleteDevice(this)">删除</button></td>' +
         '</tr>';
       }).join('');
     }
@@ -181,6 +185,33 @@
         alert('备注保存失败：' + e.message);
       } finally {
         input.disabled = false;
+      }
+    }
+
+    async function deleteDevice(btn) {
+      const hostname = btn.getAttribute('data-host');
+      const petName = btn.getAttribute('data-pet') || hostname;
+      const isOnline = btn.getAttribute('data-online') === '1';
+      // 在线设备删了也会随心跳重新出现，必须说清楚，避免误认为“删不掉”
+      const tip = isOnline
+        ? '「' + petName + '」当前在线，删除后约 1 分钟内会随心跳重新上报。\n确定仍要删除吗？'
+        : '确定删除设备「' + petName + '」（' + hostname + '）的记录吗？\n删除后不可恢复（备注也会一并清除）。';
+      if (!confirm(tip)) return;
+
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/api/admin/devices/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Session-Token': localStorage.getItem('petAdminSession') || '' },
+          body: JSON.stringify({ hostname: hostname })
+        });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '删除失败');
+        await load();   // 立即刷新列表，不等 5 秒周期
+      } catch (e) {
+        alert('删除失败：' + e.message);
+        btn.disabled = false;
       }
     }
 

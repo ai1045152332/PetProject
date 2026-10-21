@@ -131,7 +131,7 @@ func main() {
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
 	systemSvc := service.NewSystemService()
-	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc)
+	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc, heartbeatSvc)
 	// ACME HTTP-01 验证目录（certbot webroot 模式写入 challenge 文件）
 	acmeDir := os.Getenv("PETSERVER_ACME_DIR")
 	if acmeDir == "" {

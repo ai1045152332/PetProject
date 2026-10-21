@@ -109,6 +109,7 @@ func New(
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)
 	mux.HandleFunc("/api/admin/devices/note", adminCtrl.SetDeviceNote)
+	mux.HandleFunc("/api/admin/devices/delete", adminCtrl.DeleteDevice)
 	mux.HandleFunc("/api/admin/system/status", adminCtrl.SystemStatus)
 	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)
 	mux.HandleFunc("/api/admin/files/preview", filesCtrl.Preview)

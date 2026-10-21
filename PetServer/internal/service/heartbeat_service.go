@@ -93,6 +93,24 @@ func (s *HeartbeatService) Record(h model.Heartbeat) model.Device {
 	return device
 }
 
+// Remove 删除一台设备记录（内存 + 快照），返回是否真的删掉
+// 注意：设备若仍在运行，下一次心跳（约 1 分钟内）会重新登记它；
+// 删除主要用于清理长期离线/换机的残留记录
+func (s *HeartbeatService) Remove(hostname string) bool {
+	s.mu.Lock()
+	_, ok := s.devices[hostname]
+	if ok {
+		delete(s.devices, hostname)
+	}
+	s.mu.Unlock()
+	if !ok {
+		return false
+	}
+	s.persistSnapshot()
+	log.Printf("[heartbeat] 已删除设备记录: %s", hostname)
+	return true
+}
+
 // ListDevices 返回所有登记过的设备（按最近心跳排序暂无必要，保持简单）
 func (s *HeartbeatService) ListDevices() []model.Device {
 	s.mu.RLock()

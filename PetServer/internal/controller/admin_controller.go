@@ -14,11 +14,12 @@ type AdminController struct {
 	authSvc   *service.AuthService
 	noteSvc   *service.DeviceNoteService
 	systemSvc *service.SystemService
+	hbSvc     *service.HeartbeatService
 }
 
 // NewAdminController 创建管理控制器
-func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService) *AdminController {
-	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc}
+func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService, hbSvc *service.HeartbeatService) *AdminController {
+	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc, hbSvc: hbSvc}
 }
 
 // authorized 校验管理身份：
@@ -216,6 +217,42 @@ func (c *AdminController) SetDeviceNote(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "save note failed: " + err.Error()})
 		return
 	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// DeviceDeleteRequest 删除设备记录请求
+type DeviceDeleteRequest struct {
+	Hostname string `json:"hostname"`
+}
+
+// DeleteDevice 处理 POST /api/admin/devices/delete：从设备列表与快照中删除，同时清掉备注
+// 设备仍在运行时下次心跳会重新登记，用于清理长期离线/换机的残留记录
+func (c *AdminController) DeleteDevice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	var req DeviceDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
+		return
+	}
+	if req.Hostname == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: hostname"})
+		return
+	}
+
+	if !c.hbSvc.Remove(req.Hostname) {
+		writeJSON(w, http.StatusNotFound, Response{Code: 404, Msg: "device not found"})
+		return
+	}
+	// 备注一并清理（失败不影响删除结果，仅记日志语义由 noteSvc 内部保证）
+	_ = c.noteSvc.Set(req.Hostname, "")
 
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
 }

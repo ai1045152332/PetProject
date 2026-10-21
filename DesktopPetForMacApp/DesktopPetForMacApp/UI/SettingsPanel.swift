@@ -81,6 +81,10 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var weatherCityField: NSTextField?
     private weak var weatherPreviewBtn: NSButton?
     private weak var weatherDescLabel: NSTextField?
+    /// 提醒设置 > 主动搭话控件
+    private weak var chatToggle: ToggleSwitch?
+    private weak var chatDescLabel: NSTextField?
+    private var chatIntervalButtons: [(Int, NSButton)] = []
 
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
@@ -665,7 +669,7 @@ let arw = accessRow.bounds.width
         titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
         container.addSubview(titleLbl)
 
-        let descLbl = NSTextField(labelWithString: "喝水提醒与每日天气提醒")
+        let descLbl = NSTextField(labelWithString: "喝水、天气提醒与主动搭话")
         descLbl.font = .systemFont(ofSize: 11)
         descLbl.textColor = .tertiaryLabelColor
         descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
@@ -845,6 +849,59 @@ let arw = accessRow.bounds.width
         weatherPreviewBtn = previewBtn
 
         refreshWeatherControls()
+
+        // ═══ 卡片 3：主动搭话（结合新闻 / Todo 的陪伴式气泡）═══
+        let chatCard = makeStackRow(height: 104)
+        let ccw = chatCard.bounds.width
+
+        let chatTitle = NSTextField(labelWithString: "主动搭话")
+        chatTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        chatTitle.textColor = .labelColor
+        chatTitle.frame = NSRect(x: 14, y: 74, width: 200, height: 18)
+        chatCard.addSubview(chatTitle)
+
+        let chatDesc = NSTextField(labelWithString: "")
+        chatDesc.font = .systemFont(ofSize: 11)
+        chatDesc.textColor = .tertiaryLabelColor
+        chatDesc.frame = NSRect(x: 14, y: 56, width: ccw - 90, height: 15)
+        chatCard.addSubview(chatDesc)
+        chatDescLabel = chatDesc
+
+        let chatToggle = ToggleSwitch(frame: NSRect(x: ccw - 16 - 52, y: 70, width: 52, height: 26))
+        chatToggle.autoresizingMask = .minXMargin
+        chatToggle.isOn = viewModel?.proactiveChatEnabled ?? true
+        chatToggle.onToggle = { [weak self] on in
+            self?.viewModel?.proactiveChatEnabled = on
+            self?.refreshChatControls()
+        }
+        chatCard.addSubview(chatToggle)
+        self.chatToggle = chatToggle
+
+        // 间隔预设（分钟 / 次）：点击立即生效
+        let chatPresets = [15, 30, 60]
+        let chatPresetW: CGFloat = 52
+        var cx: CGFloat = 14
+        for minutes in chatPresets {
+            let btn = NSButton(frame: NSRect(x: cx, y: 12, width: chatPresetW, height: 28))
+            btn.title = "\(minutes)"
+            btn.bezelStyle = .rounded
+            btn.target = self
+            btn.action = #selector(chatIntervalButtonClicked(_:))
+            btn.tag = minutes
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 8
+            chatCard.addSubview(btn)
+            chatIntervalButtons.append((minutes, btn))
+            cx += chatPresetW + 8
+        }
+
+        let chatUnit = NSTextField(labelWithString: "分钟 / 次")
+        chatUnit.font = .systemFont(ofSize: 11)
+        chatUnit.textColor = .tertiaryLabelColor
+        chatUnit.frame = NSRect(x: cx + 2, y: 18, width: 80, height: 15)
+        chatCard.addSubview(chatUnit)
+
+        refreshChatControls()
     }
 
     /// 天气提醒控件可用状态：基础权限全部置灰（天气接口按量付费）
@@ -916,6 +973,40 @@ let arw = accessRow.bounds.width
         currentIntervalLabel?.stringValue = "当前：\(currentInterval) 分钟"
         for (minutes, btn) in intervalButtons {
             let selected = (minutes == currentInterval)
+            btn.layer?.backgroundColor = selected
+                ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+                : NSColor(white: 0, alpha: 0.04).cgColor
+            btn.layer?.borderWidth = selected ? 1.5 : 0
+            btn.layer?.borderColor = selected
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.clear.cgColor
+            btn.font = selected
+                ? .systemFont(ofSize: 13, weight: .semibold)
+                : .systemFont(ofSize: 13)
+        }
+    }
+
+    // MARK: - 主动搭话操作
+
+    @objc private func chatIntervalButtonClicked(_ sender: NSButton) {
+        let minutes = sender.tag
+        viewModel?.chatIntervalMinutes = minutes
+        viewModel?.restartProactiveChat()
+        refreshChatControls()
+    }
+
+    /// 同步主动搭话卡片：描述文案随开关变化，间隔按钮高亮当前值（关闭时间隔按钮置灰）
+    private func refreshChatControls() {
+        let on = viewModel?.proactiveChatEnabled ?? true
+        let minutes = viewModel?.chatIntervalMinutes ?? PetViewModel.defaultChatInterval
+        chatDescLabel?.stringValue = on
+            ? "宠物会适时冒泡，结合热搜与你的 Todo 打个招呼（勿扰/睡觉时不打扰）"
+            : "关闭后宠物不会主动搭话（喝水、天气提醒不受影响）"
+        chatToggle?.isOn = on
+        for (m, btn) in chatIntervalButtons {
+            let selected = (m == minutes)
+            btn.isEnabled = on
+            btn.alphaValue = on ? 1.0 : 0.4
             btn.layer?.backgroundColor = selected
                 ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
                 : NSColor(white: 0, alpha: 0.04).cgColor

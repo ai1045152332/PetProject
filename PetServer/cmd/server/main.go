@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"petserver/internal/router"
 	"petserver/internal/service"
 	"petserver/internal/storage"
+	"petserver/internal/tlsreloader"
 )
 
 // 心跳日志清理任务参数
@@ -115,8 +117,49 @@ func main() {
 
 	authCtrl := controller.NewAuthController(authSvc, keyPair)
 	cryptoCtrl := controller.NewCryptoController(keyPair)
-	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl)
+	systemSvc := service.NewSystemService()
+	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc)
+	// ACME HTTP-01 验证目录（certbot webroot 模式写入 challenge 文件）
+	acmeDir := os.Getenv("PETSERVER_ACME_DIR")
+	if acmeDir == "" {
+		acmeDir = "data/acme-challenges"
+	}
+	_ = os.MkdirAll(acmeDir, 0o755)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, acmeDir)
+
+	// HTTPS：证书/私钥文件存在时启用 443 监听，证书更新后自动热加载（配合 certbot 续期）
+	tlsCert := os.Getenv("PETSERVER_TLS_CERT")
+	tlsKey := os.Getenv("PETSERVER_TLS_KEY")
+	if tlsCert == "" {
+		tlsCert = "tls/fullchain.pem"
+	}
+	if tlsKey == "" {
+		tlsKey = "tls/privkey.pem"
+	}
+	tlsAddr := os.Getenv("PETSERVER_TLS_ADDR")
+	if tlsAddr == "" {
+		tlsAddr = ":443"
+	}
+	if _, err := os.Stat(tlsCert); err == nil {
+		if reloader, err := tlsreloader.New(tlsCert, tlsKey); err != nil {
+			log.Printf("[tls] HTTPS 未启用（证书加载失败）: %v", err)
+		} else {
+			tlsLn, err := net.Listen("tcp", tlsAddr)
+			if err != nil {
+				log.Printf("[tls] HTTPS 未启用（%s 监听失败）: %v", tlsAddr, err)
+			} else {
+				go func() {
+					srv := &http.Server{Handler: handler}
+					if err := srv.Serve(tls.NewListener(tlsLn, &tls.Config{GetCertificate: reloader.GetCertificate})); err != nil {
+						log.Printf("[tls] HTTPS 服务异常退出: %v", err)
+					}
+				}()
+				log.Printf("[tls] HTTPS 已启用，监听 %s（证书热加载: %s）", tlsAddr, tlsCert)
+			}
+		}
+	} else {
+		log.Printf("[tls] HTTPS 未启用（未找到证书 %s）", tlsCert)
+	}
 
 	// 后台任务：定期清理过期心跳日志
 	startHeartbeatLogCleanup(store)

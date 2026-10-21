@@ -13,11 +13,12 @@ type AdminController struct {
 	accessSvc *service.AccessService
 	authSvc   *service.AuthService
 	noteSvc   *service.DeviceNoteService
+	systemSvc *service.SystemService
 }
 
 // NewAdminController 创建管理控制器
-func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService) *AdminController {
-	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc}
+func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService) *AdminController {
+	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc}
 }
 
 // authorized 校验管理身份：
@@ -217,4 +218,23 @@ func (c *AdminController) SetDeviceNote(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// SystemStatus 处理 GET /api/admin/system/status（CPU/内存/网络流量监控）
+func (c *AdminController) SystemStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	status, err := c.systemSvc.Snapshot()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "collect failed: " + err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: status})
 }

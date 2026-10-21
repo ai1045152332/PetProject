@@ -39,12 +39,17 @@ enum AutoLaunchManager {
             .appendingPathComponent("Library/LaunchAgents/\(agentLabel).plist")
     }
 
-    /// 安装 LaunchAgent（已安装则跳过）
+    /// 安装 LaunchAgent（路径一致则跳过；app 被移动/改名后旧路径失效，需重写刷新）
     static func installIfNeeded() {
         let url = agentPlistURL()
         let exe = Bundle.main.executablePath ?? CommandLine.arguments[0]
         guard FileManager.default.fileExists(atPath: exe) else { return }
-        if FileManager.default.fileExists(atPath: url.path) { return }
+        // 已安装时不能只看文件是否存在：需比对里面记录的 exe 路径，
+        // 否则 app 换位置后开机自启会一直指向已不存在的旧路径而静默失败
+        if FileManager.default.fileExists(atPath: url.path),
+           recordedExecutablePath(in: url) == exe {
+            return
+        }
 
         let plist: [String: Any] = [
             "Label": agentLabel,
@@ -72,6 +77,13 @@ enum AutoLaunchManager {
         if FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    /// 读取已安装 plist 中记录的 ProgramArguments 首个路径
+    private static func recordedExecutablePath(in url: URL) -> String? {
+        guard let dict = NSDictionary(contentsOf: url) else { return nil }
+        guard let args = dict["ProgramArguments"] as? [String] else { return nil }
+        return args.first
     }
 
     // MARK: - launchctl

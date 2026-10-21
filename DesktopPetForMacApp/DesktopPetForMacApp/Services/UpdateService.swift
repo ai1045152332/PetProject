@@ -14,8 +14,8 @@ final class UpdateService {
     /// 发布签名公钥（Ed25519 raw 32 字节 base64，与发布脚本私钥对应）
     private let releasePublicKeyBase64 = "JeaR8M5ddeR67FkgsD+F2f3TNYRuAv5YRrJzTkaDWP0="
 
-    /// 自动检查间隔：6 小时
-    private let checkInterval: TimeInterval = 6 * 3600
+    /// 自动检查间隔：24 小时
+    private let checkInterval: TimeInterval = 24 * 3600
 
     private var timer: Timer?
     private var checking = false
@@ -23,7 +23,7 @@ final class UpdateService {
 
     private init() {}
 
-    /// 启动自动检查（启动 30 秒后首次检查，之后每 6 小时一次）
+    /// 启动自动检查（启动 30 秒后首次检查，之后每 24 小时一次）
     func start() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             self?.checkForUpdate(userInitiated: false)

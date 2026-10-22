@@ -63,9 +63,9 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 	var result any
 	switch action {
 	case "list":
-		result, err = c.svc.List(req.DeviceID)
+		result, err = c.svc.List(req.DeviceID, req.Code)
 	case "retry":
-		result, err = c.svc.Retry(req.DeviceID, req.ID, req.State)
+		result, err = c.svc.Retry(req.DeviceID, req.Code, req.ID, req.State)
 	case "select":
 		result, err = c.svc.Select(req.DeviceID, req.ID, req.State)
 	case "upload":
@@ -80,7 +80,7 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 			err = e
 			break
 		}
-		result, err = c.svc.Upload(req.DeviceID, header.Filename, data, req.State)
+		result, err = c.svc.Upload(req.DeviceID, req.Code, header.Filename, data, req.State)
 	case "content":
 		var data []byte
 		var mime string
@@ -101,6 +101,9 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 			status = 503
 		}
 		if errors.Is(err, service.ErrPetGenerationBusy) {
+			status = 429
+		}
+		if errors.Is(err, service.ErrPetQuotaExhausted) {
 			status = 429
 		}
 		if os.IsNotExist(err) {

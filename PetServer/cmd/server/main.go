@@ -150,6 +150,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// AI 生图总次数按激活码配置：每个码各用各的 imageQuota，未开通即为 0（不再用全局默认）。
+	imageSvc.SetImageQuotaResolver(accessSvc.ImageQuota)
 	if generator := service.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); generator != nil {
 		imageSvc.SetGenerator(generator)
 	} else {

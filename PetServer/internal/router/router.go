@@ -109,6 +109,7 @@ func New(
 	mux.HandleFunc("/api/admin/codes/generate", adminCtrl.GenerateCodes)
 	mux.HandleFunc("/api/admin/codes/unbind", adminCtrl.UnbindCodes)
 	mux.HandleFunc("/api/admin/codes/delete", adminCtrl.DeleteCodes)
+	mux.HandleFunc("/api/admin/codes/quota", adminCtrl.SetCodeQuota)
 	mux.HandleFunc("/api/admin/login", authCtrl.Login)
 	mux.HandleFunc("/api/admin/logout", authCtrl.Logout)
 	mux.HandleFunc("/api/crypto/pubkey", cryptoCtrl.PubKey)
@@ -120,6 +121,7 @@ func New(
 	mux.HandleFunc("/api/admin/metrics/reset", adminCtrl.ResetApiMetrics)
 	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)
 	mux.HandleFunc("/api/admin/files/preview", filesCtrl.Preview)
+	mux.HandleFunc("/api/admin/files/download", filesCtrl.Download)
 	mux.HandleFunc("/api/admin/files/delete", filesCtrl.Delete)
 	mux.HandleFunc("/api/app/latest", releaseCtrl.Latest)
 	mux.HandleFunc("/download/", releaseCtrl.Download)
@@ -178,7 +180,7 @@ func New(
 		noCache(w)
 		w.Write(web.AdminCodesPage)
 	})
-	// 后台管理：文件管理页（查看/预览/删除服务器文件）
+	// 后台管理：文件管理页（查看/预览/下载/删除服务器文件）
 	mux.HandleFunc("/admin/files", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		noCache(w)

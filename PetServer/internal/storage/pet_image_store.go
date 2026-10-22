@@ -16,7 +16,11 @@ type PetImageObjects interface {
 }
 type LocalPetImageObjects struct{ root string }
 
-var petObjectKey = regexp.MustCompile(`^[a-f0-9]{64}/[a-f0-9]{32}$`)
+// petObjectKey guards object paths against traversal: the first segment is always the server-side
+// SHA-256 device key (64 lowercase hex), the second is a human-readable image name that must not
+// contain '/' and must not start with '.' (so "..", absolute or nested paths are rejected even
+// though the name stem originates from a client-supplied file name).
+var petObjectKey = regexp.MustCompile(`^[a-f0-9]{64}/[^./][^/]{0,127}$`)
 
 func NewLocalPetImageObjects(root string) (*LocalPetImageObjects, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {

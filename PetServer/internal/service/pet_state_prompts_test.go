@@ -89,8 +89,15 @@ func TestEveryStateReachesBothModelRequests(t *testing.T) {
 			defer server.Close()
 			generator := NewOpenRouterPetImageGenerator("test-key", "openai/gpt-image-2.5-sunburst")
 			generator.endpoint = server.URL
-			if _, err := generator.Generate(context.Background(), testImage(t, "png"), state, func(string) {}); err == nil || calls != 2 {
-				t.Fatal("two-stage state routing not exercised")
+			_, err := generator.Generate(context.Background(), testImage(t, "png"), state, func(string) {})
+			if petFrameModeAnimated {
+				// Animated mode must reach both the portrait and the animation request with per-state prompts.
+				if err == nil || calls != 2 {
+					t.Fatal("two-stage state routing not exercised")
+				}
+			} else if err != nil || calls != 1 {
+				// Single-frame mode issues only the portrait request, which must carry the state prompt.
+				t.Fatalf("single-frame routing: calls=%d err=%v", calls, err)
 			}
 		})
 	}
@@ -103,7 +110,7 @@ func TestUploadAndRetryPassTargetStateToGenerator(t *testing.T) {
 		return testPetGIF(t), nil
 	}))
 	for _, state := range []string{"focus", "idel", "warn", "pet"} {
-		lib, err := svc.Upload("A", state+".png", testImage(t, "png"), state)
+		lib, err := svc.Upload("A", petTestCode, state+".png", testImage(t, "png"), state)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +128,7 @@ func TestUploadAndRetryPassTargetStateToGenerator(t *testing.T) {
 		original = bytes.Clone(photo)
 		return nil, fmt.Errorf("simulated failure")
 	}))
-	lib, err := svc.Upload("A", "sleep.png", testImage(t, "png"), "sleep")
+	lib, err := svc.Upload("A", petTestCode, "sleep.png", testImage(t, "png"), "sleep")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +144,7 @@ func TestUploadAndRetryPassTargetStateToGenerator(t *testing.T) {
 		}
 		return testPetGIF(t), nil
 	}))
-	if _, err = svc.Retry("A", id, "sleep"); err != nil {
+	if _, err = svc.Retry("A", petTestCode, id, "sleep"); err != nil {
 		t.Fatal(err)
 	}
 	lib = awaitPet(t, svc, "A", id)

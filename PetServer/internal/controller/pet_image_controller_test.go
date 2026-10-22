@@ -44,6 +44,9 @@ func TestPetImageAuthorizationAndUpload(t *testing.T) {
 	objects, _ := storage.NewLocalPetImageObjects(filepath.Join(dir, "objects"))
 	svc, _ := service.NewPetImageService(filepath.Join(dir, "libraries"), objects)
 	svc.SetGenerator(controllerPetGenerator{})
+	// Codes are ungranted by default; wire a resolver as production does so the auth/upload
+	// plumbing under test is not blocked by the lifetime quota.
+	svc.SetImageQuotaResolver(func(string) int { return 10 })
 	t.Cleanup(svc.Close)
 	ctrl := NewPetImageController(svc, access, nil)
 	for _, auth := range []string{
@@ -106,6 +109,7 @@ func TestPetImageEncryptedMultipart(t *testing.T) {
 	objects, _ := storage.NewLocalPetImageObjects(filepath.Join(dir, "objects"))
 	svc, _ := service.NewPetImageService(filepath.Join(dir, "libraries"), objects)
 	svc.SetGenerator(controllerPetGenerator{})
+	svc.SetImageQuotaResolver(func(string) int { return 10 })
 	t.Cleanup(svc.Close)
 	ctrl := NewPetImageController(svc, service.NewAccessService(codes), key)
 	auth := []byte(`{"code":"ABCD-EFGH-JKMP","deviceId":"A"}`)

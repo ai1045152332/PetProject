@@ -20,6 +20,10 @@ import (
 const PetPromptVersion = "pet-seedream-state-v3"
 const DefaultPetImageModel = "bytedance-seed/seedream-4.5"
 
+// petFrameModeAnimated 保留两套生成能力：false=单帧（当前写死，每个状态一次美化请求出透明 PNG）；
+// true=两阶段动画（额外一次动画帧请求并合成 GIF）。要切回动画只改这一个常量并重新编译。
+const petFrameModeAnimated = false
+
 //go:embed prompts/pet_portrait_v1.txt
 var petPortraitPrompt string
 
@@ -67,6 +71,10 @@ func (g *OpenRouterPetImageGenerator) Generate(ctx context.Context, original []b
 	}
 	if _, err = decodeTransparentPNG(portrait); err != nil {
 		return nil, err
+	}
+	if !petFrameModeAnimated {
+		// 单帧管线到此完成：不再提交第二次（动画帧）计费请求。
+		return portrait, nil
 	}
 	progress("animating")
 	sheet, err := g.edit(ctx, portrait, animationPrompt)

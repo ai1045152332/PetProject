@@ -73,8 +73,8 @@ func (s *AccessService) Verify(code, deviceID string) (bool, string) {
 }
 
 // Generate 批量生成激活码并持久化，返回生成的码
-// validDays 为有效期天数（0 表示永久有效）
-func (s *AccessService) Generate(count, maxDevices, validDays int, note string) ([]string, error) {
+// validDays 为有效期天数（0 表示永久有效）；imageQuota 为该码的 AI 生图总次数（0 = 未开通，可后台随时改）
+func (s *AccessService) Generate(count, maxDevices, validDays, imageQuota int, note string) ([]string, error) {
 	codes, err := s.store.Load()
 	if err != nil {
 		return nil, err
@@ -103,6 +103,7 @@ func (s *AccessService) Generate(count, maxDevices, validDays int, note string) 
 		codes = append(codes, model.ActivationCode{
 			Code:       code,
 			MaxDevices: maxDevices,
+			ImageQuota: imageQuota,
 			Devices:    []string{},
 			CreatedAt:  time.Now(),
 			ExpiresAt:  expiresAt,
@@ -118,8 +119,55 @@ func (s *AccessService) Generate(count, maxDevices, validDays int, note string) 
 	if validDays > 0 {
 		validity = fmt.Sprintf("%d 天", validDays)
 	}
-	log.Printf("[access] 生成 %d 个激活码（每码 %d 设备，有效期 %s，备注: %s）", count, maxDevices, validity, note)
+	log.Printf("[access] 生成 %d 个激活码（每码 %d 设备，每码 %d 次生图，有效期 %s，备注: %s）", count, maxDevices, imageQuota, validity, note)
 	return generated, nil
+}
+
+// ImageQuota 返回该激活码配置的 AI 生图总次数上限（找不到或未配置返回 0）。
+// 供图片服务按码解析限额；老码无该字段自然为 0（未开通）。
+func (s *AccessService) ImageQuota(code string) int {
+	if code == "" {
+		return 0
+	}
+	codes, err := s.store.Load()
+	if err != nil {
+		return 0
+	}
+	normalized := normalizeCode(code)
+	for _, c := range codes {
+		if c.Code == normalized {
+			return c.ImageQuota
+		}
+	}
+	return 0
+}
+
+// SetImageQuota 设置（覆盖）某个激活码的 AI 生图总次数上限，返回是否找到该码。
+// quota 允许调高或调低；调低到已用次数以下不会追回已扣量，仅使剩余归零。
+func (s *AccessService) SetImageQuota(code string, quota int) (bool, error) {
+	if quota < 0 {
+		quota = 0
+	}
+	normalized := normalizeCode(code)
+	codes, err := s.store.Load()
+	if err != nil {
+		return false, err
+	}
+	found := false
+	for i := range codes {
+		if codes[i].Code == normalized {
+			codes[i].ImageQuota = quota
+			found = true
+		}
+	}
+	if !found {
+		return false, nil
+	}
+	if err := s.store.Save(codes); err != nil {
+		return true, err
+	}
+	log.Printf("[access] 激活码 %s 的 AI 生图总次数设为 %d", normalized, quota)
+	return true, nil
 }
 
 // List 返回全部激活码（管理接口用）

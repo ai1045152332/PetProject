@@ -252,9 +252,9 @@ func readNetDev() (netCounters, error) {
 }
 
 // readVnstatDaily 读取 vnstat 按天流量统计（实测 vnstat 2.9 JSON 输出单位为字节）。
-// vnstat 未安装或执行失败时返回空列表，不影响主接口。
+// 只取最近 7 天，数据量小、子进程开销低。vnstat 未安装或执行失败时返回空列表，不影响主接口。
 func (s *SystemService) readVnstatDaily() []model.VnstatDay {
-	out, err := exec.Command("vnstat", "--json", "d", "30").Output()
+	out, err := exec.Command("vnstat", "--json", "d", "7").Output()
 	if err != nil {
 		return []model.VnstatDay{}
 	}

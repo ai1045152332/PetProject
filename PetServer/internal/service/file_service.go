@@ -20,12 +20,12 @@ type FileEntry struct {
 	IsDir     bool   `json:"isDir"`
 	Size      int64  `json:"size"`
 	ModTime   string `json:"modTime"`
-	Sensitive bool   `json:"sensitive"` // 命中敏感黑名单，前端禁用预览
+	Sensitive bool   `json:"sensitive"` // 命中敏感黑名单，前端禁用预览与下载
 }
 
-// isSensitiveFile 判断文件名是否属于敏感文件（禁止预览）。
+// isSensitiveFile 判断文件名是否属于敏感文件（禁止预览与下载）。
 // 根目录提到服务目录后，petserver.env（后台密码/天气 Key）、RSA 私钥、
-// 会话令牌 sessions.json 都会被列出，必须在预览环节挡住，防止秘密泄露。
+// 会话令牌 sessions.json 都会被列出，必须在预览与下载环节挡住，防止秘密泄露。
 func isSensitiveFile(name string) bool {
 	lower := strings.ToLower(name)
 	if lower == "sessions.json" {
@@ -47,7 +47,7 @@ type FilePreview struct {
 	Truncated bool   `json:"truncated"` // 超过预览上限时为 true
 }
 
-// FileService 服务器文件管理：在锚定根目录内查看/删除文件，
+// FileService 服务器文件管理：在锚定根目录内查看/下载/删除文件，
 // 所有相对路径都会先做净化并校验不越界，防止路径穿越（../）。
 type FileService struct {
 	root string // 锚定的绝对根目录，仅允许操作其下的文件
@@ -162,6 +162,38 @@ func (s *FileService) Preview(rel string) (*FilePreview, error) {
 		Content:   string(data),
 		Size:      info.Size(),
 		Truncated: info.Size() > int64(n),
+	}, nil
+}
+
+// DownloadTarget 下载目标：http.ServeFile 需要的绝对路径与展示信息
+type DownloadTarget struct {
+	FullPath string // 根目录内的绝对路径
+	Name     string // 下载时使用的文件名
+	Size     int64  // 文件字节数
+}
+
+// PrepareDownload 校验下载目标：必须落在根目录内、是普通文件、且不在敏感黑名单中。
+// 下载与预览的安全边界一致（.env/.pem/.key/sessions.json 绝不外流），
+// 但下载不受预览大小上限限制，安装包等大文件也能取回。
+func (s *FileService) PrepareDownload(rel string) (*DownloadTarget, error) {
+	full, err := s.resolve(rel)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return nil, fmt.Errorf("文件不存在: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("是目录，无法下载: %s", rel)
+	}
+	if isSensitiveFile(filepath.Base(full)) {
+		return nil, fmt.Errorf("敏感文件，禁止下载: %s", rel)
+	}
+	return &DownloadTarget{
+		FullPath: full,
+		Name:     filepath.Base(full),
+		Size:     info.Size(),
 	}, nil
 }
 

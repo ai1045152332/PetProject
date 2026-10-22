@@ -305,6 +305,7 @@ POST /api/admin/codes/generate
 | count | int | 是 | 生成数量，1~100 |
 | maxDevices | int | 否 | 每码最多绑定设备数，1~10，默认 3 |
 | validDays | int | 否 | 有效期天数，0~3650，默认 0（永久有效） |
+| imageQuota | int | 否 | 每码 AI 生图终身总次数，0~100000，默认 0（未开通，不可生成） |
 | note | string | 否 | 备注（购买渠道/买家等） |
 
 请求示例：
@@ -313,7 +314,7 @@ POST /api/admin/codes/generate
 curl -X POST http://101.96.248.75/api/admin/codes/generate \
   -H "Content-Type: application/json" \
   -H "X-Admin-Token: <管理密码>" \
-  -d '{"count": 5, "maxDevices": 3, "validDays": 365, "note": "面包多订单"}'
+  -d '{"count": 5, "maxDevices": 3, "validDays": 365, "imageQuota": 10, "note": "面包多订单"}'
 ```
 
 响应：
@@ -345,6 +346,7 @@ curl http://101.96.248.75/api/admin/codes -H "X-Admin-Token: <管理密码>"
       {
         "code": "9MDW-TCZ5-YVD8",
         "maxDevices": 3,
+        "imageQuota": 10,
         "devices": ["XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"],
         "createdAt": "2026-10-15T13:00:00+08:00",
         "expiresAt": "2027-10-15T13:00:00+08:00",
@@ -355,7 +357,35 @@ curl http://101.96.248.75/api/admin/codes -H "X-Admin-Token: <管理密码>"
 }
 ```
 
-> `expiresAt` 为 `null` 表示永久有效。
+> `expiresAt` 为 `null` 表示永久有效。`imageQuota` 为该码的 AI 生图终身总次数（0 = 未开通）。
+
+### 3.5.1 设置激活码 AI 生图次数
+
+生成后随时可改（调高/追加或调低/收回）某激活码的 AI 生图终身总次数上限；后台「激活码管理」每行的「改次数」按钮即调用此接口。
+
+```
+POST /api/admin/codes/quota
+```
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| code | string | 是 | 激活码 |
+| imageQuota | int | 是 | 新的总次数上限（绝对值，非增量），0~100000；0 = 收回（无法再生成） |
+
+请求示例：
+
+```bash
+curl -X POST http://101.96.248.75/api/admin/codes/quota \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: <管理密码>" \
+  -d '{"code": "9MDW-TCZ5-YVD8", "imageQuota": 20}'
+```
+
+响应：`{"code":0,"msg":"ok"}`；激活码不存在返回 `{"code":404,"msg":"code not found"}`。
+
+> 本接口设置的是总上限（覆盖式）；调低到已用次数以下不会追回已扣量，仅使剩余归零。已用次数记在 `data/pet-images/libraries/quota-<码哈希>.json`，跨设备、重装不重置。
 
 ### 3.6 解绑设备
 
@@ -676,7 +706,7 @@ GET /api/wordbank/get?name=cet4
 | --- | --- |
 | `GET /admin/login` | 登录页（账号密码） |
 | `GET /admin` | 菜单一：小猫在线列表 |
-| `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间） |
+| `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间/每码 AI 生图次数，可行内改次数） |
 | `GET /admin/files` | 菜单三：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
 | `GET /admin/status` | 菜单四：服务器状态（CPU/内存/网络流量 + 接口调用统计） |
 | `GET /online`（或 `/`） | 手机版在线宠物页（免登录） |
@@ -687,20 +717,20 @@ GET /api/wordbank/get?name=cet4
 
 | action | 请求 | 返回 |
 | --- | --- | --- |
-| `list` | 加密凭证 JSON | `{code:0,msg:"ok",data:{currentId,currentIds:{focus:"图片ID"},images:[{id,state,name,contentType,createdAt,status,error,promptVersion}]}}`，历史由新到旧 |
-| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件 | 同上；返回 `beautifying` 任务，保存原图后异步生成，完成后才自动设为 `state` 对应状态的当前图片 |
+| `list` | 加密凭证 JSON | `{code:0,msg:"ok",data:{currentId,currentIds:{focus:"图片ID"},images:[{id,state,name,contentType,createdAt,status,error,promptVersion}],generationLimit,generationRemaining}}`，历史由新到旧；`generationLimit`/`generationRemaining` 为该激活码的终身生成总上限/剩余次数 |
+| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件；`state` 可为具体状态或 `all` | 同上；返回 `beautifying` 任务，保存原图后异步生成，完成后才自动设为对应状态的当前图片。`state=all` 时为全部 5 个状态各创建一条任务并逐状态生成（整批只扣 1 次配额） |
 | `retry` | 加密凭证 JSON，包含失败任务的 `id` 和 `state` | 同上；保留原图和任务 ID，重新生成 |
 | `select` | 加密凭证 JSON，包含 `id` 和 `state`；空 ID 仅恢复该状态默认 | 同上，保留历史 |
-| `content` | 加密凭证 JSON，包含 `id` | 已完成的图片字节，生成结果为 `image/gif`；旧静态历史仍返回 `image/png` 或 `image/jpeg` |
+| `content` | 加密凭证 JSON，包含 `id` | 已完成的图片字节；单帧模式生成结果为 `image/png`（动画模式为 `image/gif`）；旧静态历史仍返回 `image/png` 或 `image/jpeg` |
 
 每张图片最大 10 MiB，宽高必须有效且总像素不超过 4000 万，服务端检查实际文件内容并完整解码验证。图片不公开挂载静态 URL，所有读取均经过设备授权；不能读取或选择其他设备的图片。400 表示参数/图片无效，403 表示未授权，404 表示图片不存在，405 表示方法不支持，429 表示并发任务已满，503 表示尚未配置 OpenRouter。未完成/失败任务不可选择或下载，返回 404。恢复接口不依赖本地缓存，重装后同设备重新激活即可获取原历史。
 
 
 `status` 为 `beautifying`（提取美化）、`animating`（动画帧生成）、`encoding`（合成 GIF）、`ready`（可使用）、`failed`（失败）。旧记录没有 `status` 时等同 `ready`。客户端按 `state` 筛选历史（无 `state` 的旧记录可供所有状态使用），并轮询 `list` 等待任务结束；失败记录的 `error` 为可展示原因，不包含上游原始响应或 API Key。任务在服务器重启后标为 `failed`，需显式 `retry`，不自动重试计费调用。
 
-上传/重试返回时选择保持原值。生成成功时更新 `currentIds[state]`；期间若发生对同一状态的 `select`（包括恢复默认），保留用户新选择，生成结果仍进入历史。操作其他状态不会阻止本状态结果自动应用。每设备同时 1 个生成任务，每 UTC 自然日最多 10 次，全服务最多同时生成 2 个任务。
+上传/重试返回时选择保持原值。生成成功时更新 `currentIds[state]`；期间若发生对同一状态的 `select`（包括恢复默认），保留用户新选择，生成结果仍进入历史。操作其他状态不会阻止本状态结果自动应用。每设备同时 1 个生成任务，全服务最多同时生成 2 个任务。**生成总量按激活码终身累计**（不再按设备或每日重置）：同一码绑定的所有设备共享该码的总上限，上限在后台「激活码管理」按码配置（新码默认 0 = 未开通，不可生成），提交即扣次、失败不返还；超限时返回 429。
 
 
-`state` 可取 `focus`、`idel`（沿用现有拼写）、`warn`、`sleep`、`pet`。新客户端上传、选择和重试均发送对应状态，不能把一个状态专属的结果应用到其他状态。下载仍按设备和图片 ID 授权。为兼容旧客户端，缺少 `state` 时保留旧的共享图片行为；`currentId` 是旧共享选择，`currentIds` 显式键优先（包括空值，表示该状态恢复默认）。
+`state` 可取 `focus`、`idel`（沿用现有拼写）、`warn`、`sleep`、`pet`，上传还可用 `all` 触发逐状态扇出。新客户端上传、选择和重试均发送对应状态，不能把一个状态专属的结果应用到其他状态。下载仍按设备和图片 ID 授权。为兼容旧客户端，缺少 `state`（空字串）时保留旧的共享图片行为；`currentId` 是旧共享选择，`currentIds` 显式键优先（包括空值，表示该状态恢复默认）。
 
-生成器会将上传记录的 `state` 传入美化和动画两次模型请求，使用 `pet-seedream-state-v3` Prompt。专注生成工作/打字动作，睡觉生成全程闭眼蜷缩呼吸动作，其余状态使用各自的姿态与动作。重试沿用原图和目标状态、使用当前 Prompt 版本。
+生成器按当前帧模式处理上传记录的 `state`：单帧模式（当前写死）每个状态只发一次美化请求并输出透明 PNG；动画模式则传入美化和动画帧两次请求并合成 GIF。使用 `pet-seedream-state-v3` Prompt。专注生成工作/打字动作，睡觉生成全程闭眼蜷缩呼吸动作，其余状态使用各自的姿态与动作。重试沿用原图和目标状态、使用当前 Prompt 版本。

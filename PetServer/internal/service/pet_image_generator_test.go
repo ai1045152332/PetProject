@@ -118,22 +118,33 @@ func TestOpenRouterPetGenerationContractAndGIF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 2 || strings.Join(stages, ",") != "beautifying,animating,encoding" {
-		t.Fatalf("calls %d stages %v", calls, stages)
-	}
-	animation, err := gif.DecodeAll(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(animation.Image) != 30 || animation.LoopCount != 0 || animation.Config.Width != 256 || animation.Config.Height != 256 {
-		t.Fatal("invalid GIF animation")
-	}
-	for i, frame := range animation.Image {
-		_, _, _, alpha := frame.At(0, 0).RGBA()
-		_, _, _, petAlpha := frame.At(90, 90).RGBA()
-		if alpha != 0 || petAlpha == 0 || animation.Delay[i] != 10 || animation.Disposal[i] != gif.DisposalBackground {
-			t.Fatal("GIF transparency/timing/disposal incorrect")
+	if petFrameModeAnimated {
+		if calls != 2 || strings.Join(stages, ",") != "beautifying,animating,encoding" {
+			t.Fatalf("calls %d stages %v", calls, stages)
 		}
+		animation, err := gif.DecodeAll(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(animation.Image) != 30 || animation.LoopCount != 0 || animation.Config.Width != 256 || animation.Config.Height != 256 {
+			t.Fatal("invalid GIF animation")
+		}
+		for i, frame := range animation.Image {
+			_, _, _, alpha := frame.At(0, 0).RGBA()
+			_, _, _, petAlpha := frame.At(90, 90).RGBA()
+			if alpha != 0 || petAlpha == 0 || animation.Delay[i] != 10 || animation.Disposal[i] != gif.DisposalBackground {
+				t.Fatal("GIF transparency/timing/disposal incorrect")
+			}
+		}
+		return
+	}
+	// Single-frame mode: exactly one billed request, portrait only, transparent PNG out.
+	if calls != 1 || strings.Join(stages, ",") != "beautifying" {
+		t.Fatalf("single-frame calls %d stages %v", calls, stages)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width != 1024 || cfg.Height != 1024 {
+		t.Fatalf("single-frame portrait is not a 1024 PNG: %+v %v", cfg, err)
 	}
 }
 func TestOpenRouterPetFailuresAreSafe(t *testing.T) {
@@ -237,15 +248,34 @@ func TestSeedreamContractAndChromaGIF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	animation, err := gif.DecodeAll(bytes.NewReader(output))
-	if err != nil || len(animation.Image) != 30 || calls != 2 {
-		t.Fatal("Seedream GIF failed", err)
+	if petFrameModeAnimated {
+		animation, err := gif.DecodeAll(bytes.NewReader(output))
+		if err != nil || len(animation.Image) != 30 || calls != 2 {
+			t.Fatal("Seedream GIF failed", err)
+		}
+		_, _, _, a := animation.Image[0].At(0, 0).RGBA()
+		if a != 0 {
+			t.Fatal("green background remains opaque")
+		}
+		_, _, _, a = animation.Image[0].At(110, 110).RGBA()
+		if a == 0 {
+			t.Fatal("green eye removed")
+		}
+		return
 	}
-	_, _, _, a := animation.Image[0].At(0, 0).RGBA()
+	// Single-frame mode: one billed request returns the chroma-cleaned transparent portrait PNG.
+	if calls != 1 {
+		t.Fatalf("single-frame Seedream made %d requests, want 1", calls)
+	}
+	portrait, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal("single-frame Seedream output is not a PNG", err)
+	}
+	_, _, _, a := portrait.At(0, 0).RGBA()
 	if a != 0 {
 		t.Fatal("green background remains opaque")
 	}
-	_, _, _, a = animation.Image[0].At(110, 110).RGBA()
+	_, _, _, a = portrait.At(110, 110).RGBA()
 	if a == 0 {
 		t.Fatal("green eye removed")
 	}

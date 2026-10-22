@@ -26,6 +26,9 @@ struct PetImageLibrary: Decodable {
     let images: [PetImageRecord]
     let currentIds: [String: String]?
     let selectionVersion: Int?
+    // Lifetime AI generation budget for the active code, shared across its bound devices.
+    let generationLimit: Int?
+    let generationRemaining: Int?
 
     func currentID(for state: CatAnimationState) -> String {
         currentIds?[state.rawValue] ?? currentId
@@ -51,18 +54,18 @@ enum PetImageService {
     static func failure(_ message: String) -> NSError {
         NSError(domain: "PetImages", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
-    static func credentials(id: String = "", state: CatAnimationState? = nil) throws -> Data {
+    static func credentials(id: String = "", stateValue: String = "") throws -> Data {
         guard let code = AccessControl.serverActivationCode else {
             throw failure("请先在通用设置中使用有效的服务端激活码解锁；本地快捷码不支持云端图片。")
         }
         guard AccessControl.deviceID != "unknown-device" else { throw failure("无法识别当前设备") }
-        let plain = try JSONSerialization.data(withJSONObject: ["code": code, "deviceId": AccessControl.deviceID, "id": id, "state": state?.rawValue ?? ""])
+        let plain = try JSONSerialization.data(withJSONObject: ["code": code, "deviceId": AccessControl.deviceID, "id": id, "state": stateValue])
         guard let encrypted = PayloadCrypto.encryptedEnvelope(plain) else { throw failure("授权信息加密失败") }
         return encrypted
     }
-    static func request(_ action: String, id: String = "", state: CatAnimationState? = nil, upload: (Data, String)? = nil) async throws -> Data {
+    static func request(_ action: String, id: String = "", stateValue: String = "", upload: (Data, String)? = nil) async throws -> Data {
         let identity = AccessControl.serverActivationCode
-        let auth = try credentials(id: id, state: state)
+        let auth = try credentials(id: id, stateValue: stateValue)
         var request = URLRequest(url: URL(string: ServerConfig.baseURL + "/api/pet-images/" + action)!, timeoutInterval: 60)
         request.httpMethod = "POST"
         if let (data, name) = upload {
@@ -93,7 +96,7 @@ enum PetImageService {
         try JSONDecoder().decode(Envelope.self, from: await request("list")).data
     }
     static func select(_ id: String, for state: CatAnimationState) async throws -> PetImageLibrary {
-        try JSONDecoder().decode(Envelope.self, from: await request("select", id: id, state: state)).data
+        try JSONDecoder().decode(Envelope.self, from: await request("select", id: id, stateValue: state.rawValue)).data
     }
     /// Reads and validates a local PNG/JPEG file for cloud upload (size and pixel bounds).
     /// Keep the original pixels and alpha; only the displayed image is scaled.
@@ -118,10 +121,16 @@ enum PetImageService {
     }
     static func upload(_ url: URL, for state: CatAnimationState?) async throws -> PetImageLibrary {
         let (data, name) = try validatedImageFile(url)
-        return try JSONDecoder().decode(Envelope.self, from: await request("upload", state: state, upload: (data, name))).data
+        return try JSONDecoder().decode(Envelope.self, from: await request("upload", stateValue: state?.rawValue ?? "", upload: (data, name))).data
+    }
+    /// Uploads one photo and asks the server to fan it out into one generated image per state.
+    /// The whole batch costs a single quota unit and is generated sequentially on the server.
+    static func uploadAllStates(_ url: URL) async throws -> PetImageLibrary {
+        let (data, name) = try validatedImageFile(url)
+        return try JSONDecoder().decode(Envelope.self, from: await request("upload", stateValue: "all", upload: (data, name))).data
     }
     static func retry(_ id: String, for state: CatAnimationState) async throws -> PetImageLibrary {
-        try JSONDecoder().decode(Envelope.self, from: await request("retry", id: id, state: state)).data
+        try JSONDecoder().decode(Envelope.self, from: await request("retry", id: id, stateValue: state.rawValue)).data
     }
     static func waitForGeneration(_ id: String, initial: PetImageLibrary,
                                   progress: ((String) -> Void)? = nil) async throws -> PetImageLibrary {
@@ -133,6 +142,22 @@ enum PetImageService {
             if item.isReady { return library }
             if item.status == "failed" { throw failure(item.error ?? "生成失败，可在历史图片中重试") }
             progress?(item.stageLabel)
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+            library = try await self.library()
+        }
+        throw failure("等待生成超时，任务可能仍在服务器运行，请稍后打开历史图片查看。")
+    }
+    /// Waits until every one of `ids` leaves the generating state (ready or failed). Unlike the
+    /// single-id helper this never throws on an individual failure: the returned library carries each
+    /// record's own status so the caller can apply the states that succeeded and report the rest.
+    static func waitForGeneration(_ ids: [String], initial: PetImageLibrary,
+                                  progress: ((String) -> Void)? = nil) async throws -> PetImageLibrary {
+        var library = initial
+        for _ in 0..<400 {
+            try Task.checkCancellation()
+            let pending = library.images.filter { ids.contains($0.id) && $0.isGenerating }
+            if pending.isEmpty { return library }
+            progress?(pending.first?.stageLabel ?? "正在逐状态生成…")
             try await Task.sleep(nanoseconds: 3_000_000_000)
             library = try await self.library()
         }

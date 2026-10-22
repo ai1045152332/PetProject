@@ -47,7 +47,6 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private var accessObserver: NSObjectProtocol?
 
     private weak var viewModel: PetViewModel?
-    private var stateButtons: [CatAnimationState: NSButton] = [:]
     private var spritePreviewButtons: [CatAnimationState: NSButton] = [:]
     private var customSpriteButtons: [CatAnimationState: NSButton] = [:]
     private var customSpriteResetButtons: [CatAnimationState: NSButton] = [:]
@@ -187,7 +186,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let contentW = W - contentX - inset
         let contentFrame = NSRect(x: contentX, y: 14, width: contentW, height: bodyH)
 
-        let section0 = makeContentContainer(frame: contentFrame, in: contentView)
+        // 仅「宠物信息」区内容较高，包一层滚动容器；其余三区保持原有直接布局
+        let section0 = makeContentContainer(frame: contentFrame, scrollable: true, contentHeight: 372, in: contentView)
         let section1 = makeContentContainer(frame: contentFrame, in: contentView)
         let section2 = makeContentContainer(frame: contentFrame, in: contentView)
         let section3 = makeContentContainer(frame: contentFrame, in: contentView)
@@ -206,16 +206,34 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
     // MARK: - 内容容器
 
-    private func makeContentContainer(frame: NSRect, in parent: NSView) -> NSView {
-        let v = NSView(frame: frame)
-        // 右侧内容区随窗口加宽加高自适应（左侧固定、下随动、宽高拉伸）
-        v.autoresizingMask = [.width, .height, .minYMargin, .minXMargin]
+    /// scrollable=false：普通内容区（随窗口拉伸）；true：包一层竖向滚动，文档高度按内容预留
+    private func makeContentContainer(frame: NSRect, scrollable: Bool = false, contentHeight: CGFloat = 0, in parent: NSView) -> NSView {
+        let docHeight = max(contentHeight, frame.height)
+        // 滚动分支：文档视图原点在滚动容器内，从 (0,0) 起；非滚动分支：直接用内容区 frame（含 x 偏移），否则会盖住左侧导航
+        let v = NSView(frame: scrollable
+            ? NSRect(x: 0, y: 0, width: frame.width, height: docHeight)
+            : frame)
         v.wantsLayer = true
         v.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.5).cgColor
         v.layer?.cornerRadius = 12
         v.layer?.borderWidth = 1
         v.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.25).cgColor
-        parent.addSubview(v)
+        if scrollable {
+            let scroll = NSScrollView(frame: frame)
+            scroll.autoresizingMask = [.width, .height, .minYMargin, .minXMargin]
+            scroll.hasVerticalScroller = true
+            scroll.autohidesScrollers = false
+            scroll.drawsBackground = false
+            scroll.borderType = .noBorder
+            scroll.automaticallyAdjustsContentInsets = false
+            // 非翻转坐标：内容顶部贴文档 maxY，滚动向下露出超出部分；宽度随窗口自适应
+            v.autoresizingMask = [.width]
+            scroll.documentView = v
+            parent.addSubview(scroll)
+        } else {
+            v.autoresizingMask = [.width, .height, .minYMargin, .minXMargin]
+            parent.addSubview(v)
+        }
         return v
     }
 
@@ -290,68 +308,70 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         petNameSaveBtn = saveBtn
         updatePetNameButtons()
 
-        // ── 状态卡片（带副标题） ──
-        let states: [(CatAnimationState, String, String)] = [
-            (.focus, "💼", "工作中，请勿打扰"),
-            (.idel,  "☕", "休闲放松中"),
-            (.sleep, "😴", "晚安，做个好梦"),
-            (.pet,   "🐾", "摸摸我，很开心")
-        ]
-        let cardW: CGFloat = 108
-        let cardH: CGFloat = 120
-        let totalCardsW = CGFloat(states.count) * cardW
-        let gap = (cw - 32 - totalCardsW) / CGFloat(states.count + 1)
-        let cardY = nameRowY - 20 - cardH
-        var cardX = 16 + gap
-        for (state, emoji, subtitle) in states {
-            let card = makeCardButton(
-                frame: NSRect(x: cardX, y: cardY, width: cardW, height: cardH),
-                state: state, emoji: emoji, subtitle: subtitle
-            )
-            container.addSubview(card)
-            stateButtons[state] = card
-            cardX += cardW + gap
-        }
-
+        // ── 合并区：形象切换 + 状态图片管理（每状态一竖格） ──
+        // 顶部：标题 + 历史图片工具按钮；其下一行说明；中部：5 个状态格；底部：AI 生成 + 剩余次数
+        // 紧跟「宠物名称」行下方成组排布（而非贴底），避免删卡后中间裂出空洞
+        let spriteRowH: CGFloat = 196
+        let spriteRowY = nameRowY - 16 - spriteRowH
         let spriteRow = makeSettingRow(
-            frame: NSRect(x: 16, y: 22, width: cw - 32, height: 178),
+            frame: NSRect(x: 16, y: spriteRowY, width: cw - 32, height: spriteRowH),
             in: container
         )
+        let rw = spriteRow.bounds.width
+
         let spriteTitle = NSTextField(labelWithString: "自定义状态图片")
         spriteTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         spriteTitle.textColor = .labelColor
-        spriteTitle.frame = NSRect(x: 14, y: 152, width: 180, height: 18)
+        spriteTitle.frame = NSRect(x: 14, y: 168, width: 180, height: 18)
         spriteRow.addSubview(spriteTitle)
 
-        let spriteDesc = NSTextField(labelWithString: "直接上传：本机即时生效；AI 生成：一次生成覆盖全部状态 · 最大 10 MB")
+        let history = NSButton(title: "🗂 查看历史图片", target: self, action: #selector(showPetImageHistory(_:)))
+        history.frame = NSRect(x: rw - 128, y: 164, width: 114, height: 26)
+        history.font = .systemFont(ofSize: 11)
+        history.bezelStyle = .rounded
+        history.autoresizingMask = .minXMargin
+        spriteRow.addSubview(history)
+        petHistoryButton = history
+
+        let spriteDesc = NSTextField(labelWithString: "直接上传：本机即时生效；AI 生成：上传一次，逐状态各生成一张 · 最大 10 MB")
         spriteDesc.font = .systemFont(ofSize: 11)
         spriteDesc.textColor = .tertiaryLabelColor
-        spriteDesc.frame = NSRect(x: 14, y: 133, width: cw - 65, height: 15)
+        spriteDesc.lineBreakMode = .byTruncatingTail
+        spriteDesc.frame = NSRect(x: 14, y: 146, width: rw - 28, height: 14)
+        spriteDesc.autoresizingMask = .width
         spriteRow.addSubview(spriteDesc)
         spriteDescLabel = spriteDesc
 
-        // Each state column: preview + name, direct upload (local only), per-state reset.
+        // 每个状态一格：预览图（点击=切到该状态，当前态高亮）+ 直接上传 + 恢复默认
         let customStates = CatAnimationState.allCases
-        let customButtonW: CGFloat = 76
-        let customButtonGap: CGFloat = 8
-        let customTotalW = CGFloat(customStates.count) * customButtonW + CGFloat(customStates.count - 1) * customButtonGap
-        var customX = max(14, (spriteRow.bounds.width - customTotalW) / 2)
+        let cellW: CGFloat = 76
+        let cellGap: CGFloat = 8
+        let gridW = CGFloat(customStates.count) * cellW + CGFloat(customStates.count - 1) * cellGap
+        var cellX = max(14, (rw - gridW) / 2)
         for (index, state) in customStates.enumerated() {
-            let preview = NSButton(frame: NSRect(x: customX, y: 64, width: customButtonW, height: 62))
+            let preview = NSButton(frame: NSRect(x: cellX, y: 76, width: cellW, height: 64))
             preview.title = state.displayName
             preview.font = .systemFont(ofSize: 10, weight: .medium)
             preview.alignment = .center
-            preview.bezelStyle = .rounded
             preview.imagePosition = .imageAbove
             preview.imageScaling = .scaleProportionallyDown
             preview.image = customSpriteImage(for: state)
-            preview.isEnabled = false
-            preview.toolTip = "\(state.displayName)状态当前生效的图片"
+            preview.setButtonType(.toggle)
+            preview.isBordered = false
+            preview.wantsLayer = true
+            preview.layer?.cornerRadius = 10
+            preview.layer?.masksToBounds = true
+            preview.tag = index
+            preview.target = self
+            preview.action = #selector(stateTileClicked(_:))
+            preview.toolTip = state == .warn
+                ? "\(state.displayName)状态当前生效的图片（该状态由系统触发，不可手动切换）"
+                : "点击切换宠物到\(state.displayName)状态"
             spriteRow.addSubview(preview)
             spritePreviewButtons[state] = preview
 
             let upload = NSButton(title: "直接上传", target: self, action: #selector(directUploadCustomSprite(_:)))
-            upload.frame = NSRect(x: customX, y: 42, width: customButtonW, height: 20)
+            upload.frame = NSRect(x: cellX, y: 52, width: cellW, height: 22)
             upload.font = .systemFont(ofSize: 10, weight: .medium)
             upload.bezelStyle = .rounded
             upload.controlSize = .small
@@ -361,22 +381,23 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             customSpriteButtons[state] = upload
 
             let reset = NSButton(title: "恢复默认", target: self, action: #selector(resetCustomSprite(_:)))
-            reset.frame = NSRect(x: customX, y: 20, width: customButtonW, height: 18)
+            reset.frame = NSRect(x: cellX, y: 28, width: cellW, height: 20)
             reset.font = .systemFont(ofSize: 9)
             reset.bezelStyle = .rounded
+            reset.controlSize = .small
             reset.tag = index
             reset.toolTip = "清除\(state.displayName)状态的本地直传图，并恢复服务端默认"
             spriteRow.addSubview(reset)
             customSpriteResetButtons[state] = reset
-            customX += customButtonW + customButtonGap
+            cellX += cellW + cellGap
         }
 
-        // One AI job covers all five states through the server's shared-image mode.
-        let aiButton = NSButton(title: "🪄 上传照片 · AI 生成全部状态", target: self, action: #selector(generateAllStatesWithAI(_:)))
-        aiButton.frame = NSRect(x: 14, y: 6, width: 260, height: 22)
+        // 底部工具条：AI 生成全部状态（左）+ 剩余次数/进度（右）
+        let aiButton = NSButton(title: "🪄 AI 生成所有状态图片", target: self, action: #selector(generateAllStatesWithAI(_:)))
+        aiButton.frame = NSRect(x: 14, y: 2, width: 210, height: 22)
         aiButton.font = .systemFont(ofSize: 11, weight: .medium)
         aiButton.bezelStyle = .rounded
-        aiButton.toolTip = "上传一张照片，AI 生成一张动画 GIF 并同时应用到全部 5 个状态；消耗每日生成次数，生成姿态为休闲"
+        aiButton.toolTip = "上传一张照片，AI 为全部 5 个状态各生成一张图片（姿态按状态区分）并自动应用；整批仅消耗该激活码的 1 次生成配额"
         spriteRow.addSubview(aiButton)
         aiGenerateAllButton = aiButton
 
@@ -384,42 +405,57 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         aiStatus.font = .systemFont(ofSize: 10)
         aiStatus.textColor = .secondaryLabelColor
         aiStatus.lineBreakMode = .byTruncatingTail
-        aiStatus.frame = NSRect(x: 282, y: 9, width: spriteRow.bounds.width - 296, height: 15)
+        aiStatus.frame = NSRect(x: 232, y: 6, width: rw - 246, height: 15)
+        aiStatus.autoresizingMask = .width
         spriteRow.addSubview(aiStatus)
         aiStatusLabel = aiStatus
 
-        let history = NSButton(title: "历史图片…", target: self, action: #selector(showPetImageHistory(_:)))
-        history.frame = NSRect(x: spriteRow.bounds.width - 104, y: 148, width: 92, height: 24)
-        history.font = .systemFont(ofSize: 10)
-        history.bezelStyle = .rounded
-        history.autoresizingMask = .minXMargin
-        spriteRow.addSubview(history)
-        petHistoryButton = history
-
+        refreshStateCards()
         refreshSpriteAccessUI()
+        refreshQuotaFromServer()
     }
 
     /// 云端图片操作（AI 生成 / 历史 / 清云端选中）需要有效服务端激活码；本地直传不需要。
     private func refreshSpriteAccessUI() {
         let hasCode = AccessControl.serverActivationCode != nil
+        let quotaExhausted = hasCode && petQuotaRemaining == 0
         petHistoryButton?.isEnabled = hasCode && !petImageBusy
-        aiGenerateAllButton?.isEnabled = hasCode && !petImageBusy
+        aiGenerateAllButton?.isEnabled = hasCode && !petImageBusy && !quotaExhausted
         for state in CatAnimationState.allCases {
             customSpriteButtons[state]?.isEnabled = !petImageBusy
-            spritePreviewButtons[state]?.image = customSpriteImage(for: state)
-            // Mark states whose current image came from a local direct upload.
+            // 预览格可点击切换状态；warn 仅系统触发，置灰不可选
+            spritePreviewButtons[state]?.isEnabled = (state != .warn)
             let hasLocal = CustomSpriteStore.hasLocalImage(for: state)
             customSpriteButtons[state]?.title = hasLocal ? "● 直接上传" : "直接上传"
             customSpriteResetButtons[state]?.isEnabled =
                 !petImageBusy && (hasLocal || CustomSpriteStore.hasCustomImage(for: state))
         }
         if hasCode {
-            spriteDescLabel?.stringValue = "直接上传：本机即时生效；AI 生成：一次生成覆盖全部状态 · 最大 10 MB"
+            spriteDescLabel?.stringValue = "直接上传：本机即时生效；AI 生成：上传一次，逐状态各生成一张 · 最大 10 MB"
             spriteDescLabel?.textColor = .tertiaryLabelColor
+            if !petImageBusy, let remaining = petQuotaRemaining, let limit = petQuotaLimit, limit > 0 {
+                aiStatusLabel?.stringValue = remaining > 0
+                    ? "剩余 AI 生成次数：\(remaining)/\(limit)"
+                    : "AI 生成次数已用完（\(limit)/\(limit)）"
+            }
         } else {
             spriteDescLabel?.stringValue = "直接上传随时可用；AI 生成与历史需服务端激活码（本地快捷码不支持）"
             spriteDescLabel?.textColor = .systemOrange
         }
+    }
+
+    /// 使用当前激活码刷新剩余生成次数；仅在有码且空闲时发起，避免与图片同步互扰。
+    private func refreshQuotaFromServer() {
+        guard AccessControl.serverActivationCode != nil, !petImageBusy else { return }
+        Task { @MainActor [weak self] in
+            guard let self, let library = try? await PetImageService.library() else { return }
+            self.applyQuota(library)
+        }
+    }
+    private func applyQuota(_ library: PetImageLibrary) {
+        petQuotaLimit = library.generationLimit
+        petQuotaRemaining = library.generationRemaining
+        refreshSpriteAccessUI()
     }
 
     private func showSpriteUnlockHint() {
@@ -439,6 +475,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var petHistoryButton: NSButton?
     private weak var aiGenerateAllButton: NSButton?
     private var petImageBusy = false
+    private var petQuotaLimit: Int?
+    private var petQuotaRemaining: Int?
 
     private func runPetOperation(_ operation: @escaping @MainActor () async throws -> Void) {
         guard !petImageBusy else { return }
@@ -486,25 +524,38 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
     }
 
-    /// AI 生成：一张照片经服务端生成动画 GIF，同时覆盖全部 5 个状态（服务端共享图模式）。
+    /// AI 生成：一张照片上传一次，服务端逐状态各生成一张（共 5 张），整批只扣 1 次配额、占 1 个任务槽。
     @objc private func generateAllStatesWithAI(_ sender: Any?) {
         guard AccessControl.serverActivationCode != nil else { showSpriteUnlockHint(); return }
+        if petQuotaRemaining == 0 {
+            aiStatusLabel?.stringValue = "AI 生成次数已用完，请更换激活码或联系管理员"
+            return
+        }
         let panel = NSOpenPanel()
         panel.title = "选择宠物照片"
-        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型提取、美化并生成一张动画 GIF，同时应用到全部 5 个状态（生成姿态为休闲）"
+        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型，为全部 5 个状态各生成一张图片（姿态按状态区分），整批仅消耗 1 次生成配额"
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.beginSheetModal(for: self) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.runPetOperation { [weak self] in
-                let library = try await PetImageService.upload(url, for: nil)
-                guard let item = library.images.first else { throw PetImageService.failure("未返回生成记录") }
-                let finished = try await PetImageService.waitForGeneration(item.id, initial: library) { [weak self] stage in
+                let library = try await PetImageService.uploadAllStates(url)
+                // admit 保证同设备此刻无并发生成，因此刚返回的生成中记录即为本批全部状态。
+                let ids = library.images.filter { $0.isGenerating }.map(\.id)
+                guard !ids.isEmpty else { throw PetImageService.failure("未返回生成记录") }
+                let finished = try await PetImageService.waitForGeneration(ids, initial: library) { [weak self] stage in
                     self?.aiStatusLabel?.stringValue = stage
                 }
                 try await self?.viewModel?.applyPetLibrary(finished)
-                self?.aiStatusLabel?.stringValue = "已生成并应用到全部状态"
+                self?.applyQuota(finished)
+                let succeeded = finished.images.filter { ids.contains($0.id) && $0.isReady }.count
+                let failed = finished.images.filter { ids.contains($0.id) && $0.status == "failed" }.count
+                if failed == 0 {
+                    self?.aiStatusLabel?.stringValue = "已为全部 \(succeeded) 个状态各生成一张并应用"
+                } else {
+                    self?.aiStatusLabel?.stringValue = "已应用 \(succeeded) 个状态，\(failed) 个失败（可在历史图片重试）"
+                }
             }
         }
     }
@@ -534,6 +585,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         runPetOperation { [weak self] in
             let library = try await PetImageService.library()
             guard let self else { return }
+            self.applyQuota(library)
             let alert = NSAlert()
             alert.messageText = "历史宠物图片"
             guard !library.images.isEmpty else {
@@ -767,7 +819,7 @@ let arw = accessRow.bounds.width
         versionDesc.frame = NSRect(x: 14, y: 6, width: 220, height: 15)
         versionRow.addSubview(versionDesc)
 
-        let versionLabel = NSTextField(labelWithString: AppVersion.current)
+        let versionLabel = NSTextField(labelWithString: AppVersion.displayVersion)
         versionLabel.font = .systemFont(ofSize: 12, weight: .medium)
         versionLabel.textColor = .secondaryLabelColor
         versionLabel.alignment = .right
@@ -1440,93 +1492,39 @@ return row
         }
     }
 
-    // MARK: - 状态卡片按钮
+    // MARK: - 状态格（形象切换 + 图片预览）
 
-    private func makeCardButton(frame: NSRect, state: CatAnimationState, emoji: String, subtitle: String) -> NSButton {
-        let btn = NSButton(frame: frame)
-        btn.title = ""
-        btn.target = self
-        btn.action = #selector(stateButtonClicked(_:))
-        btn.tag = state.hashValue
-        btn.setButtonType(.toggle)
-        btn.state = (viewModel?.animationState == state) ? .on : .off
-        btn.isBordered = false
-        btn.wantsLayer = true
-        btn.layer?.cornerRadius = 14
-        btn.layer?.masksToBounds = true
-
-        applyCardStyle(btn, selected: viewModel?.animationState == state)
-
-        // Emoji（居中偏上）
-        let emojiLabel = NSTextField(labelWithString: emoji)
-        emojiLabel.font = .systemFont(ofSize: 36)
-        emojiLabel.alignment = .center
-        emojiLabel.frame = NSRect(x: 0, y: frame.height - 72, width: frame.width, height: 44)
-        emojiLabel.tag = 990
-        btn.addSubview(emojiLabel)
-
-        // 状态名（居中）
-        let label = NSTextField(labelWithString: state.displayName)
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .labelColor
-        label.alignment = .center
-        label.frame = NSRect(x: 0, y: 28, width: frame.width, height: 16)
-        label.tag = 991
-        btn.addSubview(label)
-
-        // 副标题（居中偏下）
-        let subLabel = NSTextField(labelWithString: subtitle)
-        subLabel.font = .systemFont(ofSize: 10)
-        subLabel.textColor = .tertiaryLabelColor
-        subLabel.alignment = .center
-        subLabel.lineBreakMode = .byTruncatingTail
-        subLabel.frame = NSRect(x: 4, y: 10, width: frame.width - 8, height: 14)
-        subLabel.tag = 992
-        btn.addSubview(subLabel)
-
-        return btn
+    /// 状态格点击：切换到该状态并刷新高亮（warn 由系统触发，不可手点）。
+    @objc private func stateTileClicked(_ sender: NSButton) {
+        guard let state = customSpriteState(for: sender), state != .warn else { return }
+        viewModel?.transitionTo(state)
+        refreshStateCards()
     }
 
-    private func applyCardStyle(_ btn: NSButton, selected: Bool) {
-        // 背景
+    /// 状态格选中/可选样式（当前态 accent 描边 + 淡底；warn 不可选时略降不透明度）。
+    private func applyTileStyle(_ btn: NSButton, selected: Bool, switchable: Bool) {
         btn.layer?.backgroundColor = selected
-            ? NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+            ? NSColor.controlAccentColor.withAlphaComponent(0.14).cgColor
             : NSColor(white: 0, alpha: 0.03).cgColor
-        // 边框
         btn.layer?.borderWidth = selected ? 2 : 1
         btn.layer?.borderColor = selected
             ? NSColor.controlAccentColor.cgColor
             : NSColor.separatorColor.withAlphaComponent(0.25).cgColor
-        // 阴影（选中时更明显）
-        btn.layer?.shadowOpacity = selected ? 0.15 : 0
-        btn.layer?.shadowRadius = selected ? 6 : 0
-        btn.layer?.shadowOffset = NSSize(width: 0, height: -2)
-        btn.layer?.shadowColor = NSColor.controlAccentColor.cgColor
-
-        // 状态名颜色
-        if let label = btn.subviews.first(where: { $0.tag == 991 }) as? NSTextField {
-            label.textColor = selected ? .controlAccentColor : .labelColor
-            label.font = selected ? .systemFont(ofSize: 13, weight: .bold) : .systemFont(ofSize: 13, weight: .semibold)
-        }
-        // 副标题颜色
-        if let sub = btn.subviews.first(where: { $0.tag == 992 }) as? NSTextField {
-            sub.textColor = selected ? .controlAccentColor.withAlphaComponent(0.7) : .tertiaryLabelColor
-        }
+        btn.contentTintColor = selected ? .controlAccentColor : .labelColor
+        btn.alphaValue = (switchable || selected) ? 1.0 : 0.65
     }
 
-    @objc private func stateButtonClicked(_ sender: NSButton) {
-        guard let state = stateButtons.first(where: { $0.value == sender })?.key else { return }
-        viewModel?.transitionTo(state)
-        refreshStateCards()
-    }
-    
-    /// 根据 viewModel 当前真实动画状态刷新所有状态卡片的选中样式
+    /// 根据 viewModel 当前真实动画状态刷新所有状态格的选中样式与预览图
     /// （在面板显示时和动画状态变化时调用，保证面板与真实状态同步）
     func refreshStateCards() {
         guard let current = viewModel?.animationState else { return }
-        for (s, btn) in stateButtons {
-            btn.state = (current == s) ? .on : .off
-            applyCardStyle(btn, selected: current == s)
+        for state in CatAnimationState.allCases {
+            guard let tile = spritePreviewButtons[state] else { continue }
+            tile.image = customSpriteImage(for: state)
+            let selected = (current == state)
+            tile.state = selected ? .on : .off
+            tile.title = selected ? "✓ \(state.displayName)" : state.displayName
+            applyTileStyle(tile, selected: selected, switchable: state != .warn)
         }
         // 更新当前状态徽章
         currentStateBadge?.stringValue = "当前状态：\(current.displayName)"

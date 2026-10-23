@@ -389,6 +389,29 @@ func TestPetImageFileLabel(t *testing.T) {
 	if len([]rune(long)) > 40 || strings.ContainsAny(long, "/") || strings.HasPrefix(long, ".") {
 		t.Fatalf("long label unsafe: %q", long)
 	}
+	// The real upload path must actually use the label: files under pet-images/objects are named
+	// "<label>-<suffix>" (generated) and "<label>-original-<suffix>" (source), not opaque hex.
+	svc := newImageTestService(t, t.TempDir())
+	uploaded, err := svc.Upload("device-A", petTestCode, "my cat!!!.png", testImage(t, "png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := uploaded.Images[0]
+	awaitPet(t, svc, "device-A", item.ID)
+	if !strings.HasPrefix(item.ID, "my_cat-") || !strings.HasPrefix(item.SourceID, "my_cat-original-") {
+		t.Fatalf("upload ids not label-prefixed: id=%q source=%q", item.ID, item.SourceID)
+	}
+	if strings.ContainsAny(item.ID+item.SourceID, "/.") {
+		t.Fatalf("unsafe object name: %q / %q", item.ID, item.SourceID)
+	}
+	for _, id := range []string{item.ID, item.SourceID} {
+		if _, err = svc.objects.Get(deviceImageKey("device-A") + "/" + id); err != nil {
+			t.Fatalf("object %q missing after upload: %v", id, err)
+		}
+	}
+	if result, _, err := svc.Read("device-A", item.ID); err != nil || len(result) == 0 {
+		t.Fatalf("label-prefixed result not readable: %v", err)
+	}
 	// The composed object key (device hash + readable id) must still pass the storage validator.
 	objects, err := storage.NewLocalPetImageObjects(filepath.Join(t.TempDir(), "objects"))
 	if err != nil {

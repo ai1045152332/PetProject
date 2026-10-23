@@ -304,28 +304,31 @@ func (s *PetImageService) Upload(device, code, name string, data []byte, states 
 	if all {
 		targetStates = petAllStates
 	}
-	var source [16]byte
+	var source [4]byte
 	if _, err = rand.Read(source[:]); err != nil {
 		<-s.slots
 		return lib, err
 	}
-	sourceID := hex.EncodeToString(source[:])
+	// Object names lead with a sanitized file-name label so files under pet-images/objects are
+	// human-readable; the random suffix keeps them unique and the label never comes from the key.
+	label := petImageFileLabel(name)
+	sourceID := label + "-original-" + hex.EncodeToString(source[:])
 	key := deviceImageKey(device)
 	if err = s.objects.Put(key+"/"+sourceID, data); err != nil {
 		<-s.slots
 		return lib, err
 	}
 	createdAt := time.Now().UTC()
-	label := filepath.Base(name)
+	displayName := filepath.Base(name)
 	batch := make([]PetImage, 0, len(targetStates))
 	for _, st := range targetStates {
-		var id [16]byte
+		var id [4]byte
 		if _, err = rand.Read(id[:]); err != nil {
 			_ = s.objects.Delete(key + "/" + sourceID)
 			<-s.slots
 			return lib, err
 		}
-		batch = append(batch, PetImage{ID: hex.EncodeToString(id[:]), SourceID: sourceID, Name: label, CreatedAt: createdAt, ContentType: petOutputContentType(), Status: "beautifying", PromptVersion: PetPromptVersion, SelectionVersion: lib.selectionVersion(st), State: st})
+		batch = append(batch, PetImage{ID: label + "-" + hex.EncodeToString(id[:]), SourceID: sourceID, Name: displayName, CreatedAt: createdAt, ContentType: petOutputContentType(), Status: "beautifying", PromptVersion: PetPromptVersion, SelectionVersion: lib.selectionVersion(st), State: st})
 	}
 	for _, item := range batch {
 		lib.Images = append([]PetImage{item}, lib.Images...)

@@ -5,11 +5,10 @@
 import SwiftUI
 import AppKit
 
-/// 小猫动画状态
+/// 小猫动画状态（提醒已合并进专注：提醒触发时播放专注动画 + 气泡文案）
 enum CatAnimationState: String, CaseIterable {
     case focus  = "focus"   // 专注
     case idel   = "idel"    // 休闲
-    case warn   = "warn"    // 提醒
     case sleep  = "sleep"   // 睡觉
     case pet    = "pet"     // 抚摸
 
@@ -18,7 +17,6 @@ enum CatAnimationState: String, CaseIterable {
         switch self {
         case .focus: return "专注"
         case .idel:  return "休闲"
-        case .warn:  return "提醒"
         case .sleep: return "睡觉"
         case .pet:   return "抚摸"
         }
@@ -100,14 +98,14 @@ final class PetViewModel: ObservableObject {
 
     /// 空闲进入睡觉的时长（秒）：连续无人互动超过该时长即进入睡觉状态
     static let idleSleepSeconds: TimeInterval = 1800
-    
+
     /// 系统勿扰/专注模式是否开启（决定一次性动画播完后回到哪个基准状态）
     /// true = 专注（勿扰中），false = 休闲
     var systemFocusActive: Bool = false
 
     /// 朝向是否被锁定（喝水提醒期间禁止鼠标翻转）
     private var isFacingLocked: Bool = false
-    
+
     /// 上次喝水提醒时间（防重复弹窗）
     private var lastWaterReminderTime: Date?
     /// 喝水弹窗是否正在显示（未关闭则不弹下一次）
@@ -175,9 +173,15 @@ final class PetViewModel: ObservableObject {
         startDrinkWaterReminder()
         resetIdleSleepTimer()
         startProactiveChat()
+        cloudRestoreObserver = NotificationCenter.default.addObserver(forName: AccessControl.accessLevelChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.restoreCloudPet() }
+        }
+        restoreCloudPet()
     }
     
     deinit {
+        cloudRestoreTask?.cancel()
+        if let cloudRestoreObserver { NotificationCenter.default.removeObserver(cloudRestoreObserver) }
         timers.invalidateAll()
     }
     
@@ -187,7 +191,6 @@ final class PetViewModel: ObservableObject {
     /// 替换资源说明：将透明背景 PNG 放入 Resources/Sprites/，命名规则如下
     ///   focus_0.png ~ focus_N.png
     ///   idel_0.png ~ idel_N.png
-    ///   warn_0.png ~ warn_N.png
     ///   sleep_0.png ~ sleep_N.png
     ///   pet_0.png ~ pet_N.png
     private func loadSpriteSheets() {
@@ -207,35 +210,53 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    func setCustomSprite(_ image: NSImage, for state: CatAnimationState) throws {
-        try CustomSpriteStore.save(image, for: state)
-        installSprite(image, for: state)
-    }
-
-    func resetCustomSprite(for state: CatAnimationState) throws {
-        let url = CustomSpriteStore.url(for: state)
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-        }
-        let sheet = SpriteSheet(state: state)
-        if let sheet {
-            spriteSheets[state] = sheet
-            flippedFrames[state] = sheet.frames.map(Self.mirrorImage)
-        }
+    /// 供设置面板本地直传/清除图片后即时重建素材并刷新宠物窗口
+    @MainActor
+    func reloadSpriteSheets() {
+        loadSpriteSheets()
         spriteRevision += 1
         currentFrameIndex = 0
     }
 
-    private func installSprite(_ image: NSImage, for state: CatAnimationState) {
-        let sheet = SpriteSheet(state: state, image: image)
-        spriteSheets[state] = sheet
-        flippedFrames[state] = sheet.frames.map(Self.mirrorImage)
+    @MainActor
+    func applyPetLibrary(_ library: PetImageLibrary) async throws {
+        // 过滤历史遗留的未知状态键（如已移除的 warn），避免白下载与安装报错
+        let selections = library.selections.filter { CatAnimationState(rawValue: $0.key) != nil }
+        guard !selections.isEmpty else { return }
+        var images: [String: Data] = [:]
+        for id in Set(selections.values) where !id.isEmpty {
+            images[id] = try await PetImageService.image(id)
+        }
+        try Task.checkCancellation()
+        try CustomSpriteStore.installCloudImages(selections: selections, images: images)
+        loadSpriteSheets()
         spriteRevision += 1
-        if animationState == state {
-            currentFrameIndex = 0
+        currentFrameIndex = 0
+    }
+
+    private var cloudRestoreObserver: NSObjectProtocol?
+    private var cloudRestoreTask: Task<Void, Never>?
+
+    func cancelCloudRestore() { cloudRestoreTask?.cancel() }
+
+    func restoreCloudPet() {
+        cloudRestoreTask?.cancel()
+        cloudRestoreTask = Task { @MainActor [weak self] in
+            guard AccessControl.serverActivationCode != nil else { return }
+            do {
+                let library = try await PetImageService.library()
+                try Task.checkCancellation()
+                try await self?.applyPetLibrary(library)
+                if let pending = library.images.first(where: { $0.isGenerating }) {
+                    let finished = try await PetImageService.waitForGeneration(pending.id, initial: library)
+                    try await self?.applyPetLibrary(finished)
+                }
+            } catch {
+                FileLogger.log("[PetImages] 恢复失败，保留离线缓存: \(error.localizedDescription)")
+            }
         }
     }
-    
+
     /// 生成水平镜像图片（一次性预渲染，避免运行期翻转绘制）
     /// 使用 CoreGraphics 字节级镜像，最稳定可靠
     private static func mirrorImage(_ image: NSImage) -> NSImage {
@@ -277,12 +298,21 @@ final class PetViewModel: ObservableObject {
         }
     }
     
+    private var frameElapsed: TimeInterval = 0
+    private var lastFrameTimestamp: TimeInterval = 0
+
     private func advanceFrame() {
         guard let sheet = spriteSheets[animationState] else { return }
         
+        let now = Date.timeIntervalSinceReferenceDate
+        frameElapsed += lastFrameTimestamp == 0 ? frameRate : min(0.25, now - lastFrameTimestamp)
+        lastFrameTimestamp = now
+        let duration = sheet.frameDurations.indices.contains(currentFrameIndex) ? sheet.frameDurations[currentFrameIndex] : frameRate
+        guard frameElapsed >= duration else { return }
+        frameElapsed -= duration
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
-        // 一次性动画（pet / warn 等）多帧素材播完自动切回基准状态：
+        // 一次性动画（pet / 提醒用的专注等）多帧素材播完自动切回基准状态：
         // 系统勿扰开启时回专注，否则回休闲（单帧素材由 oneShotTimer 负责回退，这里不处理）
         if isPlayingOneShot && sheet.frameCount > 1 && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
             isPlayingOneShot = false
@@ -315,8 +345,8 @@ final class PetViewModel: ObservableObject {
         }
         
         FileLogger.log("[DesktopPet] performRandomBehavior triggered, currentState=\(animationState.displayName)")
-        // 每 30 分钟自动提醒一下，提醒完后不自动回 focus，等用户点击
-        playOneShot(.warn)
+        // 每 30 分钟自动提醒一下：播放一段专注动画唤起注意（提醒状态已合并进专注）
+        playOneShot(.focus)
         
         scheduleNextBehavior()
     }
@@ -346,7 +376,7 @@ final class PetViewModel: ObservableObject {
         // currentFrameImage 由计算属性根据当前 orientation 自动提供
         FileLogger.log("[DesktopPet] playOneShot(\(state.displayName), frameCount=\(spriteSheets[state]?.frameCount ?? 0), hasImage=\(currentFrameImage != nil))")
         onStateChanged?(state)
-    
+
         // 单帧素材没有可推进的帧序列，用定时器等价"播完"后回到基准状态
         if spriteSheets[state]?.frameCount ?? 0 <= 1 {
             timers.schedule(name: TimerName.oneShot, interval: hold, repeats: false) { [weak self] in
@@ -400,10 +430,10 @@ final class PetViewModel: ObservableObject {
         }
     }
     
-    /// 左键点击：提醒动画
+    /// 左键点击：专注动画唤起注意（原提醒动画已合并进专注）
     func handleLeftClick() {
         guard !isPlayingOneShot else { return }
-        playOneShot(.warn)
+        playOneShot(.focus)
     }
     
     /// 右键点击：弹出菜单
@@ -416,11 +446,11 @@ final class PetViewModel: ObservableObject {
     
     func pet() {
         showContextMenu = false
-        // 抚摸：有 pet 素材（单帧也算有效）就播放抚摸动画，缺失才回退到提醒
+        // 抚摸：有 pet 素材（单帧也算有效）就播放抚摸动画，缺失才回退到专注动画
         if spriteSheets[.pet] != nil {
             playOneShot(.pet)
         } else {
-            playOneShot(.warn)
+            playOneShot(.focus)
         }
     }
     
@@ -487,7 +517,8 @@ final class PetViewModel: ObservableObject {
         lastWaterReminderTime = Date()
         isFacingLocked = true
         facing = .right
-        playOneShot(.warn)
+        // 提醒表现：播放专注动画 + 喝水弹窗气泡（原 warn 状态已合并进专注）
+        playOneShot(.focus)
         onDrinkWaterReminder?()
     }
     

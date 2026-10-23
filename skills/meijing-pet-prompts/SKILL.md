@@ -1,13 +1,13 @@
 ---
 name: meijing-pet-prompts
-description: 用美境 AI 设计师（gpt-image-2.5-sunburst-vision）为桌面宠物生成 5 状态单帧姿态图（idel/sleep/warn/pet/focus）的 prompt 模板与踩坑要点。当用户要求换宠物形象、新增状态、重生成素材时使用。生成后需手动处理抠图与尺寸统一到 200×200 透明画布。
+description: 用美境 AI 设计师（gpt-image-2.5-sunburst-vision）为桌面宠物生成 4 状态单帧姿态图（idel/sleep/pet/focus，原 warn 已合并进 focus）的 prompt 模板与踩坑要点。当用户要求换宠物形象、新增状态、重生成素材时使用。生成后需手动处理抠图与尺寸统一到 200×200 透明画布。
 metadata:
   short-description: Meijing AI prompts for pet sprite generation
 ---
 
 # 美境宠物姿态素材 Prompt 存档
 
-为 `DesktopPetForMacApp` 生成 5 个状态的宠物姿态图。**每状态只做 1 帧静态图**，呼吸、状态切换等动画交给 App 渲染层实现，**不再让 AI 逐帧生成多帧动画**。
+为 `DesktopPetForMacApp` 生成 4 个状态的宠物姿态图（提醒 warn 已合并进专注，不再生成）。**每状态只做 1 帧静态图**，呼吸、状态切换等动画交给 App 渲染层实现，**不再让 AI 逐帧生成多帧动画**。
 
 ## 核心策略
 
@@ -45,4 +45,4 @@ metadata:
 
 ## 完整 prompt 存档
 
-五个状态的组装好 prompt 全文见 [references/prompts.md](references/prompts.md)。
+四个状态的组装好 prompt 全文见 [references/prompts.md](references/prompts.md)。

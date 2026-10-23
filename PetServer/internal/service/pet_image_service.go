@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 const MaxPetImageBytes = 10 << 20
@@ -45,8 +46,9 @@ type PetImageLibrary struct {
 	CurrentID         string            `json:"currentId"`
 	Images            []PetImage        `json:"images"`
 	SelectionVersion  int               `json:"selectionVersion,omitempty"`
-	GenerationDay     string            `json:"generationDay,omitempty"`
-	GenerationCount   int               `json:"generationCount,omitempty"`
+	// Lifetime generation quota measured per activation code, shared across every bound device.
+	GenerationLimit     int `json:"generationLimit,omitempty"`
+	GenerationRemaining int `json:"generationRemaining,omitempty"`
 }
 type PetImageService struct {
 	mu        sync.Mutex
@@ -57,6 +59,10 @@ type PetImageService struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	workers   sync.WaitGroup
+	codeQuota int
+	// quotaFor resolves the per-code lifetime image-generation limit from the activation code.
+	// When nil (tests / unwired), the service falls back to the static codeQuota field.
+	quotaFor func(code string) int
 }
 
 func NewPetImageService(root string, objects storage.PetImageObjects) (*PetImageService, error) {
@@ -64,7 +70,7 @@ func NewPetImageService(root string, objects storage.PetImageObjects) (*PetImage
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &PetImageService{root: root, objects: objects, slots: make(chan struct{}, 2), ctx: ctx, cancel: cancel}
+	s := &PetImageService{root: root, objects: objects, slots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, codeQuota: 0}
 	// Do not silently repeat billed OpenRouter calls after a restart. Keep originals for explicit retry.
 	files, err := os.ReadDir(root)
 	if err != nil {
@@ -102,6 +108,40 @@ func deviceImageKey(device string) string {
 	sum := sha256.Sum256([]byte(device))
 	return hex.EncodeToString(sum[:])
 }
+
+// petImageFileLabel turns a client-supplied file name into a readable yet object-key-safe label:
+// the extension is dropped, path separators and leading dots can never leak, whitespace collapses
+// to a single underscore, and the result is length-capped. Falls back to "pet" when nothing remains.
+func petImageFileLabel(name string) string {
+	base := filepath.Base(name)
+	if ext := filepath.Ext(base); ext != "" {
+		base = strings.TrimSuffix(base, ext)
+	}
+	var sb strings.Builder
+	pendingSpace := false
+	for _, r := range base {
+		if unicode.IsSpace(r) {
+			pendingSpace = true
+			continue
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			continue
+		}
+		if pendingSpace && sb.Len() > 0 {
+			sb.WriteRune('_')
+		}
+		pendingSpace = false
+		sb.WriteRune(r)
+	}
+	label := sb.String()
+	if label == "" {
+		return "pet"
+	}
+	if runes := []rune(label); len(runes) > 40 {
+		label = string(runes[:40])
+	}
+	return label
+}
 func (s *PetImageService) load(device string) (PetImageLibrary, error) {
 	return s.loadKey(deviceImageKey(device))
 }
@@ -127,15 +167,115 @@ func (s *PetImageService) saveKey(key string, lib PetImageLibrary) error {
 	}
 	return storage.AtomicPetWrite(filepath.Join(s.root, key+".json"), data)
 }
-func (s *PetImageService) List(device string) (PetImageLibrary, error) {
+func storagePath(root, name string) string { return filepath.Join(root, name+".json") }
+
+// petCodeQuota is the lifetime generation ledger for one activation code, summed across every
+// device bound to it. Counting by code (not device) stops resets from re-binding or reinstalling.
+type petCodeQuota struct {
+	Used int `json:"used"`
+}
+
+// SetImageQuotaResolver wires the per-code limit lookup (backed by the activation store). Once set,
+// every admission and remaining-count check uses the code's own configured total instead of the
+// static default, so "no times by default" is enforced for codes that were never granted a quota.
+func (s *PetImageService) SetImageQuotaResolver(fn func(code string) int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.load(device)
+	s.quotaFor = fn
 }
-func (s *PetImageService) Upload(device, name string, data []byte, states ...string) (PetImageLibrary, error) {
-	state, err := petTargetState(states)
+
+// limitForCode returns the effective lifetime image-generation limit for a code: the resolver's
+// per-code value when wired, otherwise the static codeQuota field (tests / unwired fallback).
+func (s *PetImageService) limitForCode(code string) int {
+	if s.quotaFor != nil {
+		return s.quotaFor(code)
+	}
+	return s.codeQuota
+}
+func codeQuotaKey(code string) string {
+	sum := sha256.Sum256([]byte(normalizeCode(code)))
+	return "quota-" + hex.EncodeToString(sum[:])
+}
+func (s *PetImageService) loadQuota(code string) (petCodeQuota, error) {
+	var quota petCodeQuota
+	data, err := os.ReadFile(storagePath(s.root, codeQuotaKey(code)))
+	if os.IsNotExist(err) {
+		return quota, nil
+	}
 	if err != nil {
-		return PetImageLibrary{}, err
+		return quota, err
+	}
+	err = json.Unmarshal(data, &quota)
+	return quota, err
+}
+func (s *PetImageService) saveQuota(code string, quota petCodeQuota) error {
+	data, err := json.Marshal(quota)
+	if err != nil {
+		return err
+	}
+	return storage.AtomicPetWrite(storagePath(s.root, codeQuotaKey(code)), data)
+}
+
+// withQuota annotates a library with the code's remaining budget for client display. It is set on
+// the returned value only, never persisted into the per-device history file.
+func (s *PetImageService) withQuota(lib PetImageLibrary, code string) PetImageLibrary {
+	quota, err := s.loadQuota(code)
+	if err != nil {
+		return lib
+	}
+	limit := s.limitForCode(code)
+	remaining := limit - quota.Used
+	if remaining < 0 {
+		remaining = 0
+	}
+	lib.GenerationLimit = limit
+	lib.GenerationRemaining = remaining
+	return lib
+}
+// petAllStates are the four states generated together when the client uploads with "all".
+// The legacy "warn" state was merged into "focus" and is no longer accepted for new uploads.
+var petAllStates = []string{"focus", "idel", "sleep", "pet"}
+
+// petOutputContentType reflects the generation pipeline that actually runs.
+func petOutputContentType() string {
+	if petFrameModeAnimated {
+		return "image/gif"
+	}
+	return "image/png"
+}
+
+// petValidateGenerated accepts the output according to the active frame mode: a multi-frame GIF when
+// animation is enabled, otherwise any decodable single-frame image (the transparent portrait PNG).
+func petValidateGenerated(output []byte) error {
+	if petFrameModeAnimated {
+		animation, err := gif.DecodeAll(bytes.NewReader(output))
+		if err != nil {
+			return err
+		}
+		if len(animation.Image) < 2 {
+			return errors.New("生成结果不是多帧 GIF")
+		}
+		return nil
+	}
+	if _, _, err := image.Decode(bytes.NewReader(output)); err != nil {
+		return errors.New("生成结果不是有效图片")
+	}
+	return nil
+}
+func (s *PetImageService) List(device, code string) (PetImageLibrary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lib, err := s.load(device)
+	return s.withQuota(lib, code), err
+}
+func (s *PetImageService) Upload(device, code, name string, data []byte, states ...string) (PetImageLibrary, error) {
+	all := len(states) > 0 && states[0] == "all"
+	state := ""
+	if !all {
+		var err error
+		if state, err = petTargetState(states); err != nil {
+			return PetImageLibrary{}, err
+		}
 	}
 	if len(data) == 0 || len(data) > MaxPetImageBytes {
 		return PetImageLibrary{}, fmt.Errorf("图片不得超过 10 MB")
@@ -156,36 +296,59 @@ func (s *PetImageService) Upload(device, name string, data []byte, states ...str
 	if err != nil {
 		return lib, err
 	}
-	if err = s.admit(&lib); err != nil {
+	// One upload — whether a single state or the whole set — charges a single quota unit and holds one slot.
+	if err = s.admit(&lib, code); err != nil {
 		return lib, err
 	}
-	var id, source [16]byte
-	if _, err = rand.Read(id[:]); err != nil {
-		<-s.slots
-		return lib, err
+	targetStates := []string{state}
+	if all {
+		targetStates = petAllStates
 	}
+	var source [4]byte
 	if _, err = rand.Read(source[:]); err != nil {
 		<-s.slots
 		return lib, err
 	}
-	item := PetImage{ID: hex.EncodeToString(id[:]), SourceID: hex.EncodeToString(source[:]), Name: filepath.Base(name), CreatedAt: time.Now().UTC(), ContentType: "image/gif", Status: "beautifying", PromptVersion: PetPromptVersion, SelectionVersion: lib.selectionVersion(state), State: state}
+	// Object names lead with a sanitized file-name label so files under pet-images/objects are
+	// human-readable; the random suffix keeps them unique and the label never comes from the key.
+	label := petImageFileLabel(name)
+	sourceID := label + "-original-" + hex.EncodeToString(source[:])
 	key := deviceImageKey(device)
-	if err = s.objects.Put(key+"/"+item.SourceID, data); err != nil {
+	if err = s.objects.Put(key+"/"+sourceID, data); err != nil {
 		<-s.slots
 		return lib, err
 	}
-	lib.Images = append([]PetImage{item}, lib.Images...)
+	createdAt := time.Now().UTC()
+	displayName := filepath.Base(name)
+	batch := make([]PetImage, 0, len(targetStates))
+	for _, st := range targetStates {
+		var id [4]byte
+		if _, err = rand.Read(id[:]); err != nil {
+			_ = s.objects.Delete(key + "/" + sourceID)
+			<-s.slots
+			return lib, err
+		}
+		batch = append(batch, PetImage{ID: label + "-" + hex.EncodeToString(id[:]), SourceID: sourceID, Name: displayName, CreatedAt: createdAt, ContentType: petOutputContentType(), Status: "beautifying", PromptVersion: PetPromptVersion, SelectionVersion: lib.selectionVersion(st), State: st})
+	}
+	for _, item := range batch {
+		lib.Images = append([]PetImage{item}, lib.Images...)
+	}
 	if err = s.save(device, lib); err != nil {
-		_ = s.objects.Delete(key + "/" + item.SourceID)
+		_ = s.objects.Delete(key + "/" + sourceID)
 		<-s.slots
 		return PetImageLibrary{}, err
 	}
-	s.launch(key, item)
-	return lib, nil
+	if all {
+		s.launchBatch(key, batch)
+	} else {
+		s.launch(key, batch[0])
+	}
+	return s.withQuota(lib, code), nil
 }
 
 var ErrPetGenerationDisabled = errors.New("服务端尚未配置 OPENROUTER_API_KEY，无法生成宠物动画")
 var ErrPetGenerationBusy = errors.New("生成任务繁忙，请稍后重试")
+var ErrPetQuotaExhausted = errors.New("该激活码的 AI 生成次数已用完")
 
 func petGenerating(status string) bool {
 	return status == "beautifying" || status == "animating" || status == "encoding"
@@ -197,7 +360,7 @@ func (s *PetImageService) SetGenerator(generator PetImageGenerator) {
 	s.generator = generator
 }
 func (s *PetImageService) Close() { s.cancel(); s.workers.Wait() }
-func (s *PetImageService) admit(lib *PetImageLibrary) error {
+func (s *PetImageService) admit(lib *PetImageLibrary, code string) error {
 	if s.generator == nil {
 		return ErrPetGenerationDisabled
 	}
@@ -209,23 +372,29 @@ func (s *PetImageService) admit(lib *PetImageLibrary) error {
 			return ErrPetGenerationBusy
 		}
 	}
-	day := time.Now().UTC().Format("2006-01-02")
-	if lib.GenerationDay != day {
-		lib.GenerationDay = day
-		lib.GenerationCount = 0
+	// Lifetime quota is charged at submit time; a later generation failure is not refunded, so a
+	// code can never spend more than its configured total even with retries.
+	quota, err := s.loadQuota(code)
+	if err != nil {
+		return err
 	}
-	if lib.GenerationCount >= 10 {
-		return errors.New("此设备今日已生成 10 次，请明天再试")
+	limit := s.limitForCode(code)
+	if quota.Used >= limit {
+		return fmt.Errorf("该激活码累计已生成 %d 次，已达上限 %d 次：%w", quota.Used, limit, ErrPetQuotaExhausted)
 	}
 	select {
 	case s.slots <- struct{}{}:
-		lib.GenerationCount++
+		quota.Used++
+		if err := s.saveQuota(code, quota); err != nil {
+			<-s.slots
+			return err
+		}
 		return nil
 	default:
 		return ErrPetGenerationBusy
 	}
 }
-func (s *PetImageService) Retry(device, id string, states ...string) (PetImageLibrary, error) {
+func (s *PetImageService) Retry(device, code, id string, states ...string) (PetImageLibrary, error) {
 	state, stateErr := petTargetState(states)
 	if stateErr != nil {
 		return PetImageLibrary{}, stateErr
@@ -250,7 +419,7 @@ func (s *PetImageService) Retry(device, id string, states ...string) (PetImageLi
 		if item.Status != "failed" || item.SourceID == "" {
 			return lib, errors.New("仅可重试生成失败的图片")
 		}
-		if err = s.admit(&lib); err != nil {
+		if err = s.admit(&lib, code); err != nil {
 			return lib, err
 		}
 		item.State = state
@@ -263,9 +432,70 @@ func (s *PetImageService) Retry(device, id string, states ...string) (PetImageLi
 			return lib, err
 		}
 		s.launch(deviceImageKey(device), *item)
-		return lib, nil
+		return s.withQuota(lib, code), nil
 	}
 	return lib, os.ErrNotExist
+}
+// runOne generates a single image and persists its result. Slot acquisition/release and worker
+// accounting are the caller's responsibility. Validation follows the active frame mode: a
+// multi-frame GIF when animation is enabled, otherwise any decodable single-frame image.
+func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGenerator) {
+	ctx, cancel := context.WithTimeout(s.ctx, 9*time.Minute)
+	defer cancel()
+	progress := func(stage string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		lib, err := s.loadKey(key)
+		if err != nil {
+			return
+		}
+		for i := range lib.Images {
+			if lib.Images[i].ID == item.ID {
+				lib.Images[i].Status = stage
+			}
+		}
+		if err = s.saveKey(key, lib); err != nil {
+			log.Printf("[pet-images] progress persistence failed: %v", err)
+		}
+	}
+	source, err := s.objects.Get(key + "/" + item.SourceID)
+	var output []byte
+	if err == nil {
+		output, err = generator.Generate(ctx, source, item.State, progress)
+	}
+	if err == nil {
+		err = petValidateGenerated(output)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lib, loadErr := s.loadKey(key)
+	if loadErr != nil {
+		log.Printf("[pet-images] result persistence failed: %v", loadErr)
+		return
+	}
+	for i := range lib.Images {
+		if lib.Images[i].ID != item.ID {
+			continue
+		}
+		if err == nil {
+			err = s.objects.Put(key+"/"+item.ID, output)
+		}
+		if err != nil {
+			lib.Images[i].Status = "failed"
+			lib.Images[i].Error = err.Error()
+		} else {
+			lib.Images[i].Status = "ready"
+			lib.Images[i].Error = ""
+			// A manual selection/reset during generation takes precedence over automatic replacement.
+			if lib.selectionVersion(item.State) == item.SelectionVersion {
+				lib.selectImage(item.State, item.ID)
+			}
+		}
+		if saveErr := s.saveKey(key, lib); saveErr != nil {
+			log.Printf("[pet-images] result persistence failed: %v", saveErr)
+		}
+		return
+	}
 }
 func (s *PetImageService) launch(key string, item PetImage) {
 	generator := s.generator
@@ -273,65 +503,21 @@ func (s *PetImageService) launch(key string, item PetImage) {
 	go func() {
 		defer s.workers.Done()
 		defer func() { <-s.slots }()
-		ctx, cancel := context.WithTimeout(s.ctx, 9*time.Minute)
-		defer cancel()
-		progress := func(stage string) {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			lib, err := s.loadKey(key)
-			if err != nil {
-				return
-			}
-			for i := range lib.Images {
-				if lib.Images[i].ID == item.ID {
-					lib.Images[i].Status = stage
-				}
-			}
-			if err = s.saveKey(key, lib); err != nil {
-				log.Printf("[pet-images] progress persistence failed: %v", err)
-			}
-		}
-		source, err := s.objects.Get(key + "/" + item.SourceID)
-		var output []byte
-		if err == nil {
-			output, err = generator.Generate(ctx, source, item.State, progress)
-		}
-		if err == nil {
-			var animation *gif.GIF
-			animation, err = gif.DecodeAll(bytes.NewReader(output))
-			if err == nil && len(animation.Image) < 2 {
-				err = errors.New("生成结果不是多帧 GIF")
-			}
-		}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		lib, loadErr := s.loadKey(key)
-		if loadErr != nil {
-			log.Printf("[pet-images] result persistence failed: %v", loadErr)
-			return
-		}
-		for i := range lib.Images {
-			if lib.Images[i].ID != item.ID {
-				continue
-			}
-			if err == nil {
-				err = s.objects.Put(key+"/"+item.ID, output)
-			}
-			if err != nil {
-				lib.Images[i].Status = "failed"
-				lib.Images[i].Error = err.Error()
-			} else {
-				lib.Images[i].Status = "ready"
-				lib.Images[i].Error = ""
-				// A manual selection/reset during generation takes precedence over automatic replacement.
-				if lib.selectionVersion(item.State) == item.SelectionVersion {
-					lib.selectImage(item.State, item.ID)
-				}
-			}
-			if saveErr := s.saveKey(key, lib); saveErr != nil {
-				log.Printf("[pet-images] result persistence failed: %v", saveErr)
-			}
-			return
+		s.runOne(key, item, generator)
+	}()
+}
+
+// launchBatch generates every queued item sequentially inside a single worker, so one "all" upload
+// holds exactly one slot and charges one quota unit. A per-state failure is recorded on that item
+// and never aborts the remaining states.
+func (s *PetImageService) launchBatch(key string, batch []PetImage) {
+	generator := s.generator
+	s.workers.Add(1)
+	go func() {
+		defer s.workers.Done()
+		defer func() { <-s.slots }()
+		for _, item := range batch {
+			s.runOne(key, item, generator)
 		}
 	}()
 }
@@ -381,7 +567,7 @@ func petTargetState(states []string) (string, error) {
 		return "", nil
 	}
 	switch states[0] {
-	case "focus", "idel", "warn", "sleep", "pet":
+	case "focus", "idel", "sleep", "pet":
 		return states[0], nil
 	}
 	return "", errors.New("无效的宠物状态")

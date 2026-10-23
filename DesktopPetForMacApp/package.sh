@@ -97,6 +97,10 @@ cp "$PROJECT_DIR/DesktopPetForMacApp/Info.plist" "$CONTENTS/Info.plist"
 # 版本号统一取自 AppVersion.swift（避免代码内版本与 Info.plist 不一致）
 APPVER=$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' "$PROJECT_DIR/DesktopPetForMacApp/App/AppVersion.swift" | head -1)
 if [ -n "$APPVER" ]; then
+    # 本地打包追加 test 标识，便于与线上发布包区分；发布模式（SKIP_DESKTOP_COPY=1）保持干净版本号
+    if [ "${SKIP_DESKTOP_COPY:-0}" != "1" ] && [[ "$APPVER" != *test ]]; then
+        APPVER="${APPVER}test"
+    fi
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APPVER#v}" "$CONTENTS/Info.plist"
     echo "🏷️   版本号: $APPVER"
 fi

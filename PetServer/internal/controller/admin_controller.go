@@ -46,6 +46,7 @@ type GenerateCodesRequest struct {
 	Count      int    `json:"count"`      // 生成数量（1~100）
 	MaxDevices int    `json:"maxDevices"` // 每码最多绑定设备数（1~10，默认 3）
 	ValidDays  int    `json:"validDays"`  // 有效期天数（0 = 永久，上限 3650）
+	ImageQuota int    `json:"imageQuota"` // 每码 AI 生图总次数（默认 0 = 未开通，可后台随时改）
 	Note       string `json:"note"`       // 备注（购买渠道/买家等）
 }
 
@@ -79,8 +80,12 @@ func (c *AdminController) GenerateCodes(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "validDays must be 0~3650 (0 = permanent)"})
 		return
 	}
+	if req.ImageQuota < 0 || req.ImageQuota > 100000 {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "imageQuota must be 0~100000 (0 = 未开通)"})
+		return
+	}
 
-	codes, err := c.accessSvc.Generate(req.Count, req.MaxDevices, req.ValidDays, req.Note)
+	codes, err := c.accessSvc.Generate(req.Count, req.MaxDevices, req.ValidDays, req.ImageQuota, req.Note)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "generate failed: " + err.Error()})
 		return
@@ -178,6 +183,49 @@ func (c *AdminController) DeleteCodes(w http.ResponseWriter, r *http.Request) {
 	found, err := c.accessSvc.Delete(req.Code)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "delete failed: " + err.Error()})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, Response{Code: 404, Msg: "code not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// SetCodeQuotaRequest 设置激活码 AI 生图总次数请求
+type SetCodeQuotaRequest struct {
+	Code       string `json:"code"`       // 激活码
+	ImageQuota int    `json:"imageQuota"` // 新的总次数上限（绝对值，0~100000）
+}
+
+// SetCodeQuota 处理 POST /api/admin/codes/quota：设置（覆盖）某码的 AI 生图总次数
+func (c *AdminController) SetCodeQuota(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+
+	var req SetCodeQuotaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "invalid json: " + err.Error()})
+		return
+	}
+	if req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "missing field: code"})
+		return
+	}
+	if req.ImageQuota < 0 || req.ImageQuota > 100000 {
+		writeJSON(w, http.StatusBadRequest, Response{Code: 400, Msg: "imageQuota must be 0~100000"})
+		return
+	}
+
+	found, err := c.accessSvc.SetImageQuota(req.Code, req.ImageQuota)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "set quota failed: " + err.Error()})
 		return
 	}
 	if !found {

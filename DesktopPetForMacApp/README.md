@@ -114,7 +114,6 @@ DesktopPetForMacApp/
         └── Sprites/                       # 动画帧资源（按状态分目录）
             ├── focus/                     # 专注（15 帧）
             ├── idel/                      # 休闲（1 帧，预留）
-            ├── warn/                      # 提醒（1 帧）
             ├── sleep/                     # 睡觉（无资源，回退占位图）
             └── pet/                       # 抚摸（23 帧）
 ```
@@ -143,7 +142,7 @@ DesktopPetForMacApp/
 - **窗口机制**：`FloatingPanel`（无边框 `NSWindow`，`canBecomeKey/canBecomeMain = false`），`level = .popUpMenu` 保证始终置顶，`collectionBehavior` 支持跨桌面与全屏共存。
 - **渲染方式**：纯 AppKit `draw(_:)` 绘制。曾尝试 CALayer / NSImageView 子视图方案，均出现"鼠标悬停小猫消失"问题，最终回归最稳定的 `image.draw(in: bounds)` 逐帧绘制，通过 12 FPS Timer 驱动 `needsDisplay`。
 - **朝向处理**："看向鼠标"朝向跟随（镜像翻转）是历史消失 bug 的元凶，**已移除**，小猫固定朝右显示。
-- **动画调度**：`PetViewModel` 内置 12 FPS 帧循环 Timer + 行为调度 Timer；`pet`（抚摸）为一次性动画播完自动回 `focus`，`warn`（提醒）保持直到用户点击。
+- **动画调度**：`PetViewModel` 内置 12 FPS 帧循环 Timer + 行为调度 Timer；`pet`（抚摸）为一次性动画播完自动回基准状态；提醒已合并进 `focus`（专注），触发时播放一段专注动画唤起注意。
 - **弹窗体系**：统一走 `HTMLAlertWindow`（WKWebView），支持内容自适应高度、输入模式、Todo 增删模式，避免手写复杂 NSView 布局。
 - **网络层**：`NetworkClient` 基于 URLSession + Semaphore 做同步桥接，统一超时与 UA 设置，服务层在后台队列调用、主队列刷新 UI。
 
@@ -153,11 +152,12 @@ DesktopPetForMacApp/
 
 | 状态 | 目录 | 帧数 | 触发方式 | 播放类型 |
 |------|------|------|----------|----------|
-| 专注 focus | `Sprites/focus/` | 15 | 默认状态；从 warn / pet / sleep 返回 | 循环 |
+| 专注 focus | `Sprites/focus/` | 15 | 默认状态；从 pet / sleep 返回，提醒触发时也播放专注动画 | 循环 |
 | 休闲 idel | `Sprites/idel/` | 1 | 设置面板切换（预留动画位） | 循环 |
-| 提醒 warn | `Sprites/warn/` | 1 | 左键点击 / 每 30 分钟自动 / 喝水提醒 | 保持，点击后回 focus |
 | 睡觉 sleep | `Sprites/sleep/`（缺） | 1（占位图） | 设置面板切换 | 保持直到手动切回 |
 | 抚摸 pet | `Sprites/pet/` | 23 | 右键菜单 → 抚摸 | 播完自动回 focus |
+
+> 原「提醒 warn」状态已合并进专注：提醒触发时播放一段专注动画 + 气泡文案，不再生成/上传 warn 图片。
 
 ---
 
@@ -165,7 +165,7 @@ DesktopPetForMacApp/
 
 | 操作 | 行为 |
 |------|------|
-| 左键点击小猫 | 播放提醒（warn）动画，再次点击回到专注 |
+| 左键点击小猫 | 播放专注动画唤起注意，再次点击回到专注 |
 | 双击小猫 | 打开 Todo 清单弹窗 |
 | 按住拖拽 | 移动小猫位置 |
 | 右键小猫 | 弹出菜单：抚摸 / 今日热点新闻 / 查询天气 / 输入地点查天气 / Todo 清单 / 输入股票代码查询 / 关闭 |
@@ -179,7 +179,7 @@ DesktopPetForMacApp/
 - **天气**：和风天气 API。首次定位成功后缓存经纬度；支持输入城市名查询。弹窗展示当前温度、天气描述、逐 6 小时温度、未来 7 天温度条（≥30°C 红色渐变）。
 - **股票**：腾讯行情接口（`qt.gtimg.cn`，GB18030 编码）。代码自动规范化（`600000 → sh600000`、`000001 → sz000001` 等），支持 sh/sz/bj/hk 前缀；A 股红涨绿跌。
 - **热点新闻**：今日头条热榜 Top10，接口失败自动切换百度热搜兜底；标题可点击跳转。
-- **喝水提醒**：启动后等待下一个整点 / 半点触发，之后每 30 分钟一次；弹窗未关闭时不重复提醒，并播放 warn 动画。
+- **喝水提醒**：启动后等待下一个整点 / 半点触发，之后每 30 分钟一次；弹窗未关闭时不重复提醒，并播放专注动画（提醒已合并进专注）。
 - **Todo / 股票历史**：均持久化在 UserDefaults，Todo 支持增删，股票历史保留最近 10 条可点击回填。
 
 ---
@@ -192,7 +192,6 @@ DesktopPetForMacApp/
 Resources/Sprites/
 ├── focus/    专注动画帧（focus_0.png ~ focus_N.png，或任意命名的 PNG）
 ├── idel/     休闲动画帧
-├── warn/     提醒动画帧
 ├── sleep/    睡觉动画帧
 └── pet/      抚摸动画帧
 ```
@@ -247,3 +246,11 @@ xattr -cr "/Applications/DesktopPetForMacApp.app"
 ## License
 
 MIT License — 可自由修改和分发。
+
+## AI 自定义宠物
+
+沿用设置「宠物信息 → 自定义状态图片」中的四个状态上传按钮，支持 PNG/JPEG（最大 10 MiB、4000 万像素）。照片上传服务器后通过 OpenRouter 发送至 Seedream 图片模型，提取宠物并轻度卡通美化，生成待机动画帧并合成透明循环 GIF，仅应用于点击的对应状态。界面显示生成阶段，完成前保持原来的宠物；失败可在历史图片中先选择对应状态，再选择该记录并点击「重试生成」。
+
+需要有效服务端激活码，本地快捷码不支持。历史按状态筛选，恢复默认仅影响对应状态并保留历史。原有本地状态图片继续可读。重装应用后，同设备重新激活即可恢复当前图片、历史和进行中的任务。当前 GIF 带帧时长缓存到本地，离线仍可播放；旧版静态缓存继续支持。
+
+服务端须配置 `OPENROUTER_API_KEY`，可选 `PETSERVER_OPENROUTER_IMAGE_MODEL`（默认 `bytedance-seed/seedream-4.5`），密钥不放入客户端。详见 `PetServer/README.md` 和 `PetServer/docs/API.md`。客户端测试：`swift test --disable-sandbox`。

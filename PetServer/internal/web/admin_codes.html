@@ -62,11 +62,16 @@
                       <input type="number" id="validDays" class="form-control" value="0" min="0" max="3650" />
                       <div class="form-hint">0 = 永久有效</div>
                     </div>
-                    <div class="col-6 col-md-3">
+                    <div class="col-6 col-md-2">
+                      <label class="form-label">AI 生图次数</label>
+                      <input type="number" id="imageQuota" class="form-control" value="0" min="0" max="100000" />
+                      <div class="form-hint">0 = 未开通</div>
+                    </div>
+                    <div class="col-6 col-md-2">
                       <label class="form-label">备注</label>
                       <input type="text" id="note" class="form-control" placeholder="如：面包多订单" />
                     </div>
-                    <div class="col-12 col-md-3 d-flex align-items-start pt-4">
+                    <div class="col-6 col-md-2 d-flex align-items-start pt-4">
                       <button class="btn btn-primary w-100" onclick="generate()">生成</button>
                     </div>
                   </div>
@@ -87,6 +92,7 @@
                       <tr>
                         <th>激活码</th>
                         <th>设备绑定</th>
+                        <th>AI 生图</th>
                         <th>备注</th>
                         <th>生成时间</th>
                         <th>过期时间</th>
@@ -248,6 +254,7 @@
             count: parseInt(document.getElementById('count').value, 10),
             maxDevices: parseInt(document.getElementById('maxDevices').value, 10),
             validDays: parseInt(document.getElementById('validDays').value, 10) || 0,
+            imageQuota: parseInt(document.getElementById('imageQuota').value, 10) || 0,
             note: document.getElementById('note').value.trim()
           })
         });
@@ -297,6 +304,22 @@
       }
     }
 
+    async function setQuota(code, current) {
+      const input = prompt('设置激活码 ' + code + ' 的 AI 生图总次数上限（当前 ' + current + '，填更大的数即为追加）：', current);
+      if (input === null) return;
+      const quota = parseInt(input, 10);
+      if (isNaN(quota) || quota < 0 || quota > 100000) { alert('请输入 0~100000 的整数'); return; }
+      try {
+        await api('/api/admin/codes/quota', {
+          method: 'POST',
+          body: JSON.stringify({ code: code, imageQuota: quota })
+        });
+        loadList();
+      } catch (e) {
+        alert('设置失败：' + e.message);
+      }
+    }
+
     function render(codes) {
       document.getElementById('total').textContent = '共 ' + codes.length + ' 个';
       const tbody = document.getElementById('list');
@@ -309,14 +332,20 @@
           ? '<span class="badge bg-red-lt">' + used + ' / ' + c.maxDevices + ' 台</span>'
           : '<span class="badge bg-green-lt">' + used + ' / ' + c.maxDevices + ' 台</span>';
         const devTitle = devices.map(esc).join('&#10;');
+        const quota = c.imageQuota || 0;
+        const quotaBadge = quota > 0
+          ? '<span class="badge bg-green-lt">' + quota + ' 次</span>'
+          : '<span class="badge bg-secondary-lt">未开通</span>';
         return (
           '<tr>' +
             '<td class="font-monospace fw-bold code-cell" style="user-select:text">' + esc(c.code) + '</td>' +
             '<td><span title="' + (devTitle || '暂无绑定') + '">' + badge + '</span></td>' +
+            '<td>' + quotaBadge + '</td>' +
             '<td class="text-secondary">' + esc(c.note || '—') + '</td>' +
             '<td class="text-secondary">' + new Date(c.createdAt).toLocaleString('zh-CN') + '</td>' +
             '<td>' + expiryCell(c) + '</td>' +
             '<td class="text-nowrap">' +
+              '<button class="btn btn-sm btn-outline-secondary me-1" onclick="setQuota(\'' + esc(c.code) + '\', ' + quota + ')">改次数</button>' +
               '<button class="btn btn-sm btn-outline-primary me-1" onclick="copyCode(\'' + esc(c.code) + '\', this)">复制</button>' +
               (used ? '<button class="btn btn-sm btn-outline-danger me-1" onclick="unbind(\'' + esc(c.code) + '\')">解绑</button>' : '') +
               '<button class="btn btn-sm btn-outline-danger" onclick="deleteCode(\'' + esc(c.code) + '\')">删除</button>' +

@@ -20,7 +20,7 @@ function sendToRenderer(channel) {
   }
 }
 
-// 触发一次喝水提醒：弹出提醒窗 + 让宠物切到 warn 动画
+// 触发一次喝水提醒：弹出提醒窗 + 专注动画从头播放（提醒已合并进专注，不再有独立 warn 动画）
 function fireReminder() {
   openReminderWindow();
   sendToRenderer('drink-water:show');
@@ -36,11 +36,10 @@ app.whenReady().then(() => {
   });
   scheduler.start();
 
-  // 提醒窗关闭按钮 → 收起提醒窗、解除"正在显示"、宠物回到 focus
+  // 提醒窗关闭按钮 → 收起提醒窗、解除"正在显示"（专注动画自身持续循环，无需通知渲染层切换）
   ipcMain.on('drink-water:dismiss', () => {
     closeReminderWindow();
     if (scheduler) scheduler.dismiss();
-    sendToRenderer('drink-water:reset');
   });
 
   // 测试触发：Ctrl+Alt+W（Cmd+Alt+W on mac）立即弹一次，便于验证

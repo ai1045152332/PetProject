@@ -118,22 +118,33 @@ func TestOpenRouterPetGenerationContractAndGIF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 2 || strings.Join(stages, ",") != "beautifying,animating,encoding" {
-		t.Fatalf("calls %d stages %v", calls, stages)
-	}
-	animation, err := gif.DecodeAll(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(animation.Image) != 30 || animation.LoopCount != 0 || animation.Config.Width != 256 || animation.Config.Height != 256 {
-		t.Fatal("invalid GIF animation")
-	}
-	for i, frame := range animation.Image {
-		_, _, _, alpha := frame.At(0, 0).RGBA()
-		_, _, _, petAlpha := frame.At(90, 90).RGBA()
-		if alpha != 0 || petAlpha == 0 || animation.Delay[i] != 10 || animation.Disposal[i] != gif.DisposalBackground {
-			t.Fatal("GIF transparency/timing/disposal incorrect")
+	if petFrameModeAnimated {
+		if calls != 2 || strings.Join(stages, ",") != "beautifying,animating,encoding" {
+			t.Fatalf("calls %d stages %v", calls, stages)
 		}
+		animation, err := gif.DecodeAll(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(animation.Image) != 30 || animation.LoopCount != 0 || animation.Config.Width != 256 || animation.Config.Height != 256 {
+			t.Fatal("invalid GIF animation")
+		}
+		for i, frame := range animation.Image {
+			_, _, _, alpha := frame.At(0, 0).RGBA()
+			_, _, _, petAlpha := frame.At(90, 90).RGBA()
+			if alpha != 0 || petAlpha == 0 || animation.Delay[i] != 10 || animation.Disposal[i] != gif.DisposalBackground {
+				t.Fatal("GIF transparency/timing/disposal incorrect")
+			}
+		}
+		return
+	}
+	// Single-frame mode: exactly one billed request, portrait only, transparent PNG out.
+	if calls != 1 || strings.Join(stages, ",") != "beautifying" {
+		t.Fatalf("single-frame calls %d stages %v", calls, stages)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width != 1024 || cfg.Height != 1024 {
+		t.Fatalf("single-frame portrait is not a 1024 PNG: %+v %v", cfg, err)
 	}
 }
 func TestOpenRouterPetFailuresAreSafe(t *testing.T) {
@@ -237,15 +248,34 @@ func TestSeedreamContractAndChromaGIF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	animation, err := gif.DecodeAll(bytes.NewReader(output))
-	if err != nil || len(animation.Image) != 30 || calls != 2 {
-		t.Fatal("Seedream GIF failed", err)
+	if petFrameModeAnimated {
+		animation, err := gif.DecodeAll(bytes.NewReader(output))
+		if err != nil || len(animation.Image) != 30 || calls != 2 {
+			t.Fatal("Seedream GIF failed", err)
+		}
+		_, _, _, a := animation.Image[0].At(0, 0).RGBA()
+		if a != 0 {
+			t.Fatal("green background remains opaque")
+		}
+		_, _, _, a = animation.Image[0].At(110, 110).RGBA()
+		if a == 0 {
+			t.Fatal("green eye removed")
+		}
+		return
 	}
-	_, _, _, a := animation.Image[0].At(0, 0).RGBA()
+	// Single-frame mode: one billed request returns the chroma-cleaned transparent portrait PNG.
+	if calls != 1 {
+		t.Fatalf("single-frame Seedream made %d requests, want 1", calls)
+	}
+	portrait, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal("single-frame Seedream output is not a PNG", err)
+	}
+	_, _, _, a := portrait.At(0, 0).RGBA()
 	if a != 0 {
 		t.Fatal("green background remains opaque")
 	}
-	_, _, _, a = animation.Image[0].At(110, 110).RGBA()
+	_, _, _, a = portrait.At(110, 110).RGBA()
 	if a == 0 {
 		t.Fatal("green eye removed")
 	}
@@ -286,6 +316,46 @@ func TestSeedreamNormalizes2KOutput(t *testing.T) {
 		t.Fatal("2K pet removed")
 	}
 }
+func TestSeedreamRemovesSoftFringeAndDespillsEdge(t *testing.T) {
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	// Soft green-tinted fringe around the subject: below the strict vivid threshold.
+	draw.Draw(im, image.Rect(397, 397, 603, 603), image.NewUniform(color.NRGBA{R: 90, G: 150, B: 90, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(400, 400, 600, 600), image.NewUniform(color.NRGBA{R: 180, G: 120, B: 60, A: 255}), image.Point{}, draw.Src)
+	// Fainter olive pixel that survives the soft flood must be despilled, not eaten.
+	im.SetNRGBA(398, 500, color.NRGBA{R: 130, G: 170, B: 120, A: 255})
+	// Detached pure-green eye inside the fur must keep its exact color.
+	im.SetNRGBA(500, 450, color.NRGBA{G: 255, A: 255})
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, a := decoded.At(0, 0).RGBA(); a != 0 {
+		t.Fatal("background not removed")
+	}
+	if _, _, _, a := decoded.At(398, 420).RGBA(); a != 0 {
+		t.Fatal("soft fringe left opaque")
+	}
+	olive := color.NRGBAModel.Convert(decoded.At(398, 500)).(color.NRGBA)
+	if olive.A < 128 || int(olive.G) > int(olive.R)+12 {
+		t.Fatalf("olive edge not despilled or eaten: %v", olive)
+	}
+	fur := color.NRGBAModel.Convert(decoded.At(400, 500)).(color.NRGBA)
+	if fur != (color.NRGBA{R: 180, G: 120, B: 60, A: 255}) {
+		t.Fatalf("warm fur edge altered: %v", fur)
+	}
+	eye := color.NRGBAModel.Convert(decoded.At(500, 450)).(color.NRGBA)
+	if eye != (color.NRGBA{G: 255, A: 255}) {
+		t.Fatalf("disconnected green eye damaged: %v", eye)
+	}
+}
+
 func TestOpenRouter400DoesNotBlamePhoto(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)

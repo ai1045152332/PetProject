@@ -6,6 +6,7 @@ import "time"
 type ActivationCode struct {
 	Code       string     `json:"code"`       // 激活码，格式 XXXX-XXXX-XXXX
 	MaxDevices int        `json:"maxDevices"` // 最多绑定设备数
+	ImageQuota int        `json:"imageQuota"` // 该码可用的 AI 生图总次数（终身累计，0 = 未开通）
 	Devices    []string   `json:"devices"`    // 已绑定设备 ID 列表
 	CreatedAt  time.Time  `json:"createdAt"`  // 生成时间
 	ExpiresAt  *time.Time `json:"expiresAt"`  // 过期时间（nil = 永久有效）

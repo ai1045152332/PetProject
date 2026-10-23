@@ -15,8 +15,11 @@ var petChromaPrompt string
 
 func seedreamPrompt(prompt string) string { return prompt + "\n\n" + petChromaPrompt }
 
-// Seedream does not advertise native alpha. Remove only chroma pixels connected
+// Seedream does not advertise native alpha. Remove chroma pixels connected
 // to the canvas/cell boundaries, preserving disconnected green eyes and markings.
+// The flood starts on vivid background (strict) and keeps growing through the
+// soft anti-aliased fringe (loose), so only a thin green-tinted band can be eaten;
+// whatever survives on the new edge gets its green cast clamped away (despill).
 func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "png" && format != "jpeg") || cfg.Width < 16 || cfg.Height < 16 || cfg.Width > 4096 || cfg.Height > 4096 || cfg.Width != cfg.Height {
@@ -47,15 +50,18 @@ func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 			im.SetNRGBA(x, y, color.NRGBA{uint8(r + 0.5), uint8(g + 0.5), uint8(b + 0.5), uint8(a + 0.5)})
 		}
 	}
-	removable := func(x, y int) bool {
-		c := im.NRGBAAt(x, y)
-		return c.A < 128 || (int(c.G) >= 140 && int(c.G)-int(c.R) > 70 && int(c.G)-int(c.B) > 70)
+	chroma := func(c color.NRGBA, minGreen, minDelta int) bool {
+		return c.A < 128 || (int(c.G) >= minGreen && int(c.G)-int(c.R) > minDelta && int(c.G)-int(c.B) > minDelta)
 	}
+	// Boundary seeds must look like the requested vivid chroma green.
+	strict := func(x, y int) bool { return chroma(im.NRGBAAt(x, y), 140, 70) }
+	// Expansion also accepts the muted green/gray blend pixels clinging to the edge.
+	soft := func(x, y int) bool { return chroma(im.NRGBAAt(x, y), 110, 40) }
 	visited := make([]bool, 1024*1024)
 	queue := make([]int, 0, 1024*1024)
-	push := func(x, y int) {
+	push := func(x, y int, ok func(int, int) bool) {
 		i := y*1024 + x
-		if !visited[i] && removable(x, y) {
+		if !visited[i] && ok(x, y) {
 			visited[i] = true
 			queue = append(queue, i)
 		}
@@ -67,10 +73,10 @@ func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 	for cy := 0; cy < 1024; cy += cell {
 		for cx := 0; cx < 1024; cx += cell {
 			for i := 0; i < cell; i++ {
-				push(cx+i, cy)
-				push(cx+i, cy+cell-1)
-				push(cx, cy+i)
-				push(cx+cell-1, cy+i)
+				push(cx+i, cy, strict)
+				push(cx+i, cy+cell-1, strict)
+				push(cx, cy+i, strict)
+				push(cx+cell-1, cy+i, strict)
 			}
 		}
 	}
@@ -79,16 +85,33 @@ func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 		x, y := i%1024, i/1024
 		im.SetNRGBA(x, y, color.NRGBA{})
 		if x > 0 {
-			push(x-1, y)
+			push(x-1, y, soft)
 		}
 		if x < 1023 {
-			push(x+1, y)
+			push(x+1, y, soft)
 		}
 		if y > 0 {
-			push(x, y-1)
+			push(x, y-1, soft)
 		}
 		if y < 1023 {
-			push(x, y+1)
+			push(x, y+1, soft)
+		}
+	}
+	// Despill: fur pixels still touching the keyed-out area keep a green tint
+	// from JPEG ringing and soft edges; clamp green down toward red/blue.
+	for y := 0; y < 1024; y++ {
+		for x := 0; x < 1024; x++ {
+			c := im.NRGBAAt(x, y)
+			if c.A >= 128 && int(c.G) > int(c.R) && int(c.G) > int(c.B) && touchesKeyed(im, x, y) {
+				base := int(c.R)
+				if int(c.B) > base {
+					base = int(c.B)
+				}
+				limit := min(base+12, 255)
+				if int(c.G) > limit {
+					im.SetNRGBA(x, y, color.NRGBA{R: c.R, G: uint8(limit), B: c.B, A: c.A})
+				}
+			}
 		}
 	}
 	var result bytes.Buffer
@@ -100,4 +123,18 @@ func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 		return nil, fmt.Errorf("Seedream 背景提取失败，请重试：%w", err)
 	}
 	return result.Bytes(), nil
+}
+
+// touchesKeyed reports whether any 4-neighbor is already fully transparent.
+func touchesKeyed(im *image.NRGBA, x, y int) bool {
+	for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+		nx, ny := x+d[0], y+d[1]
+		if nx < 0 || ny < 0 || nx > 1023 || ny > 1023 {
+			continue
+		}
+		if im.NRGBAAt(nx, ny).A == 0 {
+			return true
+		}
+	}
+	return false
 }

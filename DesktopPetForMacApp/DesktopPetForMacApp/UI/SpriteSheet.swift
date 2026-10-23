@@ -5,11 +5,13 @@
 //   2. 扁平模式（SPM 兼容）: Resources/Sprites/{state}_0.png, {state}_1.png, ...
 
 import AppKit
+import ImageIO
 
 final class SpriteSheet {
     let state: CatAnimationState
     let frames: [NSImage]
     let frameCount: Int
+    var frameDurations: [TimeInterval] = []
 
     /// 从横向精灵图裁剪初始化（保留，暂未使用）
     init?(state: CatAnimationState,
@@ -57,9 +59,10 @@ final class SpriteSheet {
     init?(state: CatAnimationState) {
         self.state = state
 
-        if let customImage = CustomSpriteStore.load(for: state) {
-            self.frames = [customImage]
-            self.frameCount = 1
+        if let custom = CustomSpriteStore.loadAnimation(for: state) {
+            self.frames = custom.frames
+            self.frameCount = custom.frames.count
+            self.frameDurations = custom.durations
             NSLog("[DesktopPetForMacApp] ✓ Loaded custom image for state '%@'", state.rawValue)
             return
         }
@@ -263,27 +266,143 @@ enum CustomSpriteStore {
         return appSupport.appendingPathComponent(folderName, isDirectory: true)
     }
 
-    static func load(for state: CatAnimationState) -> NSImage? {
-        let url = directoryURL.appendingPathComponent("\(state.rawValue).png")
-        return NSImage(contentsOf: url)
+    struct Animation {
+        let frames: [NSImage]
+        let durations: [TimeInterval]
     }
-
-    static func hasCustomImage(for state: CatAnimationState) -> Bool {
-        load(for: state) != nil
-    }
-
-    static func url(for state: CatAnimationState) -> URL {
-        directoryURL.appendingPathComponent("\(state.rawValue).png")
-    }
-
-    static func save(_ image: NSImage, for state: CatAnimationState) throws {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            throw CocoaError(.fileWriteUnknown)
+    static func decodeAnimation(_ data: Data) -> Animation? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 && count <= 120 else { return nil }
+        var frames: [NSImage] = []
+        var durations: [TimeInterval] = []
+        var totalPixels: Int64 = 0
+        for index in 0..<count {
+            guard let props = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [String: Any],
+                  let w = props[kCGImagePropertyPixelWidth as String] as? Int,
+                  let h = props[kCGImagePropertyPixelHeight as String] as? Int,
+                  w > 0, h > 0, w <= 8192, h <= 8192 else { return nil }
+            totalPixels += Int64(w) * Int64(h)
+            guard totalPixels <= 40_000_000,
+                  let image = CGImageSourceCreateImageAtIndex(source, index, nil) else { return nil }
+            frames.append(NSImage(cgImage: image, size: NSSize(width: w, height: h)))
+            let gif = props[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let duration = (gif?[kCGImagePropertyGIFUnclampedDelayTime as String] as? Double)
+                ?? (gif?[kCGImagePropertyGIFDelayTime as String] as? Double) ?? 0.1
+            durations.append(max(0.02, duration))
         }
+        return Animation(frames: frames, durations: durations)
+    }
+    static func loadAnimation(for state: CatAnimationState, directory: URL? = nil) -> Animation? {
+        let root = directory ?? directoryURL
+        // A local direct upload always wins over any cloud or legacy image for that state.
+        if localSelections(in: root)[state.rawValue] != nil,
+           let data = try? Data(contentsOf: root.appendingPathComponent("local-\(state.rawValue).img")),
+           let animation = decodeAnimation(data) { return animation }
+        let manifest = root.appendingPathComponent("cloud-selections.json")
+        let url: URL
+        if FileManager.default.fileExists(atPath: manifest.path) {
+            guard let data = try? Data(contentsOf: manifest),
+                  let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
+            if let id = selections[state.rawValue] {
+                guard validID(id) else { return nil } // Empty ID explicitly restores the built-in state.
+                url = root.appendingPathComponent("cloud-\(id).img")
+            } else {
+                return loadLegacyAnimation(for: state, directory: root)
+            }
+        } else {
+            return loadLegacyAnimation(for: state, directory: root)
+        }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return decodeAnimation(data)
+    }
+    private static func loadLegacyAnimation(for state: CatAnimationState, directory: URL) -> Animation? {
+        // Keep both the previous shared cloud cache and the app's original per-state uploads readable.
+        for name in ["current.png", "\(state.rawValue).png"] {
+            if let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
+               let animation = decodeAnimation(data) { return animation }
+        }
+        return nil
+    }
+    private static func validID(_ id: String) -> Bool {
+        id.count == 32 && id.allSatisfy { "0123456789abcdef".contains($0) }
+    }
+    static func hasCustomImage(for state: CatAnimationState) -> Bool { loadAnimation(for: state) != nil }
+    static func hasLocalImage(for state: CatAnimationState) -> Bool {
+        let root = directoryURL
+        return localSelections(in: root)[state.rawValue] != nil
+            && FileManager.default.fileExists(atPath: root.appendingPathComponent("local-\(state.rawValue).img").path)
+    }
+    private static func localSelections(in root: URL) -> [String: String] {
+        let manifest = root.appendingPathComponent("local-selections.json")
+        guard let data = try? Data(contentsOf: manifest),
+              let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return selections
+    }
 
-        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        try pngData.write(to: url(for: state), options: .atomic)
+    // Direct uploads stay on this machine: validated pixels are staged first, then the manifest commits.
+    static func installLocalImage(_ data: Data, for state: CatAnimationState, directory: URL? = nil) throws {
+        guard decodeAnimation(data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+        let root = directory ?? directoryURL
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try data.write(to: root.appendingPathComponent("local-\(state.rawValue).img"), options: .atomic)
+        var merged = localSelections(in: root)
+        merged[state.rawValue] = "1"
+        try JSONEncoder().encode(merged).write(to: root.appendingPathComponent("local-selections.json"), options: .atomic)
+    }
+    static func removeLocalImage(for state: CatAnimationState, directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        var merged = localSelections(in: root)
+        merged.removeValue(forKey: state.rawValue)
+        try JSONEncoder().encode(merged).write(to: root.appendingPathComponent("local-selections.json"), options: .atomic)
+        try? FileManager.default.removeItem(at: root.appendingPathComponent("local-\(state.rawValue).img"))
+    }
+
+    // Immutable files are staged first; one atomic manifest commit changes all selected states.
+    // Missing states keep their local images; an explicit empty ID means restore default.
+    // Unknown state keys (e.g. legacy "warn" records left on the server) are skipped, not fatal.
+    static func installCloudImages(selections: [String: String], images: [String: Data], directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        let manifest = root.appendingPathComponent("cloud-selections.json")
+        var merged: [String: String] = [:]
+        if FileManager.default.fileExists(atPath: manifest.path) {
+            merged = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: manifest))
+        }
+        var known: [String: String] = [:]
+        for (state, id) in selections {
+            guard CatAnimationState(rawValue: state) != nil else { continue }
+            guard id.isEmpty || validID(id) else { throw CocoaError(.fileReadCorruptFile) }
+            if !id.isEmpty {
+                guard let data = images[id], decodeAnimation(data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+            }
+            known[state] = id
+        }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for (id, data) in images where known.values.contains(id) {
+            try data.write(to: root.appendingPathComponent("cloud-\(id).img"), options: .atomic)
+        }
+        for (state, id) in known { merged[state] = id }
+        try JSONEncoder().encode(merged).write(to: manifest, options: .atomic)
+    }
+
+    /// 预览或应用某张云端图后落盘：重开历史图片即可直接读本地，无需再向服务端取图。
+    /// 已存在则跳过，避免重复写；仅作缓存，不改动 cloud-selections 清单。
+    static func cacheCloudImage(id: String, data: Data, directory: URL? = nil) {
+        guard validID(id) else { return }
+        let root = directory ?? directoryURL
+        let url = root.appendingPathComponent("cloud-\(id).img")
+        if FileManager.default.fileExists(atPath: url.path) { return }
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            FileLogger.log("[PetImages] 缓存云端图片失败: \(error.localizedDescription)")
+        }
+    }
+    /// 读取本地已缓存的云端图；命中则预览/应用都无需走网络。
+    static func cachedCloudImage(id: String, directory: URL? = nil) -> Data? {
+        guard validID(id) else { return nil }
+        let url = (directory ?? directoryURL).appendingPathComponent("cloud-\(id).img")
+        return try? Data(contentsOf: url)
     }
 }

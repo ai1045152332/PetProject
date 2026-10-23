@@ -189,18 +189,19 @@
           const tr = document.createElement('tr');
           let icon = f.isDir ? '📁' : '📄';
           if (f.sensitive) icon = '🔒';
-          // 敏感文件：不给出预览/删除入口（后端也已拦），仅展示名称
+          // 敏感文件：不给出预览/下载/删除入口（后端也已拦），仅展示名称
           let nameCell, actions;
           if (f.isDir) {
             nameCell = `<a class="file-name-link" href="javascript:go('${esc(full)}')">${icon} ${esc(f.name)}</a>`;
             actions = `<button class="btn btn-sm btn-outline-danger" onclick="remove('${esc(full)}','${esc(f.name)}',true)">删除</button>`;
           } else if (f.sensitive) {
             nameCell = `<span class="text-secondary">${icon} ${esc(f.name)}</span>
-              <span class="badge bg-red-lt ms-1">已保护·不可预览</span>`;
+              <span class="badge bg-red-lt ms-1">已保护·不可预览下载</span>`;
             actions = '';
           } else {
             nameCell = `<span>${icon} <a class="file-name-link" href="javascript:preview('${esc(full)}','${esc(f.name)}')">${esc(f.name)}</a></span>`;
             actions = `<button class="btn btn-sm" onclick="preview('${esc(full)}','${esc(f.name)}')">预览</button>
+               <button class="btn btn-sm ms-1" onclick="download('${esc(full)}','${esc(f.name)}',this)">下载</button>
                <button class="btn btn-sm btn-outline-danger ms-1" onclick="remove('${esc(full)}','${esc(f.name)}',false)">删除</button>`;
           }
           tr.innerHTML = `
@@ -231,6 +232,42 @@
         document.getElementById('previewBody').textContent = data.content;
       } catch (e) {
         document.getElementById('previewMeta').textContent = '预览失败：' + e.message;
+      }
+    }
+
+    // 下载带会话令牌，<a> 直链无法自定义请求头，所以用 fetch 取回二进制再触发保存
+    async function download(full, name, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        const resp = await fetch('/api/admin/files/download?path=' + encodeURIComponent(full), {
+          headers: { 'X-Session-Token': session() }
+        });
+        if (resp.status === 401) {
+          localStorage.removeItem('petAdminSession');
+          location.replace('/admin/login');
+          throw new Error('登录已失效，请重新登录');
+        }
+        if (!resp.ok) {
+          // 失败时后端返回 JSON（如路径越界、敏感文件禁止下载）
+          let msg = 'HTTP ' + resp.status;
+          try { const j = await resp.json(); if (j.msg) msg = j.msg; } catch (e) { /* 非 JSON 响应 */ }
+          throw new Error(msg);
+        }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // 交给浏览器取流后再释放，留足够时间避免下载被中断
+        setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+        document.getElementById('status').textContent = '已开始下载：' + name + '（' + fmtSize(blob.size) + '）';
+      } catch (e) {
+        alert('下载失败：' + e.message);
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 

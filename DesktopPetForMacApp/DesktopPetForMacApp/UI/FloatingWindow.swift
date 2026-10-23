@@ -229,8 +229,9 @@ class CatView: NSView {
         guard let image = currentImage else { return }
         let t = Date().timeIntervalSinceReferenceDate
         let breathe = 1.0 + 0.010 * sin(t * 2.0 * .pi / 4.0)
-        let w = bounds.width * breathe
-        let h = bounds.height * breathe
+        let scale = min(bounds.width / max(1, image.size.width), bounds.height / max(1, image.size.height)) * breathe
+        let w = image.size.width * scale
+        let h = image.size.height * scale
         let rect = NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
         image.draw(in: rect)
     }
@@ -307,7 +308,7 @@ class CatView: NSView {
                 isDragging = false
                 return
             }
-            // 点击恢复 focus（从 warn 状态回来）
+            // 点击进入 focus 专注状态（提醒表现即专注动画）
             viewModel?.transitionTo(.focus)
             
 // 点击小猫：把小猫窗口及其相关弹窗（Todo/天气/做题等）全部放到最前
@@ -503,7 +504,7 @@ isFeeding = false
         cancelFeeding()
         FileLogger.log("[DesktopPet] 投喂成功，亲密度 +1")
 
-        // 小猫开心动画（pet 无有效帧时内部会 fallback 到 warn）
+        // 小猫开心动画（pet 无有效帧时内部会 fallback 到专注动画）
         viewModel?.pet()
 
         // 亲密度持久化

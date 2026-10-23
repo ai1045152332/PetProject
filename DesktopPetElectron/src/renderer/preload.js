@@ -6,12 +6,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('petAPI', {
-  // 主进程触发提醒 → 渲染层回调（切到 warn）
+  // 主进程触发提醒 → 渲染层回调（专注动画从头播放唤起注意）
   onDrinkWater: (callback) => {
     ipcRenderer.on('drink-water:show', () => callback());
-  },
-  // 提醒关闭 → 渲染层回到 focus
-  onDrinkWaterReset: (callback) => {
-    ipcRenderer.on('drink-water:reset', () => callback());
   },
 });

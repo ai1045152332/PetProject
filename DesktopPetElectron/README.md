@@ -66,7 +66,7 @@ DesktopPetElectron/
 │       ├── pet.js            # 帧循环（后续扩展为状态机）
 │       └── preload.js        # 预加载脚本占位
 └── assets/
-    └── Sprites/              # 从 mac 工程拷贝的动画帧（focus/idel/warn/sleep/pet）
+    └── Sprites/              # 从 mac 工程拷贝的动画帧（focus/idel/sleep/pet，提醒已合并进专注，warn 已删除）
 ```
 
 - 打包相关：`packaging/`（图标资源 icon.icns / icon.png）、`dist/`（electron-builder 产物）。

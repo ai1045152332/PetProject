@@ -316,6 +316,46 @@ func TestSeedreamNormalizes2KOutput(t *testing.T) {
 		t.Fatal("2K pet removed")
 	}
 }
+func TestSeedreamRemovesSoftFringeAndDespillsEdge(t *testing.T) {
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	// Soft green-tinted fringe around the subject: below the strict vivid threshold.
+	draw.Draw(im, image.Rect(397, 397, 603, 603), image.NewUniform(color.NRGBA{R: 90, G: 150, B: 90, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(400, 400, 600, 600), image.NewUniform(color.NRGBA{R: 180, G: 120, B: 60, A: 255}), image.Point{}, draw.Src)
+	// Fainter olive pixel that survives the soft flood must be despilled, not eaten.
+	im.SetNRGBA(398, 500, color.NRGBA{R: 130, G: 170, B: 120, A: 255})
+	// Detached pure-green eye inside the fur must keep its exact color.
+	im.SetNRGBA(500, 450, color.NRGBA{G: 255, A: 255})
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, a := decoded.At(0, 0).RGBA(); a != 0 {
+		t.Fatal("background not removed")
+	}
+	if _, _, _, a := decoded.At(398, 420).RGBA(); a != 0 {
+		t.Fatal("soft fringe left opaque")
+	}
+	olive := color.NRGBAModel.Convert(decoded.At(398, 500)).(color.NRGBA)
+	if olive.A < 128 || int(olive.G) > int(olive.R)+12 {
+		t.Fatalf("olive edge not despilled or eaten: %v", olive)
+	}
+	fur := color.NRGBAModel.Convert(decoded.At(400, 500)).(color.NRGBA)
+	if fur != (color.NRGBA{R: 180, G: 120, B: 60, A: 255}) {
+		t.Fatalf("warm fur edge altered: %v", fur)
+	}
+	eye := color.NRGBAModel.Convert(decoded.At(500, 450)).(color.NRGBA)
+	if eye != (color.NRGBA{G: 255, A: 255}) {
+		t.Fatalf("disconnected green eye damaged: %v", eye)
+	}
+}
+
 func TestOpenRouter400DoesNotBlamePhoto(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)

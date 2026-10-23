@@ -25,7 +25,7 @@ func TestPetStatePromptRequirements(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, prompt := range []string{portrait, animation} {
-				if strings.Contains(prompt, "{{") || !strings.Contains(prompt, state) || !strings.Contains(prompt, "3头身Q版") {
+				if strings.Contains(prompt, "{{") || !strings.Contains(prompt, state) || !strings.Contains(prompt, "3头身写实插画风格") {
 					t.Fatal("unresolved state/style")
 				}
 				if !strings.Contains(prompt, "不要地面阴影") || !strings.Contains(prompt, "人的手") {

@@ -60,8 +60,8 @@ PET_TEST_REMINDER=1 npm start
 
 触发后的完整链路：
 - 屏幕居中弹出提醒卡「该喝水啦！/ 起来倒杯水…」
-- 小猫同步切到 **warn** 动画
-- 点「知道啦」或右上角 × → 收起提醒卡 + 小猫回到 **focus**
+- 小猫专注动画从第 0 帧重新播放唤起注意（提醒已合并进专注，不再有独立 warn 动画）
+- 点「知道啦」或右上角 × → 收起提醒卡（专注动画自身持续循环，无需切换）
 - 提醒卡未关闭时，下一次到点不重复弹（`isShowing` 防叠加）
 
 ## 打包桌面 App（electron-builder）
@@ -107,11 +107,11 @@ DesktopPetElectron/
 │   ├── tray.js                 # 菜单栏托盘：显示/隐藏 + 退出（悬浮窗 skipTaskbar 无 Dock 图标）
 │   └── config-store.js         # 极简 JSON 配置持久化（对标 UserDefaults）
 ├── src/renderer/
-│   ├── index.html / pet.css / pet.js         # 宠物窗：帧循环 + focus↔warn 状态机
-│   ├── preload.js              # petAPI（onDrinkWater / onDrinkWaterReset）
+│   ├── index.html / pet.css / pet.js         # 宠物窗：focus 帧循环（提醒触发时从头播放）
+│   ├── preload.js              # petAPI（onDrinkWater）
 │   ├── reminder.html/.css/.js + reminder-preload.js   # 提醒卡 UI + close
 └── assets/
-    ├── Sprites/                # 从 mac 工程拷贝的动画帧（focus/idel/warn/sleep/pet，各 8 帧 200×200）
+    ├── Sprites/                # 从 mac 工程拷贝的动画帧（focus/idel/sleep/pet，各 8 帧 200×200；warn 已合并进 focus 删除）
     └── TrayIcon.png            # 菜单栏托盘图标（高约 40px，由 MenuBarIcon.png 缩放而来）
 ```
 

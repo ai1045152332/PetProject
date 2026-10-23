@@ -296,6 +296,10 @@ func TestPetImagesSelectAndResetOnlyTheirState(t *testing.T) {
 	if _, err = svc.Upload("A", petTestCode, "cat.png", testImage(t, "png"), "../../focus"); err == nil {
 		t.Fatal("invalid state accepted")
 	}
+	// The legacy "warn" state was merged into "focus" and must no longer be accepted for uploads.
+	if _, err = svc.Upload("A", petTestCode, "cat.png", testImage(t, "png"), "warn"); err == nil {
+		t.Fatal("removed legacy warn state accepted")
+	}
 }
 func TestPetStateGenerationRespectsOnlyTargetStateSelection(t *testing.T) {
 	svc := newImageTestService(t, t.TempDir())
@@ -341,7 +345,7 @@ func TestPetStateRetryAndLegacySharedImage(t *testing.T) {
 		t.Fatal("reset fell back to legacy shared image")
 	}
 	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return nil, fmt.Errorf("failed") }))
-	failed, err := svc.Upload("A", petTestCode, "bad.png", testImage(t, "png"), "warn")
+	failed, err := svc.Upload("A", petTestCode, "bad.png", testImage(t, "png"), "idel")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,11 +355,11 @@ func TestPetStateRetryAndLegacySharedImage(t *testing.T) {
 		t.Fatal("cross-state retry accepted")
 	}
 	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return testPetGIF(t), nil }))
-	if _, err = svc.Retry("A", petTestCode, id, "warn"); err != nil {
+	if _, err = svc.Retry("A", petTestCode, id, "idel"); err != nil {
 		t.Fatal(err)
 	}
 	lib = awaitPet(t, svc, "A", id)
-	if lib.selectedID("warn") != id || lib.selectedID("focus") != "" || lib.selectedID("sleep") != legacyID {
+	if lib.selectedID("idel") != id || lib.selectedID("focus") != "" || lib.selectedID("sleep") != legacyID {
 		t.Fatal("retry changed another state")
 	}
 }

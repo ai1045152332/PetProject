@@ -139,9 +139,10 @@ POST /api/heartbeat
 | --- | --- |
 | focus | 专注 |
 | idel | 休闲 |
-| warn | 提醒 |
 | sleep | 睡觉 |
 | pet | 抚摸 |
+
+旧版客户端（提醒状态移除前）的心跳可能仍会上报 `warn`，服务端照常接受并存储，仅展示时按未知状态处理。
 
 ### 请求示例
 
@@ -718,7 +719,7 @@ GET /api/wordbank/get?name=cet4
 | action | 请求 | 返回 |
 | --- | --- | --- |
 | `list` | 加密凭证 JSON | `{code:0,msg:"ok",data:{currentId,currentIds:{focus:"图片ID"},images:[{id,state,name,contentType,createdAt,status,error,promptVersion}],generationLimit,generationRemaining}}`，历史由新到旧；`generationLimit`/`generationRemaining` 为该激活码的终身生成总上限/剩余次数 |
-| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件；`state` 可为具体状态或 `all` | 同上；返回 `beautifying` 任务，保存原图后异步生成，完成后才自动设为对应状态的当前图片。`state=all` 时为全部 5 个状态各创建一条任务并逐状态生成（整批只扣 1 次配额） |
+| `upload` | multipart/form-data：`auth` 为加密凭证字符串，`image` 为 PNG/JPEG 文件；`state` 可为具体状态或 `all` | 同上；返回 `beautifying` 任务，保存原图后异步生成，完成后才自动设为对应状态的当前图片。`state=all` 时为全部 4 个状态各创建一条任务并逐状态生成（整批只扣 1 次配额） |
 | `retry` | 加密凭证 JSON，包含失败任务的 `id` 和 `state` | 同上；保留原图和任务 ID，重新生成 |
 | `select` | 加密凭证 JSON，包含 `id` 和 `state`；空 ID 仅恢复该状态默认 | 同上，保留历史 |
 | `content` | 加密凭证 JSON，包含 `id` | 已完成的图片字节；单帧模式生成结果为 `image/png`（动画模式为 `image/gif`）；旧静态历史仍返回 `image/png` 或 `image/jpeg` |
@@ -731,6 +732,6 @@ GET /api/wordbank/get?name=cet4
 上传/重试返回时选择保持原值。生成成功时更新 `currentIds[state]`；期间若发生对同一状态的 `select`（包括恢复默认），保留用户新选择，生成结果仍进入历史。操作其他状态不会阻止本状态结果自动应用。每设备同时 1 个生成任务，全服务最多同时生成 2 个任务。**生成总量按激活码终身累计**（不再按设备或每日重置）：同一码绑定的所有设备共享该码的总上限，上限在后台「激活码管理」按码配置（新码默认 0 = 未开通，不可生成），提交即扣次、失败不返还；超限时返回 429。
 
 
-`state` 可取 `focus`、`idel`（沿用现有拼写）、`warn`、`sleep`、`pet`，上传还可用 `all` 触发逐状态扇出。新客户端上传、选择和重试均发送对应状态，不能把一个状态专属的结果应用到其他状态。下载仍按设备和图片 ID 授权。为兼容旧客户端，缺少 `state`（空字串）时保留旧的共享图片行为；`currentId` 是旧共享选择，`currentIds` 显式键优先（包括空值，表示该状态恢复默认）。
+`state` 可取 `focus`、`idel`（沿用现有拼写）、`sleep`、`pet`，上传还可用 `all` 触发逐状态扇出。历史提醒状态 `warn` 已合并进 `focus`，新上传/选择/重试不再接受 `warn`（返回无效状态错误），存量 `currentIds`/历史中的 warn 记录保留但由新客户端忽略。新客户端上传、选择和重试均发送对应状态，不能把一个状态专属的结果应用到其他状态。下载仍按设备和图片 ID 授权。为兼容旧客户端，缺少 `state`（空字串）时保留旧的共享图片行为；`currentId` 是旧共享选择，`currentIds` 显式键优先（包括空值，表示该状态恢复默认）。
 
 生成器按当前帧模式处理上传记录的 `state`：单帧模式（当前写死）每个状态只发一次美化请求并输出透明 PNG；动画模式则传入美化和动画帧两次请求并合成 GIF。使用 `pet-seedream-state-v3` Prompt。专注生成工作/打字动作，睡觉生成全程闭眼蜷缩呼吸动作，其余状态使用各自的姿态与动作。重试沿用原图和目标状态、使用当前 Prompt 版本。

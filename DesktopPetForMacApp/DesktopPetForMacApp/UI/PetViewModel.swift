@@ -5,11 +5,10 @@
 import SwiftUI
 import AppKit
 
-/// 小猫动画状态
+/// 小猫动画状态（提醒已合并进专注：提醒触发时播放专注动画 + 气泡文案）
 enum CatAnimationState: String, CaseIterable {
     case focus  = "focus"   // 专注
     case idel   = "idel"    // 休闲
-    case warn   = "warn"    // 提醒
     case sleep  = "sleep"   // 睡觉
     case pet    = "pet"     // 抚摸
 
@@ -18,7 +17,6 @@ enum CatAnimationState: String, CaseIterable {
         switch self {
         case .focus: return "专注"
         case .idel:  return "休闲"
-        case .warn:  return "提醒"
         case .sleep: return "睡觉"
         case .pet:   return "抚摸"
         }
@@ -193,7 +191,6 @@ final class PetViewModel: ObservableObject {
     /// 替换资源说明：将透明背景 PNG 放入 Resources/Sprites/，命名规则如下
     ///   focus_0.png ~ focus_N.png
     ///   idel_0.png ~ idel_N.png
-    ///   warn_0.png ~ warn_N.png
     ///   sleep_0.png ~ sleep_N.png
     ///   pet_0.png ~ pet_N.png
     private func loadSpriteSheets() {
@@ -223,7 +220,8 @@ final class PetViewModel: ObservableObject {
 
     @MainActor
     func applyPetLibrary(_ library: PetImageLibrary) async throws {
-        let selections = library.selections
+        // 过滤历史遗留的未知状态键（如已移除的 warn），避免白下载与安装报错
+        let selections = library.selections.filter { CatAnimationState(rawValue: $0.key) != nil }
         guard !selections.isEmpty else { return }
         var images: [String: Data] = [:]
         for id in Set(selections.values) where !id.isEmpty {
@@ -314,7 +312,7 @@ final class PetViewModel: ObservableObject {
         frameElapsed -= duration
         let nextIndex = (currentFrameIndex + 1) % sheet.frameCount
         
-        // 一次性动画（pet / warn 等）多帧素材播完自动切回基准状态：
+        // 一次性动画（pet / 提醒用的专注等）多帧素材播完自动切回基准状态：
         // 系统勿扰开启时回专注，否则回休闲（单帧素材由 oneShotTimer 负责回退，这里不处理）
         if isPlayingOneShot && sheet.frameCount > 1 && nextIndex == 0 && currentFrameIndex == sheet.frameCount - 1 {
             isPlayingOneShot = false
@@ -347,8 +345,8 @@ final class PetViewModel: ObservableObject {
         }
         
         FileLogger.log("[DesktopPet] performRandomBehavior triggered, currentState=\(animationState.displayName)")
-        // 每 30 分钟自动提醒一下，提醒完后不自动回 focus，等用户点击
-        playOneShot(.warn)
+        // 每 30 分钟自动提醒一下：播放一段专注动画唤起注意（提醒状态已合并进专注）
+        playOneShot(.focus)
         
         scheduleNextBehavior()
     }
@@ -432,10 +430,10 @@ final class PetViewModel: ObservableObject {
         }
     }
     
-    /// 左键点击：提醒动画
+    /// 左键点击：专注动画唤起注意（原提醒动画已合并进专注）
     func handleLeftClick() {
         guard !isPlayingOneShot else { return }
-        playOneShot(.warn)
+        playOneShot(.focus)
     }
     
     /// 右键点击：弹出菜单
@@ -448,11 +446,11 @@ final class PetViewModel: ObservableObject {
     
     func pet() {
         showContextMenu = false
-        // 抚摸：有 pet 素材（单帧也算有效）就播放抚摸动画，缺失才回退到提醒
+        // 抚摸：有 pet 素材（单帧也算有效）就播放抚摸动画，缺失才回退到专注动画
         if spriteSheets[.pet] != nil {
             playOneShot(.pet)
         } else {
-            playOneShot(.warn)
+            playOneShot(.focus)
         }
     }
     
@@ -519,7 +517,8 @@ final class PetViewModel: ObservableObject {
         lastWaterReminderTime = Date()
         isFacingLocked = true
         facing = .right
-        playOneShot(.warn)
+        // 提醒表现：播放专注动画 + 喝水弹窗气泡（原 warn 状态已合并进专注）
+        playOneShot(.focus)
         onDrinkWaterReminder?()
     }
     

@@ -360,6 +360,7 @@ enum CustomSpriteStore {
 
     // Immutable files are staged first; one atomic manifest commit changes all selected states.
     // Missing states keep their local images; an explicit empty ID means restore default.
+    // Unknown state keys (e.g. legacy "warn" records left on the server) are skipped, not fatal.
     static func installCloudImages(selections: [String: String], images: [String: Data], directory: URL? = nil) throws {
         let root = directory ?? directoryURL
         let manifest = root.appendingPathComponent("cloud-selections.json")
@@ -367,18 +368,41 @@ enum CustomSpriteStore {
         if FileManager.default.fileExists(atPath: manifest.path) {
             merged = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: manifest))
         }
+        var known: [String: String] = [:]
         for (state, id) in selections {
-            guard CatAnimationState(rawValue: state) != nil,
-                  id.isEmpty || validID(id) else { throw CocoaError(.fileReadCorruptFile) }
+            guard CatAnimationState(rawValue: state) != nil else { continue }
+            guard id.isEmpty || validID(id) else { throw CocoaError(.fileReadCorruptFile) }
             if !id.isEmpty {
                 guard let data = images[id], decodeAnimation(data) != nil else { throw CocoaError(.fileReadCorruptFile) }
             }
+            known[state] = id
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        for (id, data) in images where selections.values.contains(id) {
+        for (id, data) in images where known.values.contains(id) {
             try data.write(to: root.appendingPathComponent("cloud-\(id).img"), options: .atomic)
         }
-        for (state, id) in selections { merged[state] = id }
+        for (state, id) in known { merged[state] = id }
         try JSONEncoder().encode(merged).write(to: manifest, options: .atomic)
+    }
+
+    /// 预览或应用某张云端图后落盘：重开历史图片即可直接读本地，无需再向服务端取图。
+    /// 已存在则跳过，避免重复写；仅作缓存，不改动 cloud-selections 清单。
+    static func cacheCloudImage(id: String, data: Data, directory: URL? = nil) {
+        guard validID(id) else { return }
+        let root = directory ?? directoryURL
+        let url = root.appendingPathComponent("cloud-\(id).img")
+        if FileManager.default.fileExists(atPath: url.path) { return }
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            FileLogger.log("[PetImages] 缓存云端图片失败: \(error.localizedDescription)")
+        }
+    }
+    /// 读取本地已缓存的云端图；命中则预览/应用都无需走网络。
+    static func cachedCloudImage(id: String, directory: URL? = nil) -> Data? {
+        guard validID(id) else { return nil }
+        let url = (directory ?? directoryURL).appendingPathComponent("cloud-\(id).img")
+        return try? Data(contentsOf: url)
     }
 }

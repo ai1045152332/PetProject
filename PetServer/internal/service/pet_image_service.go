@@ -232,8 +232,9 @@ func (s *PetImageService) withQuota(lib PetImageLibrary, code string) PetImageLi
 	lib.GenerationRemaining = remaining
 	return lib
 }
-// petAllStates are the five states generated together when the client uploads with "all".
-var petAllStates = []string{"focus", "idel", "warn", "sleep", "pet"}
+// petAllStates are the four states generated together when the client uploads with "all".
+// The legacy "warn" state was merged into "focus" and is no longer accepted for new uploads.
+var petAllStates = []string{"focus", "idel", "sleep", "pet"}
 
 // petOutputContentType reflects the generation pipeline that actually runs.
 func petOutputContentType() string {
@@ -563,7 +564,7 @@ func petTargetState(states []string) (string, error) {
 		return "", nil
 	}
 	switch states[0] {
-	case "focus", "idel", "warn", "sleep", "pet":
+	case "focus", "idel", "sleep", "pet":
 		return states[0], nil
 	}
 	return "", errors.New("无效的宠物状态")

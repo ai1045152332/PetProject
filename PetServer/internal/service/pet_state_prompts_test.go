@@ -16,7 +16,6 @@ func TestPetStatePromptRequirements(t *testing.T) {
 	for state, required := range map[string][]string{
 		"idel":  {"四脚自然站立", "尾尖轻轻摆动"},
 		"sleep": {"蜷缩", "双眼闭合", "不醒来"},
-		"warn":  {"警觉", "耳朵竖起"},
 		"pet":   {"眯着眼睛", "绝对不出现人的手"},
 		"focus": {"笔记本电脑", "交替轻轻打字"},
 	} {
@@ -58,10 +57,14 @@ func TestPetStatePromptRequirements(t *testing.T) {
 	if _, _, err = petPromptsForState("invalid"); err == nil {
 		t.Fatal("invalid state accepted")
 	}
+	// 提醒状态已合并进专注，提示词模板不再提供 warn。
+	if _, _, err = petPromptsForState("warn"); err == nil {
+		t.Fatal("removed legacy warn state still has prompts")
+	}
 }
 func TestEveryStateReachesBothModelRequests(t *testing.T) {
 	fixture := base64.StdEncoding.EncodeToString(testPetSheet(t))
-	for _, state := range []string{"focus", "idel", "warn", "sleep", "pet"} {
+	for _, state := range []string{"focus", "idel", "sleep", "pet"} {
 		t.Run(state, func(t *testing.T) {
 			portrait, animation, _ := petPromptsForState(state)
 			calls := 0
@@ -109,7 +112,7 @@ func TestUploadAndRetryPassTargetStateToGenerator(t *testing.T) {
 		seen <- state
 		return testPetGIF(t), nil
 	}))
-	for _, state := range []string{"focus", "idel", "warn", "pet"} {
+	for _, state := range []string{"focus", "idel", "pet"} {
 		lib, err := svc.Upload("A", petTestCode, state+".png", testImage(t, "png"), state)
 		if err != nil {
 			t.Fatal(err)

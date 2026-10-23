@@ -164,6 +164,10 @@ enum PetImageService {
         throw failure("等待生成超时，任务可能仍在服务器运行，请稍后打开历史图片查看。")
     }
     static func image(_ id: String) async throws -> Data {
-        try await request("content", id: id)
+        // 本地已有（之前应用过或预览过并落盘）直接复用，命中即免一次远程取图。
+        if let cached = CustomSpriteStore.cachedCloudImage(id: id) { return cached }
+        let data = try await request("content", id: id)
+        CustomSpriteStore.cacheCloudImage(id: id, data: data)
+        return data
     }
 }

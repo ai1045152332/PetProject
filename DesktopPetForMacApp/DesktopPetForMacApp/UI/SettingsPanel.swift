@@ -309,7 +309,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         updatePetNameButtons()
 
         // ── 合并区：形象切换 + 状态图片管理（每状态一竖格） ──
-        // 顶部：标题 + 历史图片工具按钮；其下一行说明；中部：5 个状态格；底部：AI 生成 + 剩余次数
+        // 顶部：标题 + 历史图片工具按钮；其下一行说明；中部：4 个状态格；底部：AI 生成 + 剩余次数
         // 紧跟「宠物名称」行下方成组排布（而非贴底），避免删卡后中间裂出空洞
         let spriteRowH: CGFloat = 196
         let spriteRowY = nameRowY - 16 - spriteRowH
@@ -364,9 +364,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             preview.tag = index
             preview.target = self
             preview.action = #selector(stateTileClicked(_:))
-            preview.toolTip = state == .warn
-                ? "\(state.displayName)状态当前生效的图片（该状态由系统触发，不可手动切换）"
-                : "点击切换宠物到\(state.displayName)状态"
+            preview.toolTip = "点击切换宠物到\(state.displayName)状态"
             spriteRow.addSubview(preview)
             spritePreviewButtons[state] = preview
 
@@ -397,7 +395,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         aiButton.frame = NSRect(x: 14, y: 2, width: 210, height: 22)
         aiButton.font = .systemFont(ofSize: 11, weight: .medium)
         aiButton.bezelStyle = .rounded
-        aiButton.toolTip = "上传一张照片，AI 为全部 5 个状态各生成一张图片（姿态按状态区分）并自动应用；整批仅消耗该激活码的 1 次生成配额"
+        aiButton.toolTip = "上传一张照片，AI 为全部 4 个状态各生成一张图片（姿态按状态区分）并自动应用；整批仅消耗该激活码的 1 次生成配额"
         spriteRow.addSubview(aiButton)
         aiGenerateAllButton = aiButton
 
@@ -423,8 +421,6 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         aiGenerateAllButton?.isEnabled = hasCode && !petImageBusy && !quotaExhausted
         for state in CatAnimationState.allCases {
             customSpriteButtons[state]?.isEnabled = !petImageBusy
-            // 预览格可点击切换状态；warn 仅系统触发，置灰不可选
-            spritePreviewButtons[state]?.isEnabled = (state != .warn)
             let hasLocal = CustomSpriteStore.hasLocalImage(for: state)
             customSpriteButtons[state]?.title = hasLocal ? "● 直接上传" : "直接上传"
             customSpriteResetButtons[state]?.isEnabled =
@@ -533,7 +529,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
         let panel = NSOpenPanel()
         panel.title = "选择宠物照片"
-        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型，为全部 5 个状态各生成一张图片（姿态按状态区分），整批仅消耗 1 次生成配额"
+        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型，为全部 4 个状态各生成一张图片（姿态按状态区分），整批仅消耗 1 次生成配额"
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -546,6 +542,10 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 guard !ids.isEmpty else { throw PetImageService.failure("未返回生成记录") }
                 let finished = try await PetImageService.waitForGeneration(ids, initial: library) { [weak self] stage in
                     self?.aiStatusLabel?.stringValue = stage
+                }
+                // AI 图应用时清掉这些状态的本机「直接上传」遮挡：本机直传优先级高于云端，否则新图不会显示。
+                for st in finished.images.filter({ ids.contains($0.id) && $0.isReady }).compactMap({ CatAnimationState(rawValue: $0.state ?? "") }) {
+                    try? CustomSpriteStore.removeLocalImage(for: st)
                 }
                 try await self?.viewModel?.applyPetLibrary(finished)
                 self?.applyQuota(finished)
@@ -593,7 +593,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 alert.beginSheetModal(for: self, completionHandler: nil)
                 return
             }
-            alert.informativeText = "选择状态与历史记录；应用或重试只影响所选状态。"
+            alert.informativeText = "选择状态与历史记录，下方可预览图片效果；应用或重试只影响所选状态。"
             alert.addButton(withTitle: "应用")
             alert.addButton(withTitle: "重试生成")
             alert.addButton(withTitle: "取消")
@@ -610,16 +610,22 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                         let finished = try await PetImageService.waitForGeneration(item.id, initial: retried) { [weak self] stage in
                             self?.aiStatusLabel?.stringValue = stage
                         }
+                        // 重试成功即采用云端图：清掉该状态的本机直传遮挡，避免新图被压制不显示。
+                        try? CustomSpriteStore.removeLocalImage(for: state)
                         try await self?.viewModel?.applyPetLibrary(finished)
                     } else if item.isGenerating {
                         let finished = try await PetImageService.waitForGeneration(item.id, initial: library) { [weak self] stage in
                             self?.aiStatusLabel?.stringValue = stage
                         }
+                        // 生成完成即采用云端图：清掉该状态的本机直传遮挡。
+                        try? CustomSpriteStore.removeLocalImage(for: state)
                         try await self?.viewModel?.applyPetLibrary(finished)
                     } else {
                         guard item.isReady else { throw PetImageService.failure(item.error ?? "生成失败，请点击重试生成") }
                         _ = try await PetImageService.image(item.id)
                         let selected = try await PetImageService.select(item.id, for: state)
+                        // 显式把云端/AI 图应用到该状态时清掉本机直传遮挡，否则应用会「看着没生效」。
+                        try? CustomSpriteStore.removeLocalImage(for: state)
                         try await self?.viewModel?.applyPetLibrary(selected)
                     }
                 }
@@ -1494,15 +1500,15 @@ return row
 
     // MARK: - 状态格（形象切换 + 图片预览）
 
-    /// 状态格点击：切换到该状态并刷新高亮（warn 由系统触发，不可手点）。
+    /// 状态格点击：切换到该状态并刷新高亮。
     @objc private func stateTileClicked(_ sender: NSButton) {
-        guard let state = customSpriteState(for: sender), state != .warn else { return }
+        guard let state = customSpriteState(for: sender) else { return }
         viewModel?.transitionTo(state)
         refreshStateCards()
     }
 
-    /// 状态格选中/可选样式（当前态 accent 描边 + 淡底；warn 不可选时略降不透明度）。
-    private func applyTileStyle(_ btn: NSButton, selected: Bool, switchable: Bool) {
+    /// 状态格选中样式（当前态 accent 描边 + 淡底）。
+    private func applyTileStyle(_ btn: NSButton, selected: Bool) {
         btn.layer?.backgroundColor = selected
             ? NSColor.controlAccentColor.withAlphaComponent(0.14).cgColor
             : NSColor(white: 0, alpha: 0.03).cgColor
@@ -1511,7 +1517,6 @@ return row
             ? NSColor.controlAccentColor.cgColor
             : NSColor.separatorColor.withAlphaComponent(0.25).cgColor
         btn.contentTintColor = selected ? .controlAccentColor : .labelColor
-        btn.alphaValue = (switchable || selected) ? 1.0 : 0.65
     }
 
     /// 根据 viewModel 当前真实动画状态刷新所有状态格的选中样式与预览图
@@ -1524,7 +1529,7 @@ return row
             let selected = (current == state)
             tile.state = selected ? .on : .off
             tile.title = selected ? "✓ \(state.displayName)" : state.displayName
-            applyTileStyle(tile, selected: selected, switchable: state != .warn)
+            applyTileStyle(tile, selected: selected)
         }
         // 更新当前状态徽章
         currentStateBadge?.stringValue = "当前状态：\(current.displayName)"
@@ -1702,10 +1707,20 @@ final class ToggleSwitch: NSView {
 
 @MainActor
 private final class PetImageHistoryView: NSView {
+    /// 预览图与说明文字的尺寸约定：整块 accessory 宽 430，预览图靠左，说明文字靠右且顶部对齐
+    private static let previewBox = NSRect(x: 8, y: 12, width: 150, height: 150)
+    private static let detailWidth: CGFloat = 252
+    private static let detailTopY: CGFloat = 162
     private let library: PetImageLibrary
     private let statePicker = NSPopUpButton()
     private let imagePicker = NSPopUpButton()
+    private let previewImageView = NSImageView()
+    private let detailLabel = NSTextField(wrappingLabelWithString: "")
     private var records: [PetImageRecord] = []
+    /// 预览图按记录 id 缓存，切换状态或反复翻阅历史时不再重复向服务端取图
+    private var previewCache: [String: NSImage] = [:]
+    /// 递增标记：选中的记录变化后丢弃已过期的异步预览结果
+    private var previewToken = 0
     var selectedState: CatAnimationState { CatAnimationState.allCases[statePicker.indexOfSelectedItem] }
     var selectedImage: PetImageRecord? {
         let index = imagePicker.indexOfSelectedItem
@@ -1713,15 +1728,35 @@ private final class PetImageHistoryView: NSView {
     }
     init(library: PetImageLibrary, initialState: CatAnimationState) {
         self.library = library
-        super.init(frame: NSRect(x: 0, y: 0, width: 430, height: 66))
-        statePicker.frame = NSRect(x: 0, y: 35, width: 150, height: 28)
+        super.init(frame: NSRect(x: 0, y: 0, width: 430, height: 234))
+        statePicker.frame = NSRect(x: 0, y: 206, width: 150, height: 28)
         statePicker.addItems(withTitles: CatAnimationState.allCases.map(\.displayName))
         statePicker.selectItem(at: CatAnimationState.allCases.firstIndex(of: initialState) ?? 0)
         statePicker.target = self
         statePicker.action = #selector(stateChanged)
         addSubview(statePicker)
-        imagePicker.frame = NSRect(x: 0, y: 0, width: 430, height: 28)
+        imagePicker.frame = NSRect(x: 0, y: 174, width: 430, height: 28)
+        imagePicker.target = self
+        imagePicker.action = #selector(imageChanged)
         addSubview(imagePicker)
+
+        previewImageView.frame = Self.previewBox
+        previewImageView.imageScaling = .scaleProportionallyDown
+        previewImageView.imageAlignment = .alignCenter
+        previewImageView.animates = true
+        previewImageView.toolTip = "云端历史图片预览；确认效果后再应用"
+        previewImageView.wantsLayer = true
+        previewImageView.layer?.cornerRadius = 10
+        previewImageView.layer?.borderWidth = 1
+        previewImageView.layer?.borderColor = NSColor.separatorColor.cgColor
+        previewImageView.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+        addSubview(previewImageView)
+
+        detailLabel.font = .systemFont(ofSize: 11)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.lineBreakMode = .byWordWrapping
+        detailLabel.maximumNumberOfLines = 0
+        addSubview(detailLabel)
         stateChanged()
     }
     required init?(coder: NSCoder) { nil }
@@ -1735,5 +1770,58 @@ private final class PetImageHistoryView: NSView {
         if records.isEmpty { imagePicker.addItem(withTitle: "该状态暂无历史图片") }
         imagePicker.isEnabled = !records.isEmpty
         if let index = records.firstIndex(where: { $0.id == currentID }) { imagePicker.selectItem(at: index) }
+        refreshPreview()
+    }
+    @objc private func imageChanged() { refreshPreview() }
+
+    /// 预览当前选中的历史记录：生成中/失败的记录不发请求，就绪的记录按需拉取并缓存。
+    private func refreshPreview() {
+        previewToken += 1
+        let token = previewToken
+        guard let item = selectedImage else {
+            previewImageView.image = nil
+            setDetail("该状态暂无历史图片。")
+            return
+        }
+        let summary = previewSummary(for: item)
+        guard item.isReady else {
+            previewImageView.image = nil
+            setDetail(item.isGenerating
+                ? "\(summary)\n生成完成后重新打开历史图片即可查看预览。"
+                : "\(summary)\n暂无预览：\(item.error ?? "生成失败，可点击重试生成")")
+            return
+        }
+        if let cached = previewCache[item.id] {
+            previewImageView.image = cached
+            setDetail(summary)
+            return
+        }
+        previewImageView.image = nil
+        setDetail("\(summary)\n正在加载预览…")
+        Task { @MainActor [weak self] in
+            guard let self, self.previewToken == token else { return }
+            do {
+                let data = try await PetImageService.image(item.id)
+                guard self.previewToken == token, let image = NSImage(data: data) else { return }
+                self.previewCache[item.id] = image
+                self.previewImageView.image = image
+                self.setDetail(summary)
+            } catch {
+                guard self.previewToken == token else { return }
+                self.setDetail("\(summary)\n预览加载失败：\(error.localizedDescription)")
+            }
+        }
+    }
+    private func previewSummary(for item: PetImageRecord) -> String {
+        let applied = item.id == library.currentID(for: selectedState) ? "当前生效" : "未应用"
+        return "\(item.stageLabel) · \(applied)\n状态：\(selectedState.displayName)\n文件：\(item.name)\n时间：\(item.createdAt)\nID：\(item.id.prefix(8))"
+    }
+    /// 说明文字顶部与预览图对齐，高度随内容收缩，避免多行文案在固定框内垂直居中。
+    private func setDetail(_ text: String) {
+        detailLabel.stringValue = text
+        let fitted = detailLabel.sizeThatFits(NSSize(width: Self.detailWidth, height: .greatestFiniteMagnitude))
+        let height = max(16, min(fitted.height, Self.detailTopY - Self.previewBox.minY))
+        detailLabel.frame = NSRect(x: 170, y: Self.detailTopY - height,
+                                   width: Self.detailWidth, height: height)
     }
 }

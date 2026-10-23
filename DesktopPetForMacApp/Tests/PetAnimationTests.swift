@@ -51,7 +51,7 @@ final class PetAnimationTests: XCTestCase {
         try CustomSpriteStore.installCloudImages(selections: ["focus": focusID], images: [focusID: image], directory: directory)
         XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
         XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
-        XCTAssertNil(CustomSpriteStore.loadAnimation(for: .warn, directory: directory))
+        XCTAssertNil(CustomSpriteStore.loadAnimation(for: .pet, directory: directory))
         try CustomSpriteStore.installCloudImages(selections: ["focus": ""], images: [:], directory: directory)
         XCTAssertNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
         XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
@@ -64,18 +64,35 @@ final class PetAnimationTests: XCTestCase {
         XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
     }
     func testCloudLibraryFiltersHistoryAndPreservesLegacySelection() throws {
-        let json = Data(#"{"currentId":"legacy","currentIds":{"focus":"focus-id","warn":""},"images":[{"id":"legacy","name":"old","createdAt":"date"},{"id":"focus-id","state":"focus","name":"focus","createdAt":"date","status":"ready"},{"id":"sleep-id","state":"sleep","name":"sleep","createdAt":"date","status":"ready"}]}"#.utf8)
+        let json = Data(#"{"currentId":"legacy","currentIds":{"focus":"focus-id","pet":""},"images":[{"id":"legacy","name":"old","createdAt":"date"},{"id":"focus-id","state":"focus","name":"focus","createdAt":"date","status":"ready"},{"id":"sleep-id","state":"sleep","name":"sleep","createdAt":"date","status":"ready"}]}"#.utf8)
         let library = try JSONDecoder().decode(PetImageLibrary.self, from: json)
         XCTAssertEqual(library.currentID(for: .focus), "focus-id")
-        XCTAssertEqual(library.currentID(for: .warn), "")
+        XCTAssertEqual(library.currentID(for: .pet), "")
         XCTAssertEqual(library.currentID(for: .sleep), "legacy")
         XCTAssertEqual(library.history(for: .focus).map(\.id), ["legacy", "focus-id"])
-        XCTAssertEqual(library.selections["warn"], "")
+        XCTAssertEqual(library.selections["pet"], "")
         let empty = try JSONDecoder().decode(PetImageLibrary.self, from: Data(#"{"currentId":"","images":[]}"#.utf8))
         XCTAssertTrue(empty.selections.isEmpty, "An unused cloud library must preserve existing local state images")
     }
 
-    /// 共享图（一次 AI 生成、无单状态选中）应展开覆盖全部 5 个状态。
+    /// 服务端历史数据可能残留已移除状态的选中（如旧 warn 状态），安装时应跳过而非报错。
+    func testInstallCloudImagesSkipsUnknownLegacyStates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        let focusID = String(repeating: "a", count: 32)
+        let warnID = String(repeating: "d", count: 32)
+        try CustomSpriteStore.installCloudImages(
+            selections: ["focus": focusID, "warn": warnID],
+            images: [focusID: image, warnID: image], directory: directory)
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
+        let manifest = directory.appendingPathComponent("cloud-selections.json")
+        let saved = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: manifest))
+        XCTAssertNil(saved["warn"], "Unknown legacy state must not be written into the manifest")
+    }
+
+    /// 共享图（一次 AI 生成、无单状态选中）应展开覆盖全部 4 个状态。
     func testSharedImageSelectionExpandsToAllStates() throws {
         let sharedID = String(repeating: "c", count: 32)
         let json = Data(#"{"currentId":"""# + sharedID + #"","images":[{"id":"""# + sharedID + #"","name":"shared","createdAt":"date","status":"ready"}]}"#.utf8)

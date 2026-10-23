@@ -69,6 +69,14 @@ final class FloatingWindow {
         viewModel.onPetSay = { [weak cv] text in
             cv?.catSay(text)
         }
+
+        // 贴边躲藏：ViewModel 吸附算出新原点后，由视图层移动窗口
+        viewModel.onMoveWindow = { [weak win] origin in
+            win?.setFrameOrigin(origin)
+        }
+        viewModel.windowSize = windowSize
+        // 同步窗口初始位置，保证未拖动过时贴边计算也基于真实坐标
+        viewModel.windowPosition = win.frame.origin
         
         // 设置初始帧
         cv.updateLayerImage()
@@ -108,6 +116,12 @@ final class FloatingWindow {
             y: oldFrame.minY
         )
         win.setFrame(NSRect(origin: newOrigin, size: newSize), display: true)
+        viewModel.windowPosition = newOrigin
+        viewModel.windowSize = newSize
+        // 躲藏中调整大小时重新吸附，按新尺寸贴回边缘
+        if viewModel.isHiding {
+            viewModel.snapToEdgeForHiding(windowOrigin: newOrigin, size: newSize)
+        }
     }
     func close() {
         updateTimer?.invalidate()
@@ -135,6 +149,7 @@ enum ContextMenuPrefs {
         ("weather", "查看天气 ☀️"),
         ("todo", "Todo 清单 📝"),
         ("stock", "输入股票代码查询 📈"),
+        ("hide", "躲起来 👀"),
     ]
 
     static func title(forKey key: String) -> String {
@@ -211,9 +226,10 @@ class CatView: NSView {
     // MARK: - 纯 AppKit 绘制（不使用 CALayer / transform / 子视图）
     // 彻底避免 layer 相关的所有渲染问题
     private var currentImage: NSImage?
-    /// 上一次渲染的帧标识（state + frameIndex），用于跳过未变化的重绘
+    /// 上一次渲染的帧标识（state + frameIndex + facing），用于跳过未变化的重绘
     private var lastRenderedState: String = ""
     private var lastRenderedFrameIndex: Int = -1
+    private var lastRenderedFacing: String = ""
     private var lastRenderedSpriteRevision: Int = -1
 
     func setupLayerHosting() {
@@ -224,7 +240,7 @@ class CatView: NSView {
     // 注意：不使用 NSTrackingArea / mouseEntered / mouseExited
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        // 已移除"看向鼠标"翻转，猫固定朝右，这里原样绘制即可
+        // 已移除“看向鼠标”翻转，猫固定朝右；仅「贴边躲藏」时由 ViewModel 返回镜像帧
         // 素材帧已统一为单张基准图（消除 AI 逐帧抖动），动作幅度完全由渲染层呼吸控制（±1%，4 秒周期，几乎静止）
         guard let image = currentImage else { return }
         let t = Date().timeIntervalSinceReferenceDate
@@ -232,7 +248,13 @@ class CatView: NSView {
         let scale = min(bounds.width / max(1, image.size.width), bounds.height / max(1, image.size.height)) * breathe
         let w = image.size.width * scale
         let h = image.size.height * scale
-        let rect = NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+        var originX = (bounds.width - w) / 2
+        // 躲藏素材只画探出的头/胸/爪，裁切边在素材一侧：贴边时把裁切边钉在屏幕边缘，
+        // 呼吸缩放时也不会在屏幕边漏出一道缝
+        if let vm = viewModel, vm.animationState == .hide {
+            originX = vm.facing == .right ? bounds.width - w : 0
+        }
+        let rect = NSRect(x: originX, y: (bounds.height - h) / 2, width: w, height: h)
         image.draw(in: rect)
     }
 
@@ -255,9 +277,12 @@ class CatView: NSView {
         // 帧未变化时跳过重绘（如 sleep 状态画面静止）
         let stateKey = vm.animationState.rawValue
         let frameIndex = vm.currentFrameIndex
-        guard stateKey != lastRenderedState || frameIndex != lastRenderedFrameIndex || lastRenderedSpriteRevision != vm.spriteRevision else { return }
+        let facingKey = vm.facing.rawValue
+        guard stateKey != lastRenderedState || frameIndex != lastRenderedFrameIndex
+            || facingKey != lastRenderedFacing || lastRenderedSpriteRevision != vm.spriteRevision else { return }
         lastRenderedState = stateKey
         lastRenderedFrameIndex = frameIndex
+        lastRenderedFacing = facingKey
         lastRenderedSpriteRevision = vm.spriteRevision
 
         guard let image = vm.currentFrameImage else {
@@ -308,8 +333,15 @@ class CatView: NSView {
                 isDragging = false
                 return
             }
-            // 点击进入 focus 专注状态（提醒表现即专注动画）
-            viewModel?.transitionTo(.focus)
+            // 点一下贴边躲藏的小猫：先记下状态，点击后它现身并逗一句（点击仍进专注状态）
+            let wasHiding = viewModel?.animationState == .hide
+            if wasHiding {
+                viewModel?.revealFromEdge(target: .focus)
+                catSay("被我抓住了吧～")
+            } else {
+                // 点击进入 focus 专注状态（提醒表现即专注动画）
+                viewModel?.transitionTo(.focus)
+            }
             
 // 点击小猫：把小猫窗口及其相关弹窗（Todo/天气/做题等）全部放到最前
 // 仅唤起仍可见的弹窗：已点 ✕ 关闭（orderOut 隐藏）的窗口不能被重新弹出，
@@ -322,6 +354,14 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
             // 双击展示 Todo 清单
             if event.clickCount == 2 {
                 showTodoList()
+            }
+        } else if let vm = viewModel, let win = windowRef {
+            // 拖动结束：躲藏中被拖动即视为拖出现身；否则松手位置贴屏幕侧边即吸附贴边、只探头
+            let frame = win.frame
+            if vm.isHiding {
+                vm.revealFromEdge()
+            } else {
+                vm.snapToEdgeForHiding(windowOrigin: frame.origin, size: frame.size)
             }
         }
         isDragging = false
@@ -945,6 +985,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
             ("weather", #selector(showWeatherAction(_:)), true),
             ("todo", #selector(todoAction(_:)), false),
             ("stock", #selector(stockAction(_:)), true),
+            ("hide", #selector(hideAction(_:)), false),
         ]
 
         // 按「设置面板 > 菜单设置」的展示配置过滤（如「苦练基本功」默认不展示）
@@ -987,6 +1028,8 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     }
     
     @objc private func petAction(_ sender: NSMenuItem) { viewModel?.pet() }
+    /// 「躲起来」：吸附到最近的屏幕侧边，只探出脑袋和一只小爪
+    @objc private func hideAction(_ sender: NSMenuItem) { viewModel?.hideBehindEdge() }
     /// 「喂猫条」：进入投喂模式，猫条跟随鼠标，点小猫完成喂食
     @objc private func feedAction(_ sender: NSMenuItem) { startFeeding() }
     /// 「解锁更多功能」：通知 AppDelegate 打开设置面板并锚定闪烁「权限」栏

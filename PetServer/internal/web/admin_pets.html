@@ -19,7 +19,6 @@
           <a class="nav-link" href="/admin/codes">激活码管理</a>
           <a class="nav-link" href="/admin/status">服务器状态</a>
           <a class="nav-link" href="/admin/files">文件管理</a>
-          <a class="nav-link" href="/online" target="_blank">手机版</a>
           <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
         </div>
       </div>
@@ -113,6 +112,7 @@
       idel:  { face: '😸', label: '休闲' },
       sleep: { face: '😴', label: '睡觉' },
       pet:   { face: '🤗', label: '抚摸' },
+      hide:  { face: '🫥', label: '躲藏' },
     };
 
     function stateOf(s) { return STATE[s] || { face: '🐱', label: s || '未知' }; }

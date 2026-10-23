@@ -10,7 +10,7 @@ type Heartbeat struct {
 	OS       string `json:"os"`       // macOS 版本
 	Machine  string `json:"machine"`  // 机器架构
 	PetName  string `json:"petName"`  // 宠物名称
-	PetState string `json:"petState"` // 宠物当前状态（focus/idel/sleep/pet）
+	PetState string `json:"petState"` // 宠物当前状态（focus/idel/sleep/pet/hide）
 }
 
 // Validate 校验必填字段，返回第一个缺失字段名；全部有效时返回空串

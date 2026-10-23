@@ -92,7 +92,7 @@ final class PetAnimationTests: XCTestCase {
         XCTAssertNil(saved["warn"], "Unknown legacy state must not be written into the manifest")
     }
 
-    /// 共享图（一次 AI 生成、无单状态选中）应展开覆盖全部 4 个状态。
+    /// 共享图（一次 AI 生成、无单状态选中）应展开覆盖全部 5 个状态。
     func testSharedImageSelectionExpandsToAllStates() throws {
         let sharedID = String(repeating: "c", count: 32)
         let json = Data(#"{"currentId":"""# + sharedID + #"","images":[{"id":"""# + sharedID + #"","name":"shared","createdAt":"date","status":"ready"}]}"#.utf8)

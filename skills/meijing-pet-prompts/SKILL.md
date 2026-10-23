@@ -1,13 +1,13 @@
 ---
 name: meijing-pet-prompts
-description: 用美境 AI 设计师（gpt-image-2.5-sunburst-vision）为桌面宠物生成 4 状态单帧姿态图（idel/sleep/pet/focus，原 warn 已合并进 focus）的 prompt 模板与踩坑要点。当用户要求换宠物形象、新增状态、重生成素材时使用。生成后需手动处理抠图与尺寸统一到 200×200 透明画布。
+description: 用美境 AI 设计师（gpt-image-2.5-sunburst-vision）为桌面宠物生成 5 状态单帧姿态图（idel/sleep/pet/focus/hide，原 warn 已合并进 focus）的 prompt 模板与踩坑要点。当用户要求换宠物形象、新增状态、重生成素材时使用。生成后需手动处理抠图与尺寸统一到 200×200 透明画布。
 metadata:
   short-description: Meijing AI prompts for pet sprite generation
 ---
 
 # 美境宠物姿态素材 Prompt 存档
 
-为 `DesktopPetForMacApp` 生成 4 个状态的宠物姿态图（提醒 warn 已合并进专注，不再生成）。**每状态只做 1 帧静态图**，呼吸、状态切换等动画交给 App 渲染层实现，**不再让 AI 逐帧生成多帧动画**。
+为 `DesktopPetForMacApp` 生成 5 个状态的宠物姿态图（提醒 warn 已合并进专注，不再生成；新增「躲藏 hide」，贴屏幕边缘时只探出脑袋、一点前胸和一只小爪）。**每状态只做 1 帧静态图**，呼吸、状态切换等动画交给 App 渲染层实现，**不再让 AI 逐帧生成多帧动画**。
 
 ## 核心策略
 
@@ -38,6 +38,7 @@ metadata:
 3. **不要做多帧**：曾实测 8 帧 bbox 640~794（约 25% 差异），统一尺寸后帧间无动作差异≈静止，白白增加成本。单帧 + 渲染层缩放才是正解。
 4. **抠图必须连通域**：仅靠「亮度>235 去背景」会把耳朵尖/尾巴当噪点剔除；用 BFS 从边界泛洪判背景 + 最大连通域保主体。
 5. **尺寸统一**：成图 1024×1024 → 抠图 → 等比缩到 170×170 → 贴到 200×200 透明画布；实测五状态主体高度统一为 162px，切换不跳动。
+6. **躲藏态只画探出来的部分**：只画头部、一小段前胸和一只前爪，从画面左侧探出，其余身体不画；App 贴边时窗口对齐屏幕边缘，渲染时把素材裁切边钉在屏幕边上（呼吸缩放不漏缝），右侧贴边用镜像帧。不要画墙 / 门框 / 屏幕边框，否则会和真实屏幕边缘对不上。落图时主体左边缘对齐画布左边（不居中）、垂直居中，头高按休闲帧对齐（约 55~60px），不要拉到 162px。
 
 ## 与其他 skill 的关系
 
@@ -45,4 +46,4 @@ metadata:
 
 ## 完整 prompt 存档
 
-四个状态的组装好 prompt 全文见 [references/prompts.md](references/prompts.md)。
+五个状态的组装好 prompt 全文见 [references/prompts.md](references/prompts.md)。

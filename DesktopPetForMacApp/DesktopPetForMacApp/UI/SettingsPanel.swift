@@ -309,7 +309,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         updatePetNameButtons()
 
         // ── 合并区：形象切换 + 状态图片管理（每状态一竖格） ──
-        // 顶部：标题 + 历史图片工具按钮；其下一行说明；中部：4 个状态格；底部：AI 生成 + 剩余次数
+        // 顶部：标题 + 历史图片工具按钮；其下一行说明；中部：5 个状态格；底部：AI 生成 + 剩余次数
         // 紧跟「宠物名称」行下方成组排布（而非贴底），避免删卡后中间裂出空洞
         let spriteRowH: CGFloat = 196
         let spriteRowY = nameRowY - 16 - spriteRowH
@@ -395,7 +395,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         aiButton.frame = NSRect(x: 14, y: 2, width: 210, height: 22)
         aiButton.font = .systemFont(ofSize: 11, weight: .medium)
         aiButton.bezelStyle = .rounded
-        aiButton.toolTip = "上传一张照片，AI 为全部 4 个状态各生成一张图片（姿态按状态区分）并自动应用；整批仅消耗该激活码的 1 次生成配额"
+        aiButton.toolTip = "上传一张照片，AI 为全部 5 个状态各生成一张图片（姿态按状态区分）并自动应用；整批仅消耗该激活码的 1 次生成配额"
         spriteRow.addSubview(aiButton)
         aiGenerateAllButton = aiButton
 
@@ -484,7 +484,6 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             do { try await operation() } catch { self?.showSpriteError(error) }
             self?.petImageBusy = false
             self?.refreshCustomSpriteControls()
-            self?.refreshSpriteAccessUI()
         }
     }
 
@@ -512,7 +511,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 }
                 try CustomSpriteStore.installLocalImage(data, for: state)
                 self.viewModel?.reloadSpriteSheets()
-                self.refreshSpriteAccessUI()
+                self.refreshCustomSpriteControls()
                 self.aiStatusLabel?.stringValue = "已更新\(state.displayName)状态图片（仅本机）"
             } catch {
                 self.showSpriteError(error)
@@ -529,7 +528,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
         let panel = NSOpenPanel()
         panel.title = "选择宠物照片"
-        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型，为全部 4 个状态各生成一张图片（姿态按状态区分），整批仅消耗 1 次生成配额"
+        panel.message = "PNG/JPEG，最大 10 MB；照片将通过 OpenRouter 调用 Seedream 模型，为全部 5 个状态各生成一张图片（姿态按状态区分），整批仅消耗 1 次生成配额"
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -567,6 +566,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
             do {
                 try CustomSpriteStore.removeLocalImage(for: state)
                 viewModel?.reloadSpriteSheets()
+                refreshCustomSpriteControls()
             } catch {
                 showSpriteError(error)
                 return
@@ -633,8 +633,12 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
     }
 
+    /// 图片内容发生变化后统一刷新面板：按钮圆点/可用性 + 状态格预览图。
+    /// 预览图只在 refreshStateCards 里重新取帧，单靠 refreshSpriteAccessUI 不会换图，
+    /// 否则更换图片后要等面板重开或宠物切换状态才看得见新图。
     private func refreshCustomSpriteControls() {
         refreshSpriteAccessUI()
+        refreshStateCards()
     }
 
     private func showSpriteError(_ error: Error) {

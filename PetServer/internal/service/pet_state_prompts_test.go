@@ -17,6 +17,7 @@ func TestPetStatePromptRequirements(t *testing.T) {
 		"idel":  {"四脚自然站立", "尾尖轻轻摆动"},
 		"sleep": {"蜷缩", "双眼闭合", "不醒来"},
 		"pet":   {"眯着眼睛", "绝对不出现人的手"},
+		"hide":  {"探出的头部", "一小段前胸", "一只前爪"},
 		"focus": {"笔记本电脑", "交替轻轻打字"},
 	} {
 		t.Run(state, func(t *testing.T) {
@@ -54,6 +55,18 @@ func TestPetStatePromptRequirements(t *testing.T) {
 	if err != nil || idlePortrait != legacyPortrait || idleAnimation != legacyAnimation {
 		t.Fatal("legacy state must default to idle")
 	}
+	// 默认取景仍是“全身完整、居中”；躲藏态必须覆盖成“只画头、一点前胸和一只前爪”。
+	for _, prompt := range []string{idlePortrait, idleAnimation} {
+		if !strings.Contains(prompt, "全身完整可见") {
+			t.Fatal("default full-body composition lost")
+		}
+	}
+	hidePortrait, hideAnimation, _ := petPromptsForState("hide")
+	for _, prompt := range []string{hidePortrait, hideAnimation} {
+		if strings.Contains(prompt, "全身完整可见") || !strings.Contains(prompt, "不要画全身") {
+			t.Fatal("hide must only draw the peeking part")
+		}
+	}
 	if _, _, err = petPromptsForState("invalid"); err == nil {
 		t.Fatal("invalid state accepted")
 	}
@@ -64,7 +77,7 @@ func TestPetStatePromptRequirements(t *testing.T) {
 }
 func TestEveryStateReachesBothModelRequests(t *testing.T) {
 	fixture := base64.StdEncoding.EncodeToString(testPetSheet(t))
-	for _, state := range []string{"focus", "idel", "sleep", "pet"} {
+	for _, state := range []string{"focus", "idel", "sleep", "pet", "hide"} {
 		t.Run(state, func(t *testing.T) {
 			portrait, animation, _ := petPromptsForState(state)
 			calls := 0

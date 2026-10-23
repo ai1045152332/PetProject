@@ -153,11 +153,6 @@ func New(
 		})
 	}
 
-	// H5 在线宠物列表页（内置静态页面，与接口同源，免跨域）
-	mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(web.OnlinePage)
-	})
 	// 统一后台管理页：/admin/login 登录页、/admin 在线宠物、/admin/codes 激活码管理
 	// 页面不缓存：避免部署新版本后浏览器仍展示旧 HTML
 	noCache := func(w http.ResponseWriter) {

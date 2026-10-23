@@ -11,6 +11,7 @@ enum CatAnimationState: String, CaseIterable {
     case idel   = "idel"    // 休闲
     case sleep  = "sleep"   // 睡觉
     case pet    = "pet"     // 抚摸
+    case hide   = "hide"    // 躲藏（贴屏幕侧边，只探出脑袋、一点前胸和一只小爪）
 
     /// 中文展示名
     var displayName: String {
@@ -19,6 +20,7 @@ enum CatAnimationState: String, CaseIterable {
         case .idel:  return "休闲"
         case .sleep: return "睡觉"
         case .pet:   return "抚摸"
+        case .hide:  return "躲藏"
         }
     }
 }
@@ -64,10 +66,15 @@ final class PetViewModel: ObservableObject {
     
     /// 当前要显示的图片帧
     /// 注意：不使用 @Published，由视图的定时器每帧读取
-    /// 已移除"看向鼠标"翻转功能，固定显示原图（朝右）
+    /// 已移除“看向鼠标”翻转功能，固定显示原图（朝右）；
+    /// 仅贴右边缘躲藏时改用镜像帧，让露在屏内的部分仍是脑袋
     var currentFrameImage: NSImage? {
         guard let sheet = spriteSheets[animationState] else { return nil }
         let index = currentFrameIndex
+        if animationState == .hide, facing == .right,
+           let mirrored = flippedFrames[animationState], mirrored.indices.contains(index) {
+            return mirrored[index]
+        }
         return sheet.frame(at: index)
     }
     
@@ -339,7 +346,7 @@ final class PetViewModel: ObservableObject {
     }
     
     private func performRandomBehavior() {
-        guard !isPlayingOneShot && animationState != .sleep else {
+        guard !isPlayingOneShot && animationState != .sleep && animationState != .hide else {
             scheduleNextBehavior()
             return
         }
@@ -355,6 +362,8 @@ final class PetViewModel: ObservableObject {
     
     func transitionTo(_ newState: CatAnimationState) {
         guard animationState != newState else { return }
+        // 离开躲藏态时自动清除贴边标记（吸附进入 .hide 前已先置 true，不受影响）
+        if newState != .hide { isHiding = false }
         isFacingLocked = false
         animationState = newState
         currentFrameIndex = 0
@@ -387,11 +396,82 @@ final class PetViewModel: ObservableObject {
         }
     }
     
+    /// 窗口拖动 / 缩放回调（由 FloatingWindow 注册，贴边躲藏与设置面板滑杆拖动时触发）
+    var onMoveWindow: ((CGPoint) -> Void)?
+
+    // MARK: - 贴边躲藏
+
+    /// 可吸附的屏幕侧边（躲藏素材是从一侧探头，只支持左右）
+    enum HideEdge {
+        case left, right
+    }
+
+    /// 拖近屏幕侧边时自动贴边进入躲藏：素材只画了头、一点前胸和一只前爪，且裁切边就在素材左侧，
+    /// 窗口直接对齐屏幕可见区域边缘，让“身体被屏幕挡住”的裁切边正好落在屏幕边上。
+    /// 由视图层在拖拽结束时调用；requiresNearEdge=false 时（右键「躲起来」）直接吸附到最近一侧。
+    @MainActor
+    func snapToEdgeForHiding(windowOrigin: CGPoint, size: NSSize, requiresNearEdge: Bool = true) {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(NSRect(origin: windowOrigin, size: size)) }) ?? NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let trigger: CGFloat = 60 // 距边缘小于该距离即触发吸附
+        let dLeft = windowOrigin.x - vf.minX
+        let dRight = vf.maxX - (windowOrigin.x + size.width)
+        let edges: [(edge: HideEdge, dist: CGFloat)] = [(.left, dLeft), (.right, dRight)]
+        guard let nearest = edges.min(by: { $0.dist < $1.dist }), !requiresNearEdge || nearest.dist < trigger else { return }
+        let clampedY = min(max(windowOrigin.y, vf.minY), vf.maxY - size.height)
+        let origin: CGPoint
+        switch nearest.edge {
+        case .left:
+            facing = .left
+            origin = CGPoint(x: vf.minX, y: clampedY)
+        case .right:
+            facing = .right
+            origin = CGPoint(x: vf.maxX - size.width, y: clampedY)
+        }
+        isHiding = true
+        onMoveWindow?(origin)
+        windowPosition = origin
+        transitionTo(.hide)
+        FileLogger.log("[DesktopPet] 贴边躲藏: edge=\(nearest.edge), origin=\(origin)")
+    }
+
+    /// 是否正在贴边躲藏（视图层拖动时用于判定“拖回即现身”，拖拽结束时据此吸附/解除）
+    private(set) var isHiding: Bool = false
+
+    /// 宠物窗口当前尺寸（视图层在拖动 / 缩放时同步，贴边吸附按真实窗口宽度计算露出条）
+    var windowSize: NSSize = NSSize(width: 160, height: 160)
+
+    /// 从躲藏中现身：先把窗口完整收回屏内（可传入目标状态，默认回基准态）
+    /// 拖出或点击露在外面的一小条身子时调用，避免醒来后仍然半个身子在屏幕外
+    @MainActor
+    func revealFromEdge(target: CatAnimationState? = nil) {
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(NSRect(origin: windowPosition, size: windowSize)) }) ?? NSScreen.main {
+            let vf = screen.visibleFrame
+            let x = min(max(windowPosition.x, vf.minX + 4), vf.maxX - windowSize.width - 4)
+            let y = min(max(windowPosition.y, vf.minY + 4), vf.maxY - windowSize.height - 4)
+            let origin = CGPoint(x: x, y: y)
+            if origin != windowPosition {
+                onMoveWindow?(origin)
+                windowPosition = origin
+            }
+        }
+        isHiding = false
+        let next = target ?? (systemFocusActive ? .focus : .idel)
+        if animationState != next { transitionTo(next) }
+    }
+
+    /// 进入躲藏：由右键菜单触发，直接吸附到最近的屏幕侧边
+    func hideBehindEdge() {
+        showContextMenu = false
+        snapToEdgeForHiding(windowOrigin: windowPosition, size: windowSize, requiresNearEdge: false)
+    }
+
     // MARK: - Mouse Interaction
 
     // MARK: - 空闲自动睡觉
 
     /// 记录一次互动：重置空闲计时；若正在睡觉则唤醒回基准状态（勿扰中→专注，否则→休闲）
+    /// 躲藏态不在这里解除（弹菜单等交互不应把宠物拉回屏内），由拖回 / 点击单独现身
     /// 由视图层在点击 / 拖动 / 右键菜单等交互时调用
     func markInteraction() {
         if animationState == .sleep {
@@ -406,13 +486,16 @@ final class PetViewModel: ObservableObject {
             guard let self else { return }
             // 一次性动画（提醒 / 喝水 / 抚摸）播放中不打断，顺延到其结束后再判定
             guard !self.isPlayingOneShot else { self.resetIdleSleepTimer(); return }
+            // 躲藏时半截身子贴着屏幕边，睡着会显得突兀，保持躲藏姿态直到被找出来
+            guard self.animationState != .hide else { return }
             self.transitionTo(.sleep)
         }
     }
 
     func updateMousePosition(_ point: CGPoint) {
         mousePosition = point
-        guard !isFacingLocked else { return }
+        // 躲藏时朝向固定为贴边方向（决定镜像帧），不跟随鼠标翻转
+        guard !isFacingLocked, animationState != .hide else { return }
         
         // 计算小猫窗口中心与鼠标的角度，决定朝向
         let catCenterX = windowPosition.x + 62 // 假设小猫宽度约 124pt
@@ -460,6 +543,7 @@ final class PetViewModel: ObservableObject {
     }
     
     func wakeUp() {
+        isHiding = false
         transitionTo(.idel)
     }
     
@@ -515,10 +599,13 @@ final class PetViewModel: ObservableObject {
         // 弹窗未关闭时不弹下一次
         if isWaterAlertShowing { return }
         lastWaterReminderTime = Date()
-        isFacingLocked = true
-        facing = .right
-        // 提醒表现：播放专注动画 + 喝水弹窗气泡（原 warn 状态已合并进专注）
-        playOneShot(.focus)
+        // 躲藏中只弹提醒窗，不把半截身子的宠物切回完整专注动画
+        if animationState != .hide {
+            isFacingLocked = true
+            facing = .right
+            // 提醒表现：播放专注动画 + 喝水弹窗气泡（原 warn 状态已合并进专注）
+            playOneShot(.focus)
+        }
         onDrinkWaterReminder?()
     }
     
@@ -636,7 +723,7 @@ final class PetViewModel: ObservableObject {
 
     /// 启动首句：时段问候 +（若有）今日 Todo 数量
     private func sayGreeting() {
-        guard proactiveChatEnabled, !systemFocusActive, animationState != .sleep else { return }
+        guard proactiveChatEnabled, !systemFocusActive, animationState != .sleep, animationState != .hide else { return }
         let todoCount = TodoManager.shared.load().count
         let greet = Self.timeGreeting()
         if todoCount > 0 {
@@ -646,11 +733,11 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    /// 周期主动搭话：在新闻 / Todo 之间轮换，勿扰或睡觉时不打扰
+    /// 周期主动搭话：在新闻 / Todo 之间轮换，勿扰、睡觉或躲藏时不打扰
     private func performProactiveChat() {
         guard proactiveChatEnabled else { return }
-        // 陪伴式搭话只在“宠物醒着且未播动画”时进行，不打扰专注/勿扰，也不把睡觉的自己喊醒
-        guard !systemFocusActive, animationState != .sleep, !isPlayingOneShot else { return }
+        // 陪伴式搭话只在“宠物醒着且未播动画”时进行，不打扰专注/勿扰，也不把睡觉或躲藏的自己喊出来
+        guard !systemFocusActive, animationState != .sleep, animationState != .hide, !isPlayingOneShot else { return }
 
         chatTick += 1
         let todoCount = TodoManager.shared.load().count

@@ -3,11 +3,6 @@ package web
 
 import "embed"
 
-// OnlinePage 在线宠物列表 H5 页面内容
-//
-//go:embed online.html
-var OnlinePage []byte
-
 // AdminPetsPage 后台管理：在线宠物页
 //
 //go:embed admin_pets.html

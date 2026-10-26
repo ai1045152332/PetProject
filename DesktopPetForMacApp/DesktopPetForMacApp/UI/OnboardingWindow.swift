@@ -248,7 +248,7 @@ final class OnboardingWindow: NSWindow {
         <div class="card">
             <div class="header">
                 <div class="cat-emoji">🐱</div>
-                <h1>欢迎光临小猫世界</h1>
+                <h1>欢迎光临宠物世界</h1>
                 <p>你的桌面小助手，让工作不再枯燥</p>
             </div>
             <div class="content">
@@ -267,7 +267,7 @@ final class OnboardingWindow: NSWindow {
                     </div>
                 </div>
                 <div class="name-section">
-                    <div class="name-label">给你的小猫取个名字吧</div>
+                    <div class="name-label">给你的宠物取个名字吧</div>
                     <div class="name-input-wrap">
                         <input type="text" id="petNameInput" placeholder="例如：毛豆、团团、小咪" maxlength="12" autofocus />
                     </div>

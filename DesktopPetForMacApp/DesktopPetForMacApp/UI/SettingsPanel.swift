@@ -470,6 +470,8 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
     private weak var petHistoryButton: NSButton?
     private weak var aiGenerateAllButton: NSButton?
+    /// 图片历史面板（sheet）：关闭时由 onDismiss 置空
+    private var petHistoryWindow: PetImageHistoryWindow?
     private var petImageBusy = false
     private var petQuotaLimit: Int?
     private var petQuotaRemaining: Int?
@@ -597,48 +599,46 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
 
     /// 历史图片完全读本机文件：服务端只负责生成与存储，打开本弹窗不需要网络。
     @objc private func showPetImageHistory(_ sender: NSButton) {
-        let items = CustomSpriteStore.localImages()
-        let failures = CustomSpriteStore.failures()
-        let alert = NSAlert()
-        alert.messageText = "本机图片历史"
-        guard !items.isEmpty || !failures.isEmpty else {
-            alert.informativeText = "本机暂无图片。用「直接上传」或「AI 生成」添加后，历史会全部保存在本机。"
-            alert.addButton(withTitle: "好")
-            alert.beginSheetModal(for: self, completionHandler: nil)
+        if let existing = petHistoryWindow, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
             return
         }
-        alert.informativeText = "按状态分类：直接上传只属于它的状态，AI 图归入生成它的状态；未归属的老图置底。✓ 为当前选中。选「全部状态」查看分组总览，选具体状态只看该状态可用的图。"
-        alert.addButton(withTitle: "应用")
-        alert.addButton(withTitle: "重试生成")
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
-        let historyView = PetImageHistoryView(items: items, failures: failures,
-                                              initialState: viewModel?.animationState ?? .idel)
-        alert.accessoryView = historyView
-        alert.beginSheetModal(for: self) { [weak self] response in
-            guard let self else { return }
-            let state = historyView.selectedState
-            switch response {
-            case .alertFirstButtonReturn:
-                self.applyLocalImage(historyView.selectedItem, to: historyView.applyState(for: historyView.selectedItem))
-            case .alertSecondButtonReturn:
-                let failureState = historyView.selectedFailureState ?? state
-                self.retryFailedGeneration(for: failureState,
-                                           failure: historyView.selectedFailure ?? failures[failureState.rawValue])
-            case .alertThirdButtonReturn:
-                self.deleteLocalImage(historyView.selectedItem, failureState: historyView.selectedFailureState)
-            default:
-                break
-            }
+        let window = PetImageHistoryWindow(items: CustomSpriteStore.localImages(),
+                                           failures: CustomSpriteStore.failures(),
+                                           initialState: viewModel?.animationState ?? .idel)
+        window.onApply = { [weak self] item, state in
+            self?.applyLocalImage(item, to: state)
         }
-        backfillHistoryOwnership(into: historyView)
+        // 删除/重试等本机文件变化后，重新枚举本机清单推回面板，窗口不关可连续操作
+        window.onDelete = { [weak self] item in
+            self?.deleteLocalImage(item, failureState: nil)
+            self?.reloadPetImageHistory()
+        }
+        window.onClearFailure = { [weak self] state in
+            self?.deleteLocalImage(nil, failureState: state)
+            self?.reloadPetImageHistory()
+        }
+        window.onRetry = { [weak self] state, failure in
+            self?.retryFailedGeneration(for: state, failure: failure)
+        }
+        window.onDismiss = { [weak self] in
+            self?.petHistoryWindow = nil
+        }
+        petHistoryWindow = window
+        beginSheet(window)
+        backfillHistoryOwnership()
+    }
+
+    private func reloadPetImageHistory() {
+        petHistoryWindow?.reload(items: CustomSpriteStore.localImages(),
+                                 failures: CustomSpriteStore.failures())
     }
 
     /// 老版本的 AI 图本机没记生成状态：有激活码时用服务端记录补一次归属，
-    /// 不阻塞弹窗打开，失败就保持离线（未归属的图仍可见可用）。
-    private func backfillHistoryOwnership(into historyView: PetImageHistoryView) {
+    /// 不阻塞面板打开，失败就保持离线（未归属的图仍可见可用）。
+    private func backfillHistoryOwnership() {
         guard AccessControl.serverActivationCode != nil else { return }
-        Task { @MainActor [weak historyView] in
+        Task { @MainActor [weak self] in
             guard let library = try? await PetImageService.library() else { return }
             var records: [String: String] = [:]
             for record in library.images {
@@ -646,8 +646,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 records[record.id] = state
             }
             guard CustomSpriteStore.mergeCloudStates(records) else { return }
-            historyView?.reload(items: CustomSpriteStore.localImages(),
-                                failures: CustomSpriteStore.failures())
+            self?.reloadPetImageHistory()
         }
     }
 
@@ -805,7 +804,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         itemTitle.frame = NSRect(x: 14, y: 24, width: 200, height: 18)
         row.addSubview(itemTitle)
 
-        let itemDesc = NSTextField(labelWithString: "登录 macOS 后自动启动小猫")
+        let itemDesc = NSTextField(labelWithString: "登录 macOS 后自动启动宠物")
         itemDesc.font = .systemFont(ofSize: 11)
         itemDesc.textColor = .tertiaryLabelColor
         itemDesc.frame = NSRect(x: 14, y: 6, width: 220, height: 15)
@@ -819,10 +818,10 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
         row.addSubview(sw)
 
-        // 条目 3：小猫大小（基础权限即可调整）
+        // 条目 3：宠物大小（基础权限即可调整）
         let sizeRow = makeStackRow(height: 56)
 
-        let sizeTitle = NSTextField(labelWithString: "小猫大小")
+        let sizeTitle = NSTextField(labelWithString: "宠物大小")
         sizeTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         sizeTitle.textColor = .labelColor
         sizeTitle.frame = NSRect(x: 14, y: 32, width: 200, height: 18)
@@ -1392,10 +1391,10 @@ let arw = accessRow.bounds.width
         accessCodeField?.isHidden = unlocked
         unlockBtn?.isHidden = unlocked
         clearAccessBtn?.isHidden = !unlocked
-        // 小猫大小为基础功能，不随权限禁用
+        // 宠物大小为基础功能，不随权限禁用
     }
 
-    // MARK: - 小猫大小滑块
+    // MARK: - 宠物大小滑块
 
     @objc private func catSizeSliderChanged(_ sender: NSSlider) {
         // 吸附到 0.1 步长
@@ -1508,7 +1507,7 @@ return row
         titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
         container.addSubview(titleLbl)
 
-        let descLbl = NSTextField(labelWithString: "勾选小猫右键菜单中展示的功能项，取消勾选后菜单不再显示")
+        let descLbl = NSTextField(labelWithString: "勾选宠物右键菜单中展示的功能项，取消勾选后菜单不再显示")
         descLbl.font = .systemFont(ofSize: 11)
         descLbl.textColor = .tertiaryLabelColor
         descLbl.frame = NSRect(x: 16, y: ch - 58, width: cw - 32, height: 15)
@@ -1803,245 +1802,3 @@ final class ToggleSwitch: NSView {
 }
 
 
-@MainActor
-private final class PetImageHistoryView: NSView {
-    /// 预览图与说明文字的尺寸约定：整块 accessory 宽 430，预览图靠左，说明文字靠右且顶部对齐
-    private static let previewBox = NSRect(x: 8, y: 12, width: 150, height: 150)
-    private static let detailWidth: CGFloat = 252
-    private static let detailTopY: CGFloat = 162
-    /// 顶部下拉的“不筛选”项：列表按状态分组的总览
-    private static let allStatesTitle = "全部状态"
-
-    /// 一行 = 一张本机图片、一条失败记录，或一个分组标题（仅分组总览出现且不可选）
-    private struct Row {
-        let key: String
-        let title: String
-        let item: CustomSpriteStore.LocalImageItem?
-        let failureState: CatAnimationState?
-        let failure: CustomSpriteStore.SpriteFailure?
-        let isHeader: Bool
-    }
-
-    private var items: [CustomSpriteStore.LocalImageItem]
-    private var failures: [String: CustomSpriteStore.SpriteFailure]
-    /// 分组总览下“应用”没有显式目标，回退到打开弹窗时宠物所处的状态
-    private let fallbackState: CatAnimationState
-    private let statePicker = NSPopUpButton()
-    private let imagePicker = NSPopUpButton()
-    private let previewImageView = NSImageView()
-    private let detailLabel = NSTextField(wrappingLabelWithString: "")
-    private var rows: [Row] = []
-    /// 预览图按唯一标识缓存，反复翻阅历史时不重复解码
-    private var previewCache: [String: NSImage] = [:]
-
-    /// 顶部下拉同时充当“应用目标状态”与列表筛选条件；选「全部状态」时为 nil
-    private var filterState: CatAnimationState? {
-        let index = statePicker.indexOfSelectedItem - 1
-        return CatAnimationState.allCases.indices.contains(index) ? CatAnimationState.allCases[index] : nil
-    }
-    var selectedState: CatAnimationState { filterState ?? fallbackState }
-    private var selectedRow: Row? {
-        rows.indices.contains(imagePicker.indexOfSelectedItem) ? rows[imagePicker.indexOfSelectedItem] : nil
-    }
-    var selectedItem: CustomSpriteStore.LocalImageItem? { selectedRow?.item }
-    var selectedFailure: CustomSpriteStore.SpriteFailure? { selectedRow?.failure }
-    var selectedFailureState: CatAnimationState? { selectedRow?.failureState }
-
-    /// 「应用」落到哪个状态：直接上传只能回自己的状态，AI 图可应用到任意状态
-    func applyState(for item: CustomSpriteStore.LocalImageItem?) -> CatAnimationState {
-        if let item, item.isDirect, let bound = item.boundState { return bound }
-        return selectedState
-    }
-
-    init(items: [CustomSpriteStore.LocalImageItem], failures: [String: CustomSpriteStore.SpriteFailure],
-         initialState: CatAnimationState) {
-        self.items = items
-        self.failures = failures
-        self.fallbackState = initialState
-        super.init(frame: NSRect(x: 0, y: 0, width: 430, height: 234))
-        statePicker.frame = NSRect(x: 0, y: 206, width: 150, height: 28)
-        statePicker.addItems(withTitles: [Self.allStatesTitle] + CatAnimationState.allCases.map(\.displayName))
-        // 默认停在当前状态：打开即看该状态可用的图，想总览再切「全部状态」
-        statePicker.selectItem(at: (CatAnimationState.allCases.firstIndex(of: initialState) ?? 0) + 1)
-        statePicker.toolTip = "选具体状态只列出该状态可用的图片；选「全部状态」按状态分组总览"
-        statePicker.target = self
-        statePicker.action = #selector(stateChanged)
-        addSubview(statePicker)
-        imagePicker.frame = NSRect(x: 0, y: 174, width: 430, height: 28)
-        imagePicker.target = self
-        imagePicker.action = #selector(imageChanged)
-        addSubview(imagePicker)
-
-        previewImageView.frame = Self.previewBox
-        previewImageView.imageScaling = .scaleProportionallyDown
-        previewImageView.imageAlignment = .alignCenter
-        previewImageView.animates = true
-        previewImageView.toolTip = "本机图片预览；确认效果后再应用到目标状态"
-        previewImageView.wantsLayer = true
-        previewImageView.layer?.cornerRadius = 10
-        previewImageView.layer?.borderWidth = 1
-        previewImageView.layer?.borderColor = NSColor.separatorColor.cgColor
-        previewImageView.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
-        addSubview(previewImageView)
-
-        detailLabel.font = .systemFont(ofSize: 11)
-        detailLabel.textColor = .secondaryLabelColor
-        detailLabel.lineBreakMode = .byWordWrapping
-        detailLabel.maximumNumberOfLines = 0
-        addSubview(detailLabel)
-        reloadRows()
-    }
-    required init?(coder: NSCoder) { nil }
-    @objc private func stateChanged() { reloadRows() }
-    @objc private func imageChanged() { refreshPreview() }
-
-    /// 归属补全后刷新列表，保留当前筛选状态与预览缓存。
-    func reload(items: [CustomSpriteStore.LocalImageItem], failures: [String: CustomSpriteStore.SpriteFailure]) {
-        self.items = items
-        self.failures = failures
-        reloadRows()
-    }
-
-    /// 列表 = 本机图片 + 失败记录，按状态归类：直传图归它的状态，AI 图归生成状态。
-    /// 选具体状态时只列该状态可用图（未归属老图置底），选「全部状态」时按状态分段。
-    private func reloadRows() {
-        rows = filterState.map(rowsForState) ?? groupedRows()
-        imagePicker.removeAllItems()
-        for row in rows {
-            if row.isHeader {
-                // 分组标题只做分隔，不能选中
-                let header = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
-                header.isEnabled = false
-                imagePicker.menu?.addItem(header)
-            } else {
-                imagePicker.addItem(withTitle: row.title)
-            }
-        }
-        if rows.isEmpty { imagePicker.addItem(withTitle: "该状态下暂无图片") }
-        imagePicker.isEnabled = rows.contains { !$0.isHeader }
-        // 优先选中目标状态当前生效的那张
-        let target = selectedState
-        if let index = rows.firstIndex(where: { $0.item?.selectedStates.contains(target) == true }) {
-            imagePicker.selectItem(at: index)
-        }
-        // 程序选中恰好落在分组标题上时，退到第一张真正可选的图
-        if let row = selectedRow, row.isHeader, let index = rows.firstIndex(where: { !$0.isHeader }) {
-            imagePicker.selectItem(at: index)
-        }
-        refreshPreview()
-    }
-
-    /// 单个状态视图：该状态的直传图与 AI 图 + 该状态失败记录，未归属老图置底保留可达性。
-    private func rowsForState(_ state: CatAnimationState) -> [Row] {
-        var built = imageRows(for: state) + unassignedImageRows()
-        if let failure = failures[state.rawValue] { built.append(failureRow(for: state, failure: failure)) }
-        return built
-    }
-
-    /// 分组总览：按状态顺序分段，未归属的老图单独成段。
-    private func groupedRows() -> [Row] {
-        var built: [Row] = []
-        for state in CatAnimationState.allCases {
-            let group = imageRows(for: state)
-            let failure = failures[state.rawValue].map { failureRow(for: state, failure: $0) }
-            guard !group.isEmpty || failure != nil else { continue }
-            let count = group.count + (failure == nil ? 0 : 1)
-            built.append(headerRow("〔\(state.displayName)〕\(count) 张"))
-            built.append(contentsOf: group)
-            if let failure { built.append(failure) }
-        }
-        let unassigned = unassignedImageRows()
-        if !unassigned.isEmpty {
-            built.append(headerRow("〔未归属〕\(unassigned.count) 张历史图"))
-            built.append(contentsOf: unassigned)
-        }
-        return built
-    }
-
-    /// 归属于某状态的图：直接上传（绑定该状态）+ AI 图（生成状态即该状态），新的在前。
-    private func imageRows(for state: CatAnimationState) -> [Row] {
-        items.filter { $0.boundState == state }
-            .sorted { $0.modified > $1.modified }
-            .map(imageRow)
-    }
-
-    /// 无法判断生成状态的 AI 图（老版本写入、且已不被任何状态选中）。
-    private func unassignedImageRows() -> [Row] {
-        items.filter { !$0.isDirect && $0.boundState == nil }
-            .sorted { $0.modified > $1.modified }
-            .map(imageRow)
-    }
-
-    private func imageRow(_ item: CustomSpriteStore.LocalImageItem) -> Row {
-        let mark = item.selectedStates.isEmpty ? "" : "✓ "
-        let source = item.isDirect ? "直接上传" : "AI 生成"
-        let owner = item.boundState.map { item.isDirect ? "\($0.displayName)状态" : $0.displayName } ?? "未归属"
-        let active = item.selectedStates.map(\.displayName).joined(separator: "、")
-        let suffix = active.isEmpty ? "" : " · 生效：\(active)"
-        return Row(key: item.key,
-                   title: "\(mark)\(source) · \(owner) · \(Self.formatDate(item.modified)) · \(Self.formatSize(item.size))\(suffix)",
-                   item: item, failureState: nil, failure: nil, isHeader: false)
-    }
-
-    private func failureRow(for state: CatAnimationState, failure: CustomSpriteStore.SpriteFailure) -> Row {
-        Row(key: "failure:" + state.rawValue,
-            title: "⚠ 生成失败 · \(state.displayName) · \(Self.formatDate(failure.at)) · \(failure.message)",
-            item: nil, failureState: state, failure: failure, isHeader: false)
-    }
-
-    private func headerRow(_ title: String) -> Row {
-        Row(key: "header:" + title, title: title, item: nil, failureState: nil, failure: nil, isHeader: true)
-    }
-
-    /// 预览直接从本机文件解码，完全不联网。
-    private func refreshPreview() {
-        guard let row = selectedRow, !row.isHeader else {
-            previewImageView.image = nil
-            setDetail("该状态下暂无图片。")
-            return
-        }
-        if let failure = row.failure {
-            previewImageView.image = nil
-            let state = row.failureState?.displayName ?? selectedState.displayName
-            setDetail("\(state)状态生成失败\n\(failure.message)\n时间：\(Self.formatDate(failure.at))\n任务：\(failure.serverID.map { String($0.prefix(8)) } ?? "无")\n可点击「重试生成」重新生成。")
-            return
-        }
-        guard let item = row.item else {
-            previewImageView.image = nil
-            setDetail("该状态下暂无图片。")
-            return
-        }
-        if let cached = previewCache[item.key] {
-            previewImageView.image = cached
-        } else if let image = NSImage(contentsOf: item.url) {
-            previewCache[item.key] = image
-            previewImageView.image = image
-        } else {
-            previewImageView.image = nil
-        }
-        let owner = item.boundState.map { item.isDirect ? "\($0.displayName)状态（只能用于该状态）" : "\($0.displayName)（生成状态，可应用到任意状态）" }
-            ?? "未归属（无法确定生成状态，应用后自动归类）"
-        let applied = item.selectedStates.isEmpty
-            ? "未生效（选中目标状态后点「应用」）"
-            : "当前生效：\(item.selectedStates.map(\.displayName).joined(separator: "、"))"
-        setDetail("\(item.isDirect ? "直接上传" : "AI 生成")\n所属状态：\(owner)\n\(applied)\n文件：\(item.url.lastPathComponent)\n大小：\(Self.formatSize(item.size))\n时间：\(Self.formatDate(item.modified))")
-    }
-
-    private static func formatDate(_ date: Date) -> String {
-        guard date != .distantPast else { return "未知时间" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd HH:mm"
-        return formatter.string(from: date)
-    }
-    private static func formatSize(_ bytes: Int) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-    }
-    /// 说明文字顶部与预览图对齐，高度随内容收缩，避免多行文案在固定框内垂直居中。
-    private func setDetail(_ text: String) {
-        detailLabel.stringValue = text
-        let fitted = detailLabel.sizeThatFits(NSSize(width: Self.detailWidth, height: .greatestFiniteMagnitude))
-        let height = max(16, min(fitted.height, Self.detailTopY - Self.previewBox.minY))
-        detailLabel.frame = NSRect(x: 170, y: Self.detailTopY - height,
-                                   width: Self.detailWidth, height: height)
-    }
-}

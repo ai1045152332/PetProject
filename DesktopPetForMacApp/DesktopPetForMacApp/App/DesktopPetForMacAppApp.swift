@@ -234,7 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
         
-        let toggleItem = NSMenuItem(title: "显示/隐藏小猫", action: #selector(toggleCat(_:)), keyEquivalent: "")
+        let toggleItem = NSMenuItem(title: "显示/隐藏宠物", action: #selector(toggleCat(_:)), keyEquivalent: "")
         toggleItem.target = self
         menu.addItem(toggleItem)
         

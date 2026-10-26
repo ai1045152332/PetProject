@@ -85,13 +85,13 @@ final class UpdateService {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let info = json["data"] as? [String: Any],
               let remoteVersion = info["version"] as? String else {
-            if userInitiated { showAlert(title: "已经是最新版本", text: "有新版本时小猫会第一时间告诉你") }
+            if userInitiated { showAlert(title: "已经是最新版本", text: "有新版本时宠物会第一时间告诉你") }
             return
         }
 
         guard Self.isNewer(remoteVersion, than: AppVersion.current) else {
             FileLogger.log("[Update] 已是最新版本 \(AppVersion.current)")
-            if userInitiated { showAlert(title: "已经是最新版本", text: "有新版本时小猫会第一时间告诉你") }
+            if userInitiated { showAlert(title: "已经是最新版本", text: "有新版本时宠物会第一时间告诉你") }
             return
         }
 
@@ -231,7 +231,7 @@ final class UpdateService {
 
         let alert = NSAlert()
         alert.messageText = "更新准备好了"
-        alert.informativeText = "点「立即重启」，小猫马上回来～"
+        alert.informativeText = "点「立即重启」，宠物马上回来～"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "立即重启")
         alert.addButton(withTitle: "稍后")

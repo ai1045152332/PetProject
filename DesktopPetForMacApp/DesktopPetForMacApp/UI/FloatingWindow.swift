@@ -441,7 +441,7 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
         emoji.frame = NSRect(x: 0, y: 36, width: 132, height: 56)
         container.addSubview(emoji)
 
-        let hint = NSTextField(labelWithString: "点小猫投喂 · 点击取消")
+        let hint = NSTextField(labelWithString: "点宠物投喂 · 点击取消")
         hint.font = .systemFont(ofSize: 11, weight: .medium)
         hint.textColor = .white
         hint.alignment = .center

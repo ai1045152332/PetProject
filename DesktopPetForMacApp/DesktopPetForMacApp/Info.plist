@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>桌面小猫</string>
+	<string>桌面宠物</string>
 	<key>CFBundleExecutable</key>
 	<string>DesktopPetForMacApp</string>
 	<key>CFBundleIconFile</key>

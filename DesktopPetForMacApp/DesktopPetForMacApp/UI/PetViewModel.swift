@@ -149,7 +149,7 @@ final class PetViewModel: ObservableObject {
     /// 背单词回调（供视图层展示学习/测试弹窗）
     var onStartWordLearning: (() -> Void)?
 
-    // MARK: - 小猫大小配置
+    // MARK: - 宠物大小配置
 
     static let catScaleKey = "settings.catScale"
     static let defaultCatScale: Double = 1.0

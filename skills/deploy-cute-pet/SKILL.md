@@ -77,14 +77,7 @@ objects/<sha256(设备ID)>/<YYYYMMDD-HHMMSS-6hex>/
 
 设备目录是硬件 ID 的 SHA-256（不把设备 ID 明文落盘），批次目录取上传时间 UTC。记录里的 `sourceId` 与 `objectId` 是相对设备目录的路径；客户端可见的 `id` 固定为 32 位小写 hex（同时是本地缓存文件名 `cloud-<id>.img`），不要塞状态、标签或斜杠。旧版平铺布局（`<deviceKey>/<name>`）仍可读。
 
-两个运维脚本（都在 `scripts/`，默认 dry-run，加 `--apply` 才落盘）：
-
-```bash
-python3 scripts/migrate-pet-objects.py [--apply]      # 平铺布局 → 批次文件夹
-python3 scripts/normalize-pet-image-ids.py [--apply]  # 历史 ID 规范成 32 位 hex
-```
-
-线上执行前先备份：`cp -a /opt/petserver/data/pet-images /opt/petserver/data/pet-images.bak-$(date +%Y%m%d%H%M%S)`。
+一次性迁移已于 2026-10-26 在线完成（旧平铺对象 → 批次目录、历史非 32 位 hex 的 ID → 32 位 hex），迁移脚本用完即删。若日后从旧备份恢复 `pet-images`，需先备份（`cp -a /opt/petserver/data/pet-images /opt/petserver/data/pet-images.bak-$(date +%Y%m%d%H%M%S)`）再按上述布局手工重排：同一次上传的文件放进同一个批次目录，记录里的 `sourceId`/`objectId` 改成相对设备目录的路径。
 
 ## 关键约束（容易踩）
 

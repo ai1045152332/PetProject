@@ -6,6 +6,7 @@
   <title>文件管理 · cute pet 后台</title>
   <link rel="stylesheet" href="/static/tabler.min.css" />
   <style>
+    /* 卡片默认隐藏；注意打开时必须给具体 display 值，清空内联样式会回落到这里的 none */
     #previewCard { display: none; }
     #previewBody {
       max-height: 50vh;
@@ -19,6 +20,8 @@
       padding: 12px;
       margin: 0;
     }
+    #previewImageWrap { display: none; text-align: center; background: #f6f8fa; border-radius: 6px; padding: 12px; }
+    #previewImage { max-width: 100%; max-height: 50vh; border-radius: 6px; }
     .file-name-link { cursor: pointer; text-decoration: none; }
   </style>
   <script>
@@ -72,6 +75,7 @@
                 </div>
                 <div class="card-body">
                   <div class="text-secondary mb-2" id="previewMeta"></div>
+                  <div id="previewImageWrap"><img id="previewImage" alt="图片预览" /></div>
                   <pre id="previewBody"></pre>
                 </div>
               </div>
@@ -217,20 +221,60 @@
       }
     }
 
+    // 图片按扩展名走二进制预览，其余按文本预览（超出 200 KB 由后端截断）
+    const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
+    let previewImageURL = '';
+
+    // 收尾上一张图片的 blob URL，避免反复预览泄漏内存
+    function resetPreviewImage() {
+      document.getElementById('previewImage').removeAttribute('src');
+      document.getElementById('previewImageWrap').style.display = 'none';
+      if (previewImageURL) {
+        URL.revokeObjectURL(previewImageURL);
+        previewImageURL = '';
+      }
+    }
+
     async function preview(full, name) {
       const card = document.getElementById('previewCard');
+      const meta = document.getElementById('previewMeta');
+      const body = document.getElementById('previewBody');
       document.getElementById('previewTitle').textContent = name + '（' + full + '）';
-      document.getElementById('previewMeta').textContent = '加载中…';
-      document.getElementById('previewBody').textContent = '';
-      card.style.display = '';
+      meta.textContent = '加载中…';
+      body.textContent = '';
+      resetPreviewImage();
+      // 必须给具体值：置空会回落到 CSS 的 display:none，看起来就像点击没反应
+      card.style.display = 'block';
       card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       try {
+        if (IMAGE_EXT.test(full)) {
+          // 图片走下载接口取二进制再转 blob URL，避免把 PNG 当文本渲染成乱码
+          const resp = await fetch('/api/admin/files/download?path=' + encodeURIComponent(full), {
+            headers: { 'X-Session-Token': session() }
+          });
+          if (resp.status === 401) {
+            localStorage.removeItem('petAdminSession');
+            location.replace('/admin/login');
+            throw new Error('登录已失效，请重新登录');
+          }
+          if (!resp.ok) {
+            let msg = 'HTTP ' + resp.status;
+            try { const j = await resp.json(); if (j.msg) msg = j.msg; } catch (e) { /* 非 JSON 响应 */ }
+            throw new Error(msg);
+          }
+          const blob = await resp.blob();
+          previewImageURL = URL.createObjectURL(blob);
+          document.getElementById('previewImage').src = previewImageURL;
+          document.getElementById('previewImageWrap').style.display = 'block';
+          meta.textContent = `大小：${fmtSize(blob.size)}`;
+          return;
+        }
         const data = await api('/api/admin/files/preview?path=' + encodeURIComponent(full));
-        document.getElementById('previewMeta').textContent =
+        meta.textContent =
           `大小：${fmtSize(data.size)}` + (data.truncated ? ' · 仅预览前 200 KB，已截断' : '');
-        document.getElementById('previewBody').textContent = data.content;
+        body.textContent = data.content;
       } catch (e) {
-        document.getElementById('previewMeta').textContent = '预览失败：' + e.message;
+        meta.textContent = '预览失败：' + e.message;
       }
     }
 
@@ -271,6 +315,7 @@
     }
 
     function closePreview() {
+      resetPreviewImage();
       document.getElementById('previewCard').style.display = 'none';
     }
 

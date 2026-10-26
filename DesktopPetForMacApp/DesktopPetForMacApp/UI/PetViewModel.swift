@@ -250,6 +250,9 @@ final class PetViewModel: ObservableObject {
         cloudRestoreTask?.cancel()
         cloudRestoreTask = Task { @MainActor [weak self] in
             guard AccessControl.serverActivationCode != nil else { return }
+            // 图片历史以本机为准：本机已有选中记录就不再拉服务端覆盖，
+            // 只在换机/重装后本机一片空白时用服务端记录做一次恢复。
+            guard !CustomSpriteStore.hasAnySelection() else { return }
             do {
                 let library = try await PetImageService.library()
                 try Task.checkCancellation()

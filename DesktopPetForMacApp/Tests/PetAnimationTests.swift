@@ -152,4 +152,91 @@ final class PetAnimationTests: XCTestCase {
         XCTAssertEqual(animation.durations[1], 0.2, accuracy: 0.001)
         XCTAssertThrowsError(try CustomSpriteStore.installLocalImage(Data("broken GIF".utf8), for: .pet, directory: directory))
     }
+
+    /// AI 图的状态归属独立落盘：换图/取消选中后仍能按状态分类，删除时同步清理。
+    func testCloudImageOwnershipSurvivesSelectionChanges() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        let focusID = String(repeating: "a", count: 32)
+        let sleepID = String(repeating: "b", count: 32)
+        try CustomSpriteStore.installCloudImages(selections: ["focus": focusID], images: [focusID: image], directory: directory)
+        try CustomSpriteStore.installCloudImages(selections: ["sleep": sleepID], images: [sleepID: image], directory: directory)
+        XCTAssertEqual(CustomSpriteStore.cloudStates(in: directory)[focusID], "focus")
+        XCTAssertEqual(CustomSpriteStore.cloudStates(in: directory)[sleepID], "sleep")
+        // 把休闲状态的图应用到睡觉状态：选中关系变了，生成状态归属不变。
+        try CustomSpriteStore.selectLocalImage(key: "cloud:" + focusID, for: .sleep, directory: directory)
+        XCTAssertEqual(CustomSpriteStore.cloudStates(in: directory)[focusID], "focus")
+        let focusItem = try XCTUnwrap(CustomSpriteStore.localImages(directory: directory).first { $0.key == "cloud:" + focusID })
+        XCTAssertEqual(focusItem.boundState, .focus)
+        XCTAssertEqual(focusItem.selectedStates, [.sleep])
+        // 直传图的归属固定为它自己的状态。
+        try CustomSpriteStore.installLocalImage(image, for: .pet, directory: directory)
+        let direct = try XCTUnwrap(CustomSpriteStore.localImages(directory: directory).first { $0.isDirect })
+        XCTAssertEqual(direct.boundState, .pet)
+        // 删除 AI 图后归属记录同样清掉，避免残留成“未归属”。
+        try CustomSpriteStore.removeLocalImage(key: "cloud:" + focusID, directory: directory)
+        XCTAssertNil(CustomSpriteStore.cloudStates(in: directory)[focusID])
+        XCTAssertNil(CustomSpriteStore.localImages(directory: directory).first { $0.key == "cloud:" + focusID })
+    }
+
+    /// 老版本只存了选中清单：首次枚举时按选中回填归属，之后即使取消选中也保持分类。
+    func testLegacyCloudImageInfersOwnershipOnce() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        let legacyID = String(repeating: "c", count: 32)
+        let orphanID = String(repeating: "d", count: 32)
+        try image.write(to: directory.appendingPathComponent("cloud-\(legacyID).img"))
+        try image.write(to: directory.appendingPathComponent("cloud-\(orphanID).img"))
+        try JSONEncoder().encode(["idel": legacyID]).write(to: directory.appendingPathComponent("cloud-selections.json"), options: .atomic)
+        let items = CustomSpriteStore.localImages(directory: directory)
+        XCTAssertEqual(items.first { $0.key == "cloud:" + legacyID }?.boundState, .idel)
+        XCTAssertNil(items.first { $0.key == "cloud:" + orphanID }?.boundState, "Neither selected nor recorded belongs to no state")
+        XCTAssertEqual(CustomSpriteStore.cloudStates(in: directory)[legacyID], "idel")
+        // 回填持久化：取消选中后依然归在休闲下（历史图片分类不会因换图而丢失）。
+        try CustomSpriteStore.installCloudImages(selections: ["idel": ""], images: [:], directory: directory)
+        XCTAssertEqual(CustomSpriteStore.localImages(directory: directory).first { $0.key == "cloud:" + legacyID }?.boundState, .idel)
+    }
+
+    /// 服务端图片 ID 已从 32 位 hex 换成“可读名-8 位 hex”，新格式必须能安装与读取；
+    /// 带路径分隔符/前导点/长度不符的 ID 仍必须拒绝（ID 会拼进本机文件名）。
+    func testReadableImageIDsInstallAndUnsafeIDsStayRejected() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        let id = "my_cat-1a2b3c4d"
+        try CustomSpriteStore.installCloudImages(selections: ["focus": id], images: [id: image], directory: directory)
+        XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .focus, directory: directory))
+        XCTAssertNotNil(CustomSpriteStore.cachedCloudImage(id: id, directory: directory), "Readable ID must hit the local cache")
+        let cjkID = "微信图片20261026151149159-d54d2fdf"
+        CustomSpriteStore.cacheCloudImage(id: cjkID, data: image, directory: directory)
+        XCTAssertNotNil(CustomSpriteStore.cachedCloudImage(id: cjkID, directory: directory), "CJK label must stay usable")
+        for unsafe in ["../etc/passwd", ".hidden-1a2b3c4d", "cat/1a2b3c4d", "cat-1a2b3c4", "cat"] {
+            XCTAssertThrowsError(
+                try CustomSpriteStore.installCloudImages(selections: ["focus": unsafe], images: [unsafe: image], directory: directory),
+                "unsafe id \(unsafe) must be rejected")
+        }
+    }
+
+    /// 服务端记录只补本机缺失的归属：已有归属不被覆盖，本机无文件的记录不写入。
+    func testServerRecordsBackfillMissingOwnershipOnly() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = try imageData()
+        let focusID = "cat-11111111"
+        let orphanID = "cat-22222222"
+        try CustomSpriteStore.installCloudImages(selections: ["focus": focusID], images: [focusID: image], directory: directory)
+        try image.write(to: directory.appendingPathComponent("cloud-\(orphanID).img"))
+        XCTAssertTrue(CustomSpriteStore.mergeCloudStates([focusID: "sleep", orphanID: "pet", "remote-33333333": "idel"], directory: directory))
+        let states = CustomSpriteStore.cloudStates(in: directory)
+        XCTAssertEqual(states[focusID], "focus", "Existing ownership must win over a server record")
+        XCTAssertEqual(states[orphanID], "pet")
+        XCTAssertNil(states["remote-33333333"], "Records without a local file are skipped")
+        XCTAssertFalse(CustomSpriteStore.mergeCloudStates([focusID: "sleep"], directory: directory), "Nothing new to write")
+    }
 }

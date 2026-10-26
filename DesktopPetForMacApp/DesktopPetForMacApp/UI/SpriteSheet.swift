@@ -302,8 +302,7 @@ enum CustomSpriteStore {
         let manifest = root.appendingPathComponent("cloud-selections.json")
         let url: URL
         if FileManager.default.fileExists(atPath: manifest.path) {
-            guard let data = try? Data(contentsOf: manifest),
-                  let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
+            let selections = cloudSelections(in: root)
             if let id = selections[state.rawValue] {
                 guard validID(id) else { return nil } // Empty ID explicitly restores the built-in state.
                 url = root.appendingPathComponent("cloud-\(id).img")
@@ -324,8 +323,17 @@ enum CustomSpriteStore {
         }
         return nil
     }
+    /// 图片 ID 会拼进本机文件名，必须挡掉路径分隔符与前导点；
+    /// 同时兼容两代服务端格式：旧版纯 32 位十六进制，以及当前“可读名-8 位十六进制”（如 my_cat-1a2b3c4d）。
+    /// 旧版只认 32 位十六进制，会把新生成的图一律当成损坏文件拒绝安装。
     private static func validID(_ id: String) -> Bool {
-        id.count == 32 && id.allSatisfy { "0123456789abcdef".contains($0) }
+        guard !id.isEmpty, id.count <= 96, !id.hasPrefix(".") else { return false }
+        guard id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { return false }
+        if id.count == 32 && id.allSatisfy({ "0123456789abcdef".contains($0) }) { return true }
+        guard let dash = id.lastIndex(of: "-") else { return false }
+        let suffix = id[id.index(after: dash)...]
+        return !id[..<dash].isEmpty && suffix.count == 8
+            && suffix.allSatisfy { "0123456789abcdef".contains($0) }
     }
     static func hasCustomImage(for state: CatAnimationState) -> Bool { loadAnimation(for: state) != nil }
     static func hasLocalImage(for state: CatAnimationState) -> Bool {
@@ -333,11 +341,66 @@ enum CustomSpriteStore {
         return localSelections(in: root)[state.rawValue] != nil
             && FileManager.default.fileExists(atPath: root.appendingPathComponent("local-\(state.rawValue).img").path)
     }
-    private static func localSelections(in root: URL) -> [String: String] {
+    static func localSelections(in root: URL) -> [String: String] {
         let manifest = root.appendingPathComponent("local-selections.json")
         guard let data = try? Data(contentsOf: manifest),
               let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
         return selections
+    }
+    static func cloudSelections(in root: URL) -> [String: String] {
+        let manifest = root.appendingPathComponent("cloud-selections.json")
+        guard let data = try? Data(contentsOf: manifest),
+              let selections = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return selections
+    }
+
+    // MARK: - AI 图的状态归属
+
+    /// AI 图 → 生成时所属状态。选中清单（cloud-selections）只记“当前用哪张”，
+    /// 换图或删除后归属就丢了；这份清单独立持久化，历史图片才能长期按状态分类。
+    private static let cloudStatesFileName = "cloud-states.json"
+    static func cloudStates(in root: URL) -> [String: String] {
+        let url = root.appendingPathComponent(cloudStatesFileName)
+        guard let data = try? Data(contentsOf: url),
+              let states = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return states
+    }
+
+    /// 只记首次归属：同一张图后来被应用到别的状态时，不改写它的“生成状态”。
+    private static func recordCloudStates(_ pairs: [(id: String, state: CatAnimationState)], in root: URL) {
+        guard !pairs.isEmpty else { return }
+        var states = cloudStates(in: root)
+        var changed = false
+        for pair in pairs where validID(pair.id) && states[pair.id] == nil {
+            states[pair.id] = pair.state.rawValue
+            changed = true
+        }
+        guard changed, let data = try? JSONEncoder().encode(states) else { return }
+        try? data.write(to: root.appendingPathComponent(cloudStatesFileName), options: .atomic)
+    }
+
+    private static func forgetCloudState(id: String, in root: URL) {
+        var states = cloudStates(in: root)
+        guard states.removeValue(forKey: id) != nil,
+              let data = try? JSONEncoder().encode(states) else { return }
+        try? data.write(to: root.appendingPathComponent(cloudStatesFileName), options: .atomic)
+    }
+
+    /// 用服务端记录（每张图自带生成状态）补全本机缺失的归属，已有归属不被覆盖；
+    /// 只补本机真实存在的图片，避免把纯云端记录写进本机清单。
+    /// 返回是否写入了新归属，供界面决定要不要刷新列表。
+    @discardableResult
+    static func mergeCloudStates(_ records: [String: String], directory: URL? = nil) -> Bool {
+        let root = directory ?? directoryURL
+        let pairs = records.compactMap { id, raw -> (id: String, state: CatAnimationState)? in
+            guard let state = CatAnimationState(rawValue: raw),
+                  FileManager.default.fileExists(atPath: root.appendingPathComponent("cloud-\(id).img").path)
+            else { return nil }
+            return (id: id, state: state)
+        }
+        let before = cloudStates(in: root)
+        recordCloudStates(pairs, in: root)
+        return cloudStates(in: root) != before
     }
 
     // Direct uploads stay on this machine: validated pixels are staged first, then the manifest commits.
@@ -349,6 +412,7 @@ enum CustomSpriteStore {
         var merged = localSelections(in: root)
         merged[state.rawValue] = "1"
         try JSONEncoder().encode(merged).write(to: root.appendingPathComponent("local-selections.json"), options: .atomic)
+        clearFailure(for: state, directory: root)
     }
     static func removeLocalImage(for state: CatAnimationState, directory: URL? = nil) throws {
         let root = directory ?? directoryURL
@@ -383,6 +447,15 @@ enum CustomSpriteStore {
         }
         for (state, id) in known { merged[state] = id }
         try JSONEncoder().encode(merged).write(to: manifest, options: .atomic)
+        // 只有被单一状态引用的图才算“某状态生成”；被多状态共享的老图（旧版共享图、服务端恢复）
+        // 本就无状态归属，写成第一个状态会归类错误。
+        var owners: [String: CatAnimationState] = [:]
+        var shared = Set<String>()
+        for state in CatAnimationState.allCases {
+            guard let id = known[state.rawValue], !id.isEmpty else { continue }
+            if owners[id] != nil { shared.insert(id) } else { owners[id] = state }
+        }
+        recordCloudStates(owners.filter { !shared.contains($0.key) }.map { (id: $0.key, state: $0.value) }, in: root)
     }
 
     /// 预览或应用某张云端图后落盘：重开历史图片即可直接读本地，无需再向服务端取图。
@@ -404,5 +477,196 @@ enum CustomSpriteStore {
         guard validID(id) else { return nil }
         let url = (directory ?? directoryURL).appendingPathComponent("cloud-\(id).img")
         return try? Data(contentsOf: url)
+    }
+
+    // MARK: - 本机图片历史（数据源完全在本机，服务端只负责生成与存储）
+
+    /// 唯一标识：云端图 `cloud:<图片ID>`，直接上传图 `local:<状态>`。
+    static func cloudKey(_ id: String) -> String { "cloud:" + id }
+    static func directKey(_ state: CatAnimationState) -> String { "local:" + state.rawValue }
+    private static func cloudID(from key: String) -> String? {
+        guard key.hasPrefix("cloud:") else { return nil }
+        let id = String(key.dropFirst("cloud:".count))
+        return validID(id) ? id : nil
+    }
+    private static func directState(from key: String) -> CatAnimationState? {
+        guard key.hasPrefix("local:") else { return nil }
+        return CatAnimationState(rawValue: String(key.dropFirst("local:".count)))
+    }
+
+    /// 一条本机图片记录：图片文件本身即真相，选中关系另由 selections 清单记录。
+    struct LocalImageItem {
+        let key: String
+        let isDirect: Bool
+        let url: URL
+        let modified: Date
+        let size: Int
+        /// 直传图固定绑定状态；AI 图取“生成状态”，老图未记录时按当前选中回填，仍无法判定则为 nil
+        let boundState: CatAnimationState?
+        let selectedStates: [CatAnimationState]
+    }
+
+    /// 枚举本机全部图片：AI 生成下载的 `cloud-<id>.img` + 直接上传的 `local-<state>.img`。
+    static func localImages(directory: URL? = nil) -> [LocalImageItem] {
+        let root = directory ?? directoryURL
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+        ) else { return [] }
+        let cloud = cloudSelections(in: root)
+        let local = localSelections(in: root)
+        var ownership = cloudStates(in: root)
+        var backfilled: [(id: String, state: CatAnimationState)] = []
+        var items: [LocalImageItem] = []
+        for url in files where url.pathExtension.lowercased() == "img" {
+            let name = url.lastPathComponent
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let modified = values?.contentModificationDate ?? .distantPast
+            let size = values?.fileSize ?? 0
+            if name.hasPrefix("cloud-") {
+                let id = String(name.dropFirst("cloud-".count).dropLast(".img".count))
+                guard validID(id) else { continue }
+                let states = CatAnimationState.allCases.filter { cloud[$0.rawValue] == id }
+                var owner = ownership[id].flatMap(CatAnimationState.init(rawValue:))
+                // 老版本没记生成状态：唯一被一个状态选中才是可靠线索，回填一次后永久归类。
+                if owner == nil, states.count == 1, let inferred = states.first {
+                    ownership[id] = inferred.rawValue
+                    backfilled.append((id: id, state: inferred))
+                    owner = inferred
+                }
+                items.append(LocalImageItem(key: cloudKey(id), isDirect: false, url: url,
+                                            modified: modified, size: size, boundState: owner, selectedStates: states))
+            } else if name.hasPrefix("local-") {
+                let raw = String(name.dropFirst("local-".count).dropLast(".img".count))
+                guard let state = CatAnimationState(rawValue: raw) else { continue }
+                let active = local[state.rawValue] != nil ? [state] : []
+                items.append(LocalImageItem(key: directKey(state), isDirect: true, url: url,
+                                            modified: modified, size: size, boundState: state, selectedStates: active))
+            }
+        }
+        recordCloudStates(backfilled, in: root)
+        return items.sorted { $0.modified > $1.modified }
+    }
+
+    static func imageData(for key: String, directory: URL? = nil) -> Data? {
+        let root = directory ?? directoryURL
+        if let id = cloudID(from: key) {
+            return try? Data(contentsOf: root.appendingPathComponent("cloud-\(id).img"))
+        }
+        if let state = directState(from: key) {
+            return try? Data(contentsOf: root.appendingPathComponent("local-\(state.rawValue).img"))
+        }
+        return nil
+    }
+
+    /// 本机是否已表达过图片选择（清单文件存在即算，包括“全部恢复默认”）：
+    /// 用于判断能否用服务端记录做首次恢复，避免覆盖用户本机的选择。
+    static func hasAnySelection(directory: URL? = nil) -> Bool {
+        let root = directory ?? directoryURL
+        let fm = FileManager.default
+        return fm.fileExists(atPath: root.appendingPathComponent("cloud-selections.json").path)
+            || fm.fileExists(atPath: root.appendingPathComponent("local-selections.json").path)
+    }
+
+    /// 用本机图片的周知标识切换某状态的选中图；文件缺失时把该状态回退为内置默认图并报错。
+    static func selectLocalImage(key: String, for state: CatAnimationState, directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        var cloud = cloudSelections(in: root)
+        var local = localSelections(in: root)
+        if let id = cloudID(from: key) {
+            let file = root.appendingPathComponent("cloud-\(id).img")
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                cloud[state.rawValue] = "" // 空标识 = 恢复内置默认图
+                try commit(cloud: cloud, local: local, in: root)
+                throw CocoaError(.fileNoSuchFile)
+            }
+            cloud[state.rawValue] = id
+            local.removeValue(forKey: state.rawValue)
+            recordCloudStates([(id: id, state: state)], in: root)
+        } else if let bound = directState(from: key) {
+            guard bound == state else {
+                throw CocoaError(.fileWriteInvalidFileName, userInfo: [
+                    NSLocalizedDescriptionKey: "直接上传的图片只适用于\(bound.displayName)状态"
+                ])
+            }
+            let file = root.appendingPathComponent("local-\(bound.rawValue).img")
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                local.removeValue(forKey: state.rawValue)
+                try commit(cloud: cloud, local: local, in: root)
+                throw CocoaError(.fileNoSuchFile)
+            }
+            local[state.rawValue] = "1"
+            cloud[state.rawValue] = ""
+        } else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "无法识别的图片标识"])
+        }
+        try commit(cloud: cloud, local: local, in: root)
+    }
+
+    /// 删除一张本机图片；若它正被某些状态选中，这些状态回退为内置默认图。
+    static func removeLocalImage(key: String, directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        if let id = cloudID(from: key) {
+            var cloud = cloudSelections(in: root)
+            for (state, value) in cloud where value == id { cloud[state] = "" }
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("cloud-\(id).img"))
+            forgetCloudState(id: id, in: root)
+            try commit(cloud: cloud, local: localSelections(in: root), in: root)
+        } else if let state = directState(from: key) {
+            try removeLocalImage(for: state, directory: root)
+        }
+    }
+
+    /// 恢复内置默认图：清掉该状态的直传图与选中标识（空标识 = 内置默认）。
+    static func restoreDefault(for state: CatAnimationState, directory: URL? = nil) throws {
+        let root = directory ?? directoryURL
+        var cloud = cloudSelections(in: root)
+        var local = localSelections(in: root)
+        cloud[state.rawValue] = ""
+        local.removeValue(forKey: state.rawValue)
+        try commit(cloud: cloud, local: local, in: root)
+        try? FileManager.default.removeItem(at: root.appendingPathComponent("local-\(state.rawValue).img"))
+        clearFailure(for: state, directory: root)
+    }
+
+    private static func commit(cloud: [String: String], local: [String: String], in root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try JSONEncoder().encode(cloud).write(to: root.appendingPathComponent("cloud-selections.json"), options: .atomic)
+        try JSONEncoder().encode(local).write(to: root.appendingPathComponent("local-selections.json"), options: .atomic)
+    }
+
+    /// 落盘一张云端图并设为某状态选中图（同时清掉该状态的本机直传遮挡）。
+    static func installCloudImage(id: String, data: Data, for state: CatAnimationState, directory: URL? = nil) throws {
+        try installCloudImages(selections: [state.rawValue: id], images: [id: data], directory: directory)
+        try? removeLocalImage(for: state, directory: directory)
+        clearFailure(for: state, directory: directory)
+    }
+
+    // 生成失败记录：本机没有图片文件即视为失败，保留服务端任务 ID 以便重试。
+    struct SpriteFailure: Codable {
+        let serverID: String?
+        let message: String
+        let at: Date
+    }
+    private static let failuresFileName = "sprite-failures.json"
+    static func failures(directory: URL? = nil) -> [String: SpriteFailure] {
+        let url = (directory ?? directoryURL).appendingPathComponent(failuresFileName)
+        guard let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([String: SpriteFailure].self, from: data) else { return [:] }
+        return decoded
+    }
+    static func recordFailure(for state: CatAnimationState, serverID: String?, message: String, directory: URL? = nil) {
+        let root = directory ?? directoryURL
+        var all = failures(directory: root)
+        all[state.rawValue] = SpriteFailure(serverID: serverID, message: message, at: Date())
+        guard let data = try? JSONEncoder().encode(all) else { return }
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try? data.write(to: root.appendingPathComponent(failuresFileName), options: .atomic)
+    }
+    static func clearFailure(for state: CatAnimationState, directory: URL? = nil) {
+        let root = directory ?? directoryURL
+        var all = failures(directory: root)
+        guard all.removeValue(forKey: state.rawValue) != nil,
+              let data = try? JSONEncoder().encode(all) else { return }
+        try? data.write(to: root.appendingPathComponent(failuresFileName), options: .atomic)
     }
 }

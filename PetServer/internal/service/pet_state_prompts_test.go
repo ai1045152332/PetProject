@@ -14,11 +14,11 @@ import (
 
 func TestPetStatePromptRequirements(t *testing.T) {
 	for state, required := range map[string][]string{
-		"idel":  {"四脚自然站立", "尾尖轻轻摆动"},
+		"idel":  {"四脚自然站立", "尾尖轻轻摆动", "自然的短腿", "绝不拉长四肢"},
 		"sleep": {"蜷缩", "双眼闭合", "不醒来"},
 		"pet":   {"眯着眼睛", "绝对不出现人的手"},
-		"hide":  {"探出的头部", "一小段前胸", "一只前爪"},
-		"focus": {"笔记本电脑", "交替轻轻打字"},
+		"hide":  {"探出的头部", "一小段前胸", "一只前爪", "上身竖直", "严禁趴卧"},
+		"focus": {"坐姿端正", "眼睛专注", "不要电脑"},
 	} {
 		t.Run(state, func(t *testing.T) {
 			portrait, animation, err := petPromptsForState(state)
@@ -42,8 +42,9 @@ func TestPetStatePromptRequirements(t *testing.T) {
 			if !strings.Contains(animation, "4列×4行") || !strings.Contains(animation, "16帧") {
 				t.Fatal("GIF grid contract lost")
 			}
-			if state != "focus" && strings.Contains(portrait, "一台小巧简洁的笔记本电脑") {
-				t.Fatal("work prop leaked into another state")
+			// 专注态已改为端坐目视前方，任何状态都不允许把笔记本电脑画回来。
+			if strings.Contains(portrait, "笔记本电脑") {
+				t.Fatal("work prop leaked into prompts")
 			}
 			if strings.Contains(combined, "银渐层") || strings.Contains(combined, "s3plus") {
 				t.Fatal("archive sample replaced uploaded pet identity")

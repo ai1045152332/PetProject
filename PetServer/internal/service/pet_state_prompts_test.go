@@ -16,9 +16,9 @@ func TestPetStatePromptRequirements(t *testing.T) {
 	for state, required := range map[string][]string{
 		"idel":  {"四脚自然站立", "尾尖轻轻摆动", "自然的短腿", "绝不拉长四肢"},
 		"sleep": {"蜷缩", "双眼闭合", "不醒来"},
-		"pet":   {"眯着眼睛", "绝对不出现人的手"},
-		"hide":  {"探出的头部", "一小段前胸", "一只前爪", "上身竖直", "严禁趴卧"},
-		"focus": {"坐姿端正", "眼睛专注", "不要电脑"},
+		"pet":   {"眯着眼睛", "绝对不出现人的手", "侧身坐姿"},
+		"hide":  {"探出的头部", "侧身探头", "身体侧对着镜头", "一只前爪", "严禁正面端坐"},
+		"focus": {"坐姿端正", "眼睛专注", "不要电脑", "身体侧面朝向镜头"},
 	} {
 		t.Run(state, func(t *testing.T) {
 			portrait, animation, err := petPromptsForState(state)

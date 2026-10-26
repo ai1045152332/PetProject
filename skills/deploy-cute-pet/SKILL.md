@@ -28,7 +28,9 @@ metadata:
 COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后顺带 git 提交并推送
 ```
 
-脚本会：校验签名私钥与上传助手 → 解析/递增版本号（保持 `015 → 016` 的补零位宽）→ 调用 `DesktopPetForMacApp/release.sh` → 校验服务器 manifest 版本与本地包 sha256 一致 → 打印结果。
+脚本会：校验签名私钥与上传助手 → 解析/递增版本号（保持 `015 → 016` 的补零位宽）→ 调用 `DesktopPetForMacApp/release.sh`（产出 zip + dmg 两个包）→ 校验服务器 manifest 版本与本地 zip/dmg 的 sha256 一致 → 打印结果。
+
+产物分工：**zip 给客户端自动更新**（`file`/`sha256`/`signature` 字段，换包靠 `ditto -x -k`），**dmg 给官网手动安装**（`dmgFile`/`dmgSHA256`/`dmgSignature` 字段，内带 `/Applications` 软链）。两者同源于同一次 `cute pet.app`。
 
 仓库路径默认从脚本位置推断（`CUTE_PET_REPO` 覆盖），服务器默认 `http://101.96.248.75`（`CUTE_PET_SERVER` 覆盖）。
 
@@ -86,6 +88,7 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 | 版本号唯一来源 | `DesktopPetForMacApp/DesktopPetForMacApp/App/AppVersion.swift` |
 | 客户端更新器 / 内置公钥 | `.../Services/UpdateService.swift` |
 | 服务端下发接口 | `PetServer/internal/controller/release_controller.go` |
+| 官网下载页（动态取 dmg 链接） | `PetServer/internal/web/site/index.html` |
 | 服务端部署脚本 | `skills/deploy-cute-pet/scripts/deploy-server.sh` |
 | 线上版本查询 | `curl http://101.96.248.75/api/app/latest` |
 

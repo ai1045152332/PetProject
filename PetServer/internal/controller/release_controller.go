@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"petserver/internal/service"
 )
@@ -58,6 +59,14 @@ func (c *ReleaseController) Download(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "application/zip")
+	// zip 给客户端自动更新，dmg 给官网手动安装，按扩展名给出正确 MIME
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".dmg":
+		w.Header().Set("Content-Type", "application/x-apple-diskimage")
+	case ".zip":
+		w.Header().Set("Content-Type", "application/zip")
+	default:
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
 	http.ServeFile(w, r, path)
 }

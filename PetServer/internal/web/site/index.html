@@ -285,9 +285,9 @@
       <p>纯 Swift 开发，无第三方依赖，下载安装即用。</p>
     </div>
     <div class="steps">
-      <div class="step"><div class="num">1</div><h3>下载安装包</h3><p>点击上方按钮下载 <code>cute-pet-*.zip</code>，解压得到 <code>cute pet.app</code>。</p></div>
-      <div class="step"><div class="num">2</div><h3>放到「应用程序」</h3><p>把 app 拖进 <code>/Applications</code>，需要窗口置顶时请保持关闭 App Sandbox。</p></div>
-      <div class="step"><div class="num">3</div><h3>首次打开</h3><p>若被 Gatekeeper 拦截：右键 app → 「打开」→「仍要打开」；或执行 <code>xattr -cr</code> 移除隔离属性。</p></div>
+      <div class="step"><div class="num">1</div><h3>下载 dmg</h3><p>点上面的「下载 macOS 版」，会得到一个 <code>cute-pet-*.dmg</code> 文件。</p></div>
+      <div class="step"><div class="num">2</div><h3>拖到「应用程序」</h3><p>双击打开 dmg，把左边的 <code>cute pet</code> 图标拖到右边的 <code>Applications</code> 文件夹上松手——和装其他 Mac 软件一样。</p></div>
+      <div class="step"><div class="num">3</div><h3>打开宠物</h3><p>到「启动台」或「应用程序」里双击 <code>cute pet</code>。若提示「无法验证开发者」，右键点图标 → 选「打开」即可。</p></div>
     </div>
   </section>
 
@@ -317,7 +317,7 @@
   <script>
     // ── 发布信息接口（与官网同源，由 PetServer 直接托管）──
     var API_BASE = "";  // 同源：留空即可，自动指向当前站点（http://101.96.248.75）
-    // 兜底：接口不可用时，指向当前已发布的最新稳定版直链
+    // 兜底：接口不可用时，指向已发布的最新稳定版直链（没有 dmg 时退化为 zip）
     var FALLBACK = { version: "v1.0.016", file: "cute-pet-v1.0.016.zip", size: 5978876 };
 
     function fmtSize(bytes) {
@@ -327,15 +327,18 @@
     }
 
     function applyRelease(info) {
-      var url = API_BASE + "/download/" + encodeURIComponent(info.file);
+      // 优先给手动安装用 dmg，接口没下发 dmg 时退回 zip（自动更新包）
+      var file = info.dmgFile || info.file;
+      var size = info.dmgFile ? info.dmgSize : info.size;
+      var url = API_BASE + "/download/" + encodeURIComponent(file);
       document.querySelectorAll("[data-download]").forEach(function (a) {
         a.setAttribute("href", url);
-        a.setAttribute("download", info.file);
+        a.setAttribute("download", file);
       });
       var label = document.getElementById("verLabel");
       if (label) label.textContent = "最新版本 " + info.version;
       var sizeLabel = document.getElementById("sizeLabel");
-      if (sizeLabel && info.size) sizeLabel.textContent = fmtSize(info.size);
+      if (sizeLabel && size) sizeLabel.textContent = fmtSize(size);
       var verBtn = document.getElementById("verBtn");
       if (verBtn) verBtn.textContent = info.version;
     }
@@ -348,7 +351,8 @@
       .then(function (r) { return r.ok ? r.json() : Promise.reject("http " + r.status); })
       .then(function (j) {
         if (j && j.code === 0 && j.data && j.data.file) {
-          applyRelease({ version: j.data.version, file: j.data.file, size: j.data.size });
+          applyRelease({ version: j.data.version, file: j.data.file, size: j.data.size,
+                         dmgFile: j.data.dmgFile, dmgSize: j.data.dmgSize });
         }
       })
       .catch(function () {

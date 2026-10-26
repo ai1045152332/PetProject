@@ -9,9 +9,9 @@
   ① ./release.sh v1.0.004 "更新说明"
      ├─ 写入版本号（AppVersion.swift + Info.plist 自动同步）
      ├─ Swift 编译 → 打包 cute pet.app → 签名（ad-hoc）
-     ├─ 压缩 zip → 计算 sha256
-     ├─ Ed25519 签名（私钥仅存本机）
-     └─ 生成 latest.json
+     ├─ 生成两个安装包：zip（客户端自动更新）+ dmg（官网手动安装）
+     ├─ 两个包各算 sha256 → 各做一次 Ed25519 签名（私钥仅存本机）
+     └─ 生成 latest.json（含 dmg 字段）
   ② 上传到公网服务器 /opt/petserver/dist/
                     │
                     ▼
@@ -32,7 +32,7 @@
 | 版本号 | `DesktopPetForMacApp/DesktopPetForMacApp/App/AppVersion.swift` | 唯一版本源，打包时自动同步到 Info.plist |
 | 客户端更新器 | `.../DesktopPetForMacApp/Services/UpdateService.swift` | 检查/下载/验签/换包，内置发布公钥 |
 | 服务端接口 | `PetServer/internal/controller/release_controller.go` | 下发版本信息、提供安装包下载 |
-| 发布目录 | 服务器 `/opt/petserver/dist/` | 存放 `latest.json` 与各版本 zip |
+| 发布目录 | 服务器 `/opt/petserver/dist/` | 存放 `latest.json`、各版本 zip（自动更新）与 dmg（官网下载） |
 | 签名私钥 | 发布者本机 `~/.cute-pet-release/ed25519_private.pem` | 离线保管，**不入库** |
 | 上传助手 | `~/.cute-pet-release/scp_put.exp`、`ssh_run.exp` | 免交互上传/执行（expect 脚本） |
 
@@ -54,17 +54,24 @@
     "notes": "更新说明",
     "publishedAt": "2026-10-15T16:34:00+08:00",
     "size": 3636796,
-    "minOS": "13.0"
+    "minOS": "13.0",
+    "dmgFile": "cute-pet-v1.0.003.dmg",
+    "dmgSHA256": "9a2f...",
+    "dmgSignature": "base64(Ed25519 签名)",
+    "dmgSize": 3812044
   }
 }
 ```
 
 - `signature` 的签名对象是 **`sha256` 的十六进制字符串**
 - 客户端必须同时通过「摘要比对」与「签名验证」，任一不过直接拒绝安装
+- `file`/`sha256`/`signature`/`size` **永远指向 zip**：客户端自动更新只认这四个字段，dmg 不影响它们
+- `dmgFile`/`dmgSHA256`/`dmgSignature`/`dmgSize` 是官网手动安装用的 dmg，`omitempty`。老版本服务端没有这些字段，官网会自动退回 zip 链接
 
 ### GET /download/<file>
 
-下载安装包（zip）。仅允许访问 dist 目录内文件，防目录穿越。
+下载安装包（zip 或 dmg）。仅允许访问 dist 目录内文件，防目录穿越。
+`Content-Type` 按扩展名给出：`.zip` → `application/zip`，`.dmg` → `application/x-apple-diskimage`。
 
 ## 四、发布步骤
 
@@ -81,7 +88,32 @@ cd DesktopPetForMacApp
 ./release.sh v1.0.004 "本次更新说明（会展示给用户）"
 ```
 
-脚本执行 6 步：写入版本号 → 编译打包 → 生成 zip → sha256 + 签名 → 生成 latest.json → 上传服务器。
+脚本执行 6 步：写入版本号 → 编译打包 → 生成 zip + dmg → 两个包 sha256 + 签名 → 生成 latest.json → 上传服务器。
+
+dmg 生成方式：先 `hdiutil create -format UDRW` 造可写镜像 → 挂载 → 用 AppleScript 设置 Finder 窗口（
+尺寸/图标位置/背景图）→ 卸载 → `hdiutil convert -format UDZO`。临时目录里放 `cute pet.app`
+和一条指向 `/Applications` 的软链，用户打开 dmg 就能直接拖拽安装。
+
+### dmg 安装窗口（背景箭头 + 图标位置）
+
+相关资源都在 `DesktopPetForMacApp/packaging/`：
+
+| 文件 | 作用 |
+| --- | --- |
+| `make_dmg_background.swift` | 生成背景图（标题 + 指向右方的大箭头 + 底部提示） |
+| `dmg-background.png` | 上面脚本的输出，1320x840（660x420 @2x） |
+| `dmg_window_layout.applescript` | 给挂载中的卷设置窗口尺寸 / 图标位置 / 背景图 |
+| `dmg.dsstore` | 一次性提取的布局模板，作为 AppleScript 失败时的降级（只有窗口尺寸与图标位置，无箭头） |
+
+要点：
+
+1. 背景图的 alias 绑定卷标识，**不能直接复用旧 `.DS_Store`**（换卷后 Finder 解析失败，箭头不显示），所以每次发版都要在 UDRW 阶段实时跑一次 AppleScript。
+2. AppleScript 需要【终端/IDE 控制 Finder】的自动化权限，首次会在系统弹窗确认；已授权后无感。
+3. 无 GUI / 未授权时脚本不会中断发布，只会在日志里提示并退化为无背景窗口。
+4. 窗口内容区固定 660x420，图标中心坐标：`cute pet.app` (165, 210)、`Applications` (495, 210)；改背景图布局时要同步改 `dmg_window_layout.applescript`。
+
+> 为什么保留 zip：客户端 `UpdateService` 的换包流程是 `ditto -x -k` 解包 → `mv` 替换 `.app`。
+dmg 需要 `hdiutil attach`/`detach`，旧客户端不支持。所以 zip 是自动更新的唯一载体，dmg 只给官网人工下载。
 
 ### 验证
 
@@ -92,6 +124,11 @@ curl -s http://101.96.248.75/api/app/latest | python3 -m json.tool
 # 下载并比对摘要
 curl -s -o /tmp/dl.zip http://101.96.248.75/download/cute-pet-v1.0.004.zip
 shasum -a 256 /tmp/dl.zip   # 应与 latest.json 的 sha256 一致
+
+# dmg 同理
+curl -s -o /tmp/dl.dmg http://101.96.248.75/download/cute-pet-v1.0.004.dmg
+shasum -a 256 /tmp/dl.dmg   # 应与 latest.json 的 dmgSHA256 一致
+hdiutil verify /tmp/dl.dmg  # 镜像本身完整性
 ```
 
 ### 版本号规则
@@ -164,6 +201,8 @@ shasum -a 256 /tmp/dl.zip   # 应与 latest.json 的 sha256 一致
 | 检查更新报「无法连接更新服务」 | 服务器不可达/端口未放行 | `curl http://101.96.248.75/api/ping` 验证 |
 | 「更新包验签失败」 | 私钥与 App 内置公钥不匹配（换了机器或换了密钥） | 用同一私钥重新发布；必要时重新打包 App 换公钥 |
 | 「更新包校验失败」 | 上传中断导致 zip 不完整 | 重新执行 release.sh |
+| dmg 打开后没有背景箭头 | 终端未获控制 Finder 的权限，AppleScript 被拒 | 到系统设置 > 隐私与安全性 > 自动化 里允许终端控制 Finder，重新发版 |
+| dmg 窗口尺寸/图标位置怪 | `packaging/dmg.dsstore` 模板与背景图坐标不一致 | 按 660x420 / (165,210) / (495,210) 重新提取模板 |
 | 发布脚本上传卡住 | 服务器 dist 目录不存在 / 交互密码问题 | 脚本会先 `mkdir -p`；确认助手脚本可用 |
 | 升级后需要重新输激活码 | 版本变化清除旧权限（设计如此） | 重新输入激活码即可 |
 | 客户端一直是最新版本但功能不对 | 客户端版本号与发布版本相同但内容不同 | **同一版本号不要重复发布不同内容**，必须递增版本号 |

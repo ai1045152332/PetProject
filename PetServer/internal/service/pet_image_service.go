@@ -501,6 +501,14 @@ func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGe
 	if err == nil {
 		err = petValidateGenerated(output)
 	}
+	// 1024 画布只服务于抠图与模型判定，单帧成品落盘/下发前缩到 512 压缩体积；动画模式的 GIF 不受影响。
+	if err == nil && !petFrameModeAnimated {
+		if shrunk, shrinkErr := downscalePetPNG(output); shrinkErr != nil {
+			log.Printf("[pet-images] 成品缩小失败，保留原尺寸落盘: %v", shrinkErr)
+		} else {
+			output = shrunk
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	lib, loadErr := s.loadKey(key)

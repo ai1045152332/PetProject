@@ -17,6 +17,10 @@ var petChromaPrompt string
 // petCanvas 是宠物素材的固定输出边长，抠图判定均基于这个正方形。
 const petCanvas = 1024
 
+// petOutputCanvas 是成品落盘/下发的边长：1024 只服务于抠图判定，
+// 展示端最多是放大后的 160pt 窗口（Retina 下约 600px），512 足够且单张体积约降为 1/4。
+const petOutputCanvas = 512
+
 // 抠图后至少要保留一部分透明背景（带电脑等大道具的图也留得下），主体也不得几乎为空。
 const (
 	petTransparentShare = 25  // 1/25 = 4% 透明
@@ -61,6 +65,49 @@ func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 	return result.Bytes(), nil
 }
 
+// downscalePetPNG 把超大成品素材按整数比例缩到 petOutputCanvas 再落盘。
+// 非 PNG、非正方或边长不整除的图片原样返回——缩小只是优化，绝不允许丢图。
+func downscalePetPNG(data []byte) ([]byte, error) {
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || format != "png" || cfg.Width != cfg.Height || cfg.Width <= petOutputCanvas || cfg.Width%petOutputCanvas != 0 {
+		return data, nil
+	}
+	source, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data, nil
+	}
+	side, k := petOutputCanvas, cfg.Width/petOutputCanvas
+	out := image.NewNRGBA(image.Rect(0, 0, side, side))
+	for y := 0; y < side; y++ {
+		for x := 0; x < side; x++ {
+			// 先在预乘空间求 k×k 块均值再还原直通 alpha，透明像素不会把边缘颜色渗进主体。
+			var r, g, b, a float64
+			for dy := 0; dy < k; dy++ {
+				for dx := 0; dx < k; dx++ {
+					c := color.NRGBAModel.Convert(source.At(x*k+dx, y*k+dy)).(color.NRGBA)
+					r += float64(c.R) * float64(c.A)
+					g += float64(c.G) * float64(c.A)
+					b += float64(c.B) * float64(c.A)
+					a += float64(c.A)
+				}
+			}
+			if a == 0 {
+				out.SetNRGBA(x, y, color.NRGBA{})
+				continue
+			}
+			out.SetNRGBA(x, y, color.NRGBA{
+				R: uint8(r/a + 0.5), G: uint8(g/a + 0.5), B: uint8(b/a + 0.5),
+				A: uint8(a/float64(k*k) + 0.5),
+			})
+		}
+	}
+	var result bytes.Buffer
+	if err = png.Encode(&result, out); err != nil {
+		return nil, err
+	}
+	return result.Bytes(), nil
+}
+
 // resampleSquare 双线性缩放到 1024×1024，2K 输出也能保持 4×4 网格对齐。
 func resampleSquare(source image.Image, side int) *image.NRGBA {
 	im := image.NewNRGBA(image.Rect(0, 0, petCanvas, petCanvas))
@@ -101,6 +148,14 @@ func keyChromaGreen(im *image.NRGBA, sheet bool) (*image.NRGBA, int) {
 	}
 	strict := func(x, y int) bool { return chroma(im.NRGBAAt(x, y), 140, 70) }
 	soft := func(x, y int) bool { return chroma(im.NRGBAAt(x, y), 110, 40) }
+	// 模型常把 #00FF00 画成 #C0E080 这类浅绿/黄绿，G-R 只有 20~50，落不进 soft 的固定阈值，
+	// 只能抠掉少数更艳的像素、留下大片绿色。此时改用跟随边缘主色的色度判据。
+	var backdrop color.NRGBA
+	if adaptive, key, ok := lightGreenMatcher(im); ok {
+		shift := func(x, y int) bool { return adaptive(im.NRGBAAt(x, y)) }
+		soft = shift
+		backdrop = key
+	}
 	out := cloneCanvas(im)
 	visited := make([]bool, petCanvas*petCanvas)
 	queue := make([]int, 0, petCanvas*petCanvas)
@@ -152,6 +207,12 @@ func keyChromaGreen(im *image.NRGBA, sheet bool) (*image.NRGBA, int) {
 			push(x, y+1, soft)
 		}
 	}
+	transparent := len(queue)
+	// 前腿之间、道具下方这类被主体整个围住的同色背景与画面边界不连通，漫水永远够不到，
+	// 按面积阈值单独清掉，否则最终素材上会留下几块绿色碎片。
+	if backdrop.A != 0 {
+		transparent += sweepBackdropRemnants(out, backdrop)
+	}
 	// Despill：仍贴着抠除区的毛发像素保留了 JPEG 振铃与柔边的绿偏，
 	// 把绿色压回红/蓝水平，避免桌面上一圈绿边。
 	for y := 0; y < petCanvas; y++ {
@@ -169,7 +230,157 @@ func keyChromaGreen(im *image.NRGBA, sheet bool) (*image.NRGBA, int) {
 			}
 		}
 	}
-	return out, len(queue)
+	return out, transparent
+}
+
+// sweepBackdropRemnants 清掉被主体包围、不与画面边界连通的同色背景孤岛。
+// 只处理达到面积阈值的大块背景，避免误吃主体上的绿色装饰。
+func sweepBackdropRemnants(out *image.NRGBA, key color.NRGBA) int {
+	k := chromaVector(key)
+	matches := func(c color.NRGBA) bool {
+		return c.A >= 128 && greenDominant(c) && chromaDistance(chromaVector(c), k) <= 0.10
+	}
+	const minBlob = petCanvas * petCanvas / 2000
+	visited := make([]bool, petCanvas*petCanvas)
+	removed := 0
+	blob := make([]int, 0, 1024)
+	for start := 0; start < petCanvas*petCanvas; start++ {
+		if visited[start] {
+			continue
+		}
+		visited[start] = true
+		if !matches(out.NRGBAAt(start%petCanvas, start/petCanvas)) {
+			continue
+		}
+		blob = append(blob[:0], start)
+		for head := 0; head < len(blob); head++ {
+			i := blob[head]
+			x, y := i%petCanvas, i/petCanvas
+			for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+				nx, ny := x+d[0], y+d[1]
+				if nx < 0 || ny < 0 || nx > petCanvas-1 || ny > petCanvas-1 {
+					continue
+				}
+				j := ny*petCanvas + nx
+				if visited[j] || !matches(out.NRGBAAt(nx, ny)) {
+					continue
+				}
+				visited[j] = true
+				blob = append(blob, j)
+			}
+		}
+		if len(blob) < minBlob {
+			continue
+		}
+		for _, i := range blob {
+			out.SetNRGBA(i%petCanvas, i/petCanvas, color.NRGBA{})
+		}
+		removed += len(blob)
+	}
+	return removed
+}
+
+// lightGreenMatcher 处理模型把色键绿画成浅绿/黄绿（如 #C0E080）的情况。
+// 前提：四周确实被这种浅绿占满、且画面中心的主体不是同一色度，
+// 否则（饱和绿幕、或绿色宠物配浅绿底）返回 false，继续用固定阈值。
+func lightGreenMatcher(im *image.NRGBA) (func(color.NRGBA) bool, color.NRGBA, bool) {
+	key, share := edgeGreenKey(im)
+	if share < 0.6 {
+		return nil, color.NRGBA{}, false
+	}
+	if int(key.G)-max(int(key.R), int(key.B)) >= 60 {
+		// 仍算饱和绿幕：固定阈值能更好地区分黄绿柔边。
+		return nil, color.NRGBA{}, false
+	}
+	k := chromaVector(key)
+	if !hasSubjectInCenter(im, k) {
+		// 主体与背景同色度（绿色宠物 + 浅绿背景）：按色度漫水会连主体一起吃掉。
+		return nil, color.NRGBA{}, false
+	}
+	return func(c color.NRGBA) bool {
+		if c.A < 128 {
+			return true
+		}
+		// 只认与边缘背景同一色度的绿。不能再叠加“鲜艳绿”固定阈值：
+		// 那只适合纯色绿幕，用在浅绿背景下会直接把同样鲜艳的绿色主体吃掉。
+		return greenDominant(c) && chromaDistance(chromaVector(c), k) <= 0.10
+	}, key, true
+}
+
+// edgeGreenKey 汇总四周边缘带里所有绿色系像素的平均色。
+// 不用 edgeDominantColor 的主色桶：浅绿背景往往带渐变，主色桶占比会被打散。
+func edgeGreenKey(im *image.NRGBA) (color.NRGBA, float64) {
+	const band = 6
+	scan := func(x, y int, sum *[3]float64, n, total *int) {
+		c := im.NRGBAAt(x, y)
+		*total++
+		if c.A < 128 || !greenDominant(c) {
+			return
+		}
+		sum[0] += float64(c.R)
+		sum[1] += float64(c.G)
+		sum[2] += float64(c.B)
+		*n++
+	}
+	var sum [3]float64
+	n, total := 0, 0
+	for i := 0; i < petCanvas; i++ {
+		for d := 0; d < band; d++ {
+			scan(i, d, &sum, &n, &total)
+			scan(i, petCanvas-1-d, &sum, &n, &total)
+			scan(d, i, &sum, &n, &total)
+			scan(petCanvas-1-d, i, &sum, &n, &total)
+		}
+	}
+	if n == 0 || total == 0 {
+		return color.NRGBA{}, 0
+	}
+	return color.NRGBA{
+		R: uint8(sum[0]/float64(n) + 0.5),
+		G: uint8(sum[1]/float64(n) + 0.5),
+		B: uint8(sum[2]/float64(n) + 0.5),
+		A: 255,
+	}, float64(n) / float64(total)
+}
+
+// hasSubjectInCenter 统计画面中心区域：除与背景同色度的像素外，是否还剩足够多的主体像素。
+// 不能直接用中心平均色，因为背景（尤其浅绿）常常在中心区占大多数，会把平均值拉向背景。
+func hasSubjectInCenter(im *image.NRGBA, key [3]float64) bool {
+	const lo, hi = petCanvas * 3 / 10, petCanvas * 7 / 10
+	total, subject := 0, 0
+	for y := lo; y < hi; y++ {
+		for x := lo; x < hi; x++ {
+			c := im.NRGBAAt(x, y)
+			if c.A < 128 {
+				continue
+			}
+			total++
+			if chromaDistance(chromaVector(c), key) > 0.10 {
+				subject++
+			}
+		}
+	}
+	return total > 0 && subject*100 >= total*3
+}
+
+// greenDominant 判断颜色是否以绿为主：绿色通道最亮且明显高出另两个通道。
+// 阈值取 10，刚好区分浅绿背景（G-R≈30）与米白/浅黄背景（G 甚至不是最亮通道）。
+func greenDominant(c color.NRGBA) bool {
+	return int(c.G) >= int(c.R) && int(c.G) >= int(c.B) && int(c.G)-max(int(c.R), int(c.B)) >= 10
+}
+
+// chromaVector 把颜色投影到亮度无关的色度单位向量，用于比较“同一种底色但明暗不一”。
+func chromaVector(c color.NRGBA) [3]float64 {
+	sum := float64(c.R) + float64(c.G) + float64(c.B)
+	if sum < 1 {
+		return [3]float64{}
+	}
+	return [3]float64{float64(c.R) / sum, float64(c.G) / sum, float64(c.B) / sum}
+}
+
+func chromaDistance(a, b [3]float64) float64 {
+	dr, dg, db := a[0]-b[0], a[1]-b[1], a[2]-b[2]
+	return math.Sqrt(dr*dr + dg*dg + db*db)
 }
 
 // keySolidBackground 是"模型没画绿幕"时的兜底：只在四周确实是一整块干净纯色、

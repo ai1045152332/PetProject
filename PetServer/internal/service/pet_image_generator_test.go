@@ -390,7 +390,7 @@ func TestSeedreamRejectsSubjectMatchingBackground(t *testing.T) {
 	}
 }
 func TestSeedreamAcceptsLargeSubject(t *testing.T) {
-	// 带笔记本电脑等道具时主体几乎占满画面，绿背景只剩几个百分点也算有效。
+	// 主体几乎占满画面时（如道具、大额头形象），绿背景只剩几个百分点也算有效。
 	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
 	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
 	draw.Draw(im, image.Rect(20, 20, 1004, 1004), image.NewUniform(color.NRGBA{R: 150, G: 90, B: 50, A: 255}), image.Point{}, draw.Src)
@@ -435,6 +435,97 @@ func TestSeedreamRetriesOnceWhenBackgroundUnusable(t *testing.T) {
 	}
 	if _, _, _, a := decoded.At(0, 0).RGBA(); a != 0 {
 		t.Fatal("retried output keeps an opaque background")
+	}
+}
+
+// lightGreenBackdrop 生成模型实际会画出的浅绿→黄绿渐变背景（#D0F0A0 → #B0D878）。
+func lightGreenBackdrop(im *image.NRGBA) {
+	for y := 0; y < 1024; y++ {
+		for x := 0; x < 1024; x++ {
+			t := float64(x+y) / 2048
+			im.SetNRGBA(x, y, color.NRGBA{
+				R: uint8(208 - 32*t), G: uint8(240 - 16*t), B: uint8(160 - 40*t), A: 255,
+			})
+		}
+	}
+}
+
+// opaqueGreenShare 统计不透明像素中仍然偏绿的比例，用来断言背景没被大量留下。
+func opaqueGreenShare(im image.Image) float64 {
+	opaque, green := 0, 0
+	b := im.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := color.NRGBAModel.Convert(im.At(x, y)).(color.NRGBA)
+			if c.A < 128 {
+				continue
+			}
+			opaque++
+			if int(c.G)-max(int(c.R), int(c.B)) > 15 {
+				green++
+			}
+		}
+	}
+	if opaque == 0 {
+		return 0
+	}
+	return float64(green) / float64(opaque)
+}
+
+func TestSeedreamRemovesLightGreenBackdrop(t *testing.T) {
+	// 模型把 #00FF00 画成浅绿时，固定阈值只能抠掉少数更艳的像素，
+	// 真实批次里 focus/hide 就这样留下一大片绿色。必须按边缘主色补抠。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	lightGreenBackdrop(im)
+	draw.Draw(im, image.Rect(320, 260, 700, 820), image.NewUniform(color.NRGBA{R: 150, G: 90, B: 50, A: 255}), image.Point{}, draw.Src)
+	// 两条腿之间被主体整个围住的背景块，与画面边界不连通，也要清掉。
+	draw.Draw(im, image.Rect(430, 700, 470, 760), image.NewUniform(color.NRGBA{R: 196, G: 232, B: 136, A: 255}), image.Point{}, draw.Src)
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range [][2]int{{4, 4}, {1020, 4}, {4, 1020}, {1020, 1020}, {300, 900}} {
+		if _, _, _, a := decoded.At(p[0], p[1]).RGBA(); a != 0 {
+			t.Fatalf("light green background left opaque at %v", p)
+		}
+	}
+	if _, _, _, a := decoded.At(512, 540).RGBA(); a == 0 {
+		t.Fatal("pet body removed")
+	}
+	if _, _, _, a := decoded.At(450, 730).RGBA(); a != 0 {
+		t.Fatal("enclosed background pocket left opaque")
+	}
+	if share := opaqueGreenShare(decoded); share > 0.005 {
+		t.Fatalf("%.2f%% of the opaque pixels are still green", share*100)
+	}
+}
+
+func TestSeedreamKeepsGreenSubjectOnLightBackdrop(t *testing.T) {
+	// 绿色宠物 + 浅绿背景：抠背景不能连宠物一起吃掉。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	lightGreenBackdrop(im)
+	draw.Draw(im, image.Rect(320, 260, 700, 820), image.NewUniform(color.NRGBA{R: 70, G: 150, B: 60, A: 255}), image.Point{}, draw.Src)
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, a := decoded.At(4, 4).RGBA(); a != 0 {
+		t.Fatal("light green background not removed")
+	}
+	if _, _, _, a := decoded.At(512, 540).RGBA(); a == 0 {
+		t.Fatal("green pet removed with the background")
 	}
 }
 

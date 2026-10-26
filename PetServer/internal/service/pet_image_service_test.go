@@ -577,3 +577,92 @@ func TestPetImageUploadAllFansOutOnePerState(t *testing.T) {
 		}
 	}
 }
+
+// 单帧成品落盘前缩到 512；缩小只是优化，非 PNG、已经够小的图必须原样返回。
+func TestDownscalePetPNG(t *testing.T) {
+	im := image.NewNRGBA(image.Rect(0, 0, petCanvas, petCanvas))
+	for y := 256; y < petCanvas; y++ {
+		for x := 256; x < petCanvas; x++ {
+			im.SetNRGBA(x, y, color.NRGBA{R: 255, G: 128, B: 64, A: 255})
+		}
+	}
+	im.SetNRGBA(0, 0, color.NRGBA{R: 10, G: 20, B: 30, A: 128})
+	var big bytes.Buffer
+	if err := png.Encode(&big, im); err != nil {
+		t.Fatal(err)
+	}
+	small, err := downscalePetPNG(big.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(small))
+	if err != nil || format != "png" || cfg.Width != petOutputCanvas || cfg.Height != petOutputCanvas {
+		t.Fatalf("downscaled output %dx%d format=%q err=%v", cfg.Width, cfg.Height, format, err)
+	}
+	shrunk, err := png.Decode(bytes.NewReader(small))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := color.NRGBAModel.Convert(shrunk.At(511, 511)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 128, B: 64, A: 255}) {
+		t.Fatalf("opaque region = %+v", got)
+	}
+	// 单个半透明像素被 4 格均摊：alpha 降为 1/4，颜色经预乘均值后基本保留（允许往返量化误差）。
+	if got := color.NRGBAModel.Convert(shrunk.At(0, 0)).(color.NRGBA); got.A != 32 || absDiff(int(got.R), 10) > 3 || absDiff(int(got.G), 20) > 3 || absDiff(int(got.B), 30) > 3 {
+		t.Fatalf("semi-transparent corner = %+v", got)
+	}
+	if unchanged, err := downscalePetPNG(small); err != nil || !bytes.Equal(unchanged, small) {
+		t.Fatal("512 PNG must pass through")
+	}
+	gifData := testPetGIF(t)
+	if unchanged, err := downscalePetPNG(gifData); err != nil || !bytes.Equal(unchanged, gifData) {
+		t.Fatal("gif must pass through")
+	}
+}
+
+func absDiff(a, b int) int {
+	if a < b {
+		return b - a
+	}
+	return a - b
+}
+
+// 生成链路端到端：1024 成品经 runOne 缩小后才写入对象存储，历史原图不受影响。
+func TestPetImagesGeneratedShrunkBeforeStore(t *testing.T) {
+	if petFrameModeAnimated {
+		t.Skip("动画 GIF 管线不缩小")
+	}
+	svc := newImageTestService(t, t.TempDir())
+	im := image.NewNRGBA(image.Rect(0, 0, petCanvas, petCanvas))
+	for y := 0; y < petCanvas; y++ {
+		for x := petCanvas / 2; x < petCanvas; x++ {
+			im.SetNRGBA(x, y, color.NRGBA{R: 200, G: 120, B: 60, A: 255})
+		}
+	}
+	var big bytes.Buffer
+	if err := png.Encode(&big, im); err != nil {
+		t.Fatal(err)
+	}
+	source := testImage(t, "png")
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) { return big.Bytes(), nil }))
+	lib, err := svc.Upload("A", petTestCode, "cat.png", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := lib.Images[0].ID
+	lib = awaitPet(t, svc, "A", id)
+	if lib.Images[0].Status != "ready" {
+		t.Fatalf("generation failed: %s", lib.Images[0].Error)
+	}
+	data, _, err := svc.Read("A", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || format != "png" || cfg.Width != petOutputCanvas || cfg.Height != petOutputCanvas {
+		t.Fatalf("stored image %dx%d format=%q err=%v", cfg.Width, cfg.Height, format, err)
+	}
+	raw, err := svc.objects.Get(deviceImageKey("A") + "/" + lib.Images[0].SourceID)
+	if err != nil || !bytes.Equal(raw, source) {
+		t.Fatal("original photo must stay untouched")
+	}
+}

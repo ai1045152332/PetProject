@@ -356,6 +356,88 @@ func TestSeedreamRemovesSoftFringeAndDespillsEdge(t *testing.T) {
 	}
 }
 
+func TestSeedreamFallsBackToSolidEdgeColor(t *testing.T) {
+	// 模型没画绿幕、改画米色纯色背景时，按边缘主色兜底抠除。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{R: 238, G: 231, B: 214, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(300, 260, 724, 820), image.NewUniform(color.NRGBA{R: 150, G: 90, B: 50, A: 255}), image.Point{}, draw.Src)
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, a := decoded.At(4, 4).RGBA(); a != 0 {
+		t.Fatal("solid edge background not removed")
+	}
+	if _, _, _, a := decoded.At(512, 540).RGBA(); a == 0 {
+		t.Fatal("pet body removed")
+	}
+}
+func TestSeedreamRejectsSubjectMatchingBackground(t *testing.T) {
+	// 白猫配白底：兜底会连主体一起吃掉，必须拒绝并交给重试，而不是产出残缺素材。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{R: 250, G: 250, B: 250, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(300, 300, 724, 724), image.NewUniform(color.NRGBA{R: 255, G: 255, B: 255, A: 255}), image.Point{}, draw.Src)
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	if _, err := prepareSeedreamImage(data.Bytes(), false); err == nil {
+		t.Fatal("subject sharing the background color accepted")
+	}
+}
+func TestSeedreamAcceptsLargeSubject(t *testing.T) {
+	// 带笔记本电脑等道具时主体几乎占满画面，绿背景只剩几个百分点也算有效。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(20, 20, 1004, 1004), image.NewUniform(color.NRGBA{R: 150, G: 90, B: 50, A: 255}), image.Point{}, draw.Src)
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	if _, err := prepareSeedreamImage(data.Bytes(), false); err != nil {
+		t.Fatal("large subject with a thin background margin rejected:", err)
+	}
+}
+func TestSeedreamRetriesOnceWhenBackgroundUnusable(t *testing.T) {
+	white := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(white, white.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	var first bytes.Buffer
+	_ = png.Encode(&first, white)
+	green := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(green, green.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(green, image.Rect(300, 300, 724, 724), image.NewUniform(color.NRGBA{R: 150, G: 90, B: 50, A: 255}), image.Point{}, draw.Src)
+	var second bytes.Buffer
+	_ = png.Encode(&second, green)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body := second.Bytes()
+		if calls == 1 {
+			body = first.Bytes()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(body), "media_type": "image/png"}}})
+	}))
+	defer server.Close()
+	generator := NewOpenRouterPetImageGenerator("key", "")
+	generator.endpoint = server.URL
+	output, err := generator.Generate(context.Background(), testImage(t, "jpeg"), "focus", func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("background retry made %d requests, want 2", calls)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, a := decoded.At(0, 0).RGBA(); a != 0 {
+		t.Fatal("retried output keeps an opaque background")
+	}
+}
+
 func TestOpenRouter400DoesNotBlamePhoto(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)

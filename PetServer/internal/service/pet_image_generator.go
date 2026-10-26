@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -59,15 +60,9 @@ func (g *OpenRouterPetImageGenerator) Generate(ctx context.Context, original []b
 		portraitPrompt = seedreamPrompt(portraitPrompt)
 		animationPrompt = seedreamPrompt(animationPrompt)
 	}
-	portrait, err := g.edit(ctx, original, portraitPrompt)
+	portrait, err := g.editSeedream(ctx, original, portraitPrompt, seedream, false, progress)
 	if err != nil {
 		return nil, err
-	}
-	if seedream {
-		portrait, err = prepareSeedreamImage(portrait, false)
-		if err != nil {
-			return nil, err
-		}
 	}
 	if _, err = decodeTransparentPNG(portrait); err != nil {
 		return nil, err
@@ -89,6 +84,30 @@ func (g *OpenRouterPetImageGenerator) Generate(ctx context.Context, original []b
 		}
 	}
 	return petSheetGIF(sheet)
+}
+
+// editSeedream 发送一次生成请求；模型没画出可抠除的背景时，同一任务内自动重发一次。
+// 用户配额在提交时已扣过，重试不再扣次，只是多一次上游调用。
+func (g *OpenRouterPetImageGenerator) editSeedream(ctx context.Context, input []byte, prompt string, seedream, sheet bool, progress func(string)) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		output, err := g.edit(ctx, input, prompt)
+		if err != nil {
+			return nil, err
+		}
+		if !seedream {
+			return output, nil
+		}
+		output, err = prepareSeedreamImage(output, sheet)
+		if err == nil {
+			return output, nil
+		}
+		var background petBackgroundError
+		if attempt == 0 && errors.As(err, &background) && ctx.Err() == nil {
+			progress("beautifying")
+			continue
+		}
+		return nil, err
+	}
 }
 func (g *OpenRouterPetImageGenerator) edit(ctx context.Context, input []byte, prompt string) ([]byte, error) {
 	mime := http.DetectContentType(input)
@@ -194,7 +213,7 @@ func decodeTransparentPNG(data []byte) (image.Image, error) {
 			}
 		}
 	}
-	if transparent < cfg.Width*cfg.Height/10 || opaque < cfg.Width*cfg.Height/100 {
+	if transparent < cfg.Width*cfg.Height/petTransparentShare || opaque < cfg.Width*cfg.Height/petOpaqueShare {
 		return nil, fmt.Errorf("生成图片缺少有效透明背景或宠物主体，请重试")
 	}
 	return im, nil

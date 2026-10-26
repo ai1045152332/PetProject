@@ -65,6 +65,27 @@ COMMIT=1 ~/.codex/skills/deploy-cute-pet/scripts/deploy.sh ...     # 发布后�
 
 注意：`PETSERVER_LISTEN_ADDR` 默认 `:8080`，公网部署在 env 里设为 `:80`。重启不会丢数据（会话与设备列表均持久化）。
 
+### 宠物图片对象目录
+
+`/opt/petserver/data/pet-images/objects/` 按「设备 → 一次上传一个文件夹」组织：
+
+```
+objects/<sha256(设备ID)>/<YYYYMMDD-HHMMSS-6hex>/
+    original-<文件名标签>.jpg   # 本次上传的原图
+    focus-<文件名标签>.png      # 本次为该状态生成的图（idel/sleep/pet/hide 同理）
+```
+
+设备目录是硬件 ID 的 SHA-256（不把设备 ID 明文落盘），批次目录取上传时间 UTC。记录里的 `sourceId` 与 `objectId` 是相对设备目录的路径；客户端可见的 `id` 固定为 32 位小写 hex（同时是本地缓存文件名 `cloud-<id>.img`），不要塞状态、标签或斜杠。旧版平铺布局（`<deviceKey>/<name>`）仍可读。
+
+两个运维脚本（都在 `scripts/`，默认 dry-run，加 `--apply` 才落盘）：
+
+```bash
+python3 scripts/migrate-pet-objects.py [--apply]      # 平铺布局 → 批次文件夹
+python3 scripts/normalize-pet-image-ids.py [--apply]  # 历史 ID 规范成 32 位 hex
+```
+
+线上执行前先备份：`cp -a /opt/petserver/data/pet-images /opt/petserver/data/pet-images.bak-$(date +%Y%m%d%H%M%S)`。
+
 ## 关键约束（容易踩）
 
 1. **版本号只能递增，同一版本号不要重复发布不同内容**。已升级到该版本的客户端不会再次下载，等于这批人永远收不到修复。

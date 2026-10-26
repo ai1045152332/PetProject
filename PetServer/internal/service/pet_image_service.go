@@ -29,17 +29,30 @@ const MaxPetImageBytes = 10 << 20
 const MaxPetImagePixels = 40_000_000
 
 type PetImage struct {
-	State            string    `json:"state,omitempty"`
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	ContentType      string    `json:"contentType"`
-	CreatedAt        time.Time `json:"createdAt"`
-	Status           string    `json:"status,omitempty"`
-	Error            string    `json:"error,omitempty"`
-	SourceID         string    `json:"sourceId,omitempty"`
-	PromptVersion    string    `json:"promptVersion,omitempty"`
-	SelectionVersion int       `json:"selectionVersion,omitempty"`
+	State       string    `json:"state,omitempty"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ContentType string    `json:"contentType"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Status      string    `json:"status,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	SourceID    string    `json:"sourceId,omitempty"`
+	// ObjectID is the object-store name of the generated image, relative to the device folder
+	// ("<batch>/<state>-<label>.png"). Records written before upload folders existed leave it
+	// empty and fall back to ID, which then sat directly under the device folder.
+	ObjectID         string `json:"objectId,omitempty"`
+	PromptVersion    string `json:"promptVersion,omitempty"`
+	SelectionVersion int    `json:"selectionVersion,omitempty"`
 }
+
+// outputID is the object name of the generated image inside the device folder.
+func (item PetImage) outputID() string {
+	if item.ObjectID != "" {
+		return item.ObjectID
+	}
+	return item.ID
+}
+
 type PetImageLibrary struct {
 	CurrentIDs        map[string]string `json:"currentIds,omitempty"`
 	SelectionVersions map[string]int    `json:"selectionVersions,omitempty"`
@@ -137,10 +150,26 @@ func petImageFileLabel(name string) string {
 	if label == "" {
 		return "pet"
 	}
-	if runes := []rune(label); len(runes) > 40 {
-		label = string(runes[:40])
+	// Keep the whole object name under the 128-byte limit even for 3-byte CJK runes.
+	if runes := []rune(label); len(runes) > 24 {
+		label = string(runes[:24])
 	}
 	return label
+}
+
+// petBatchName names the folder that holds one upload: its original photo plus every generated
+// state. UTC timestamp keeps folders sortable; the random suffix keeps same-second uploads apart.
+func petBatchName(t time.Time) string {
+	var suffix [3]byte
+	_, _ = rand.Read(suffix[:])
+	return t.Format("20060102-150405") + "-" + hex.EncodeToString(suffix[:])
+}
+
+func petImageFileExt(format string) string {
+	if format == "jpeg" {
+		return ".jpg"
+	}
+	return ".png"
 }
 func (s *PetImageService) load(device string) (PetImageLibrary, error) {
 	return s.loadKey(deviceImageKey(device))
@@ -232,6 +261,7 @@ func (s *PetImageService) withQuota(lib PetImageLibrary, code string) PetImageLi
 	lib.GenerationRemaining = remaining
 	return lib
 }
+
 // petAllStates are the five states generated together when the client uploads with "all".
 // The legacy "warn" state was merged into "focus" and is no longer accepted for new uploads.
 var petAllStates = []string{"focus", "idel", "sleep", "pet", "hide"}
@@ -304,31 +334,35 @@ func (s *PetImageService) Upload(device, code, name string, data []byte, states 
 	if all {
 		targetStates = petAllStates
 	}
-	var source [4]byte
-	if _, err = rand.Read(source[:]); err != nil {
-		<-s.slots
-		return lib, err
-	}
-	// Object names lead with a sanitized file-name label so files under pet-images/objects are
-	// human-readable; the random suffix keeps them unique and the label never comes from the key.
+	createdAt := time.Now().UTC()
+	// One upload owns one folder under the device key: the original photo plus every generated
+	// state lands together as objects/<device>/<batch>/, so the device folder stays a readable
+	// list of uploads instead of a flat pile of mixed files.
+	batchID := petBatchName(createdAt)
 	label := petImageFileLabel(name)
-	sourceID := label + "-original-" + hex.EncodeToString(source[:])
+	sourceID := batchID + "/original-" + label + petImageFileExt(format)
 	key := deviceImageKey(device)
 	if err = s.objects.Put(key+"/"+sourceID, data); err != nil {
 		<-s.slots
 		return lib, err
 	}
-	createdAt := time.Now().UTC()
 	displayName := filepath.Base(name)
 	batch := make([]PetImage, 0, len(targetStates))
 	for _, st := range targetStates {
-		var id [4]byte
+		// The ID stays a bare 32-hex string: it is also the client-side cache file name, so it must
+		// not carry state, label or path separators. Readability lives in ObjectID instead.
+		var id [16]byte
 		if _, err = rand.Read(id[:]); err != nil {
 			_ = s.objects.Delete(key + "/" + sourceID)
 			<-s.slots
 			return lib, err
 		}
-		batch = append(batch, PetImage{ID: label + "-" + hex.EncodeToString(id[:]), SourceID: sourceID, Name: displayName, CreatedAt: createdAt, ContentType: petOutputContentType(), Status: "beautifying", PromptVersion: PetPromptVersion, SelectionVersion: lib.selectionVersion(st), State: st})
+		// State-less legacy uploads get a stable file stem instead of a leading dash.
+		stem := st
+		if stem == "" {
+			stem = "shared"
+		}
+		batch = append(batch, PetImage{ID: hex.EncodeToString(id[:]), SourceID: sourceID, ObjectID: batchID + "/" + stem + "-" + label + ".png", Name: displayName, CreatedAt: createdAt, ContentType: petOutputContentType(), Status: "beautifying", PromptVersion: PetPromptVersion, SelectionVersion: lib.selectionVersion(st), State: st})
 	}
 	for _, item := range batch {
 		lib.Images = append([]PetImage{item}, lib.Images...)
@@ -436,6 +470,7 @@ func (s *PetImageService) Retry(device, code, id string, states ...string) (PetI
 	}
 	return lib, os.ErrNotExist
 }
+
 // runOne generates a single image and persists its result. Slot acquisition/release and worker
 // accounting are the caller's responsibility. Validation follows the active frame mode: a
 // multi-frame GIF when animation is enabled, otherwise any decodable single-frame image.
@@ -478,7 +513,7 @@ func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGe
 			continue
 		}
 		if err == nil {
-			err = s.objects.Put(key+"/"+item.ID, output)
+			err = s.objects.Put(key+"/"+item.outputID(), output)
 		}
 		if err != nil {
 			lib.Images[i].Status = "failed"
@@ -553,7 +588,7 @@ func (s *PetImageService) Read(device, id string) ([]byte, string, error) {
 	}
 	for _, item := range lib.Images {
 		if item.ID == id && petReady(item) {
-			data, err := s.objects.Get(deviceImageKey(device) + "/" + id)
+			data, err := s.objects.Get(deviceImageKey(device) + "/" + item.outputID())
 			return data, item.ContentType, err
 		}
 	}

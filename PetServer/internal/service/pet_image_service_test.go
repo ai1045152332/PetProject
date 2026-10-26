@@ -386,11 +386,11 @@ func TestPetImageFileLabel(t *testing.T) {
 		t.Fatalf("CJK label = %q", got)
 	}
 	long := petImageFileLabel(string(bytes.Repeat([]byte("a"), 200)) + ".png")
-	if len([]rune(long)) > 40 || strings.ContainsAny(long, "/") || strings.HasPrefix(long, ".") {
+	if len([]rune(long)) > 24 || strings.ContainsAny(long, "/") || strings.HasPrefix(long, ".") {
 		t.Fatalf("long label unsafe: %q", long)
 	}
-	// The real upload path must actually use the label: files under pet-images/objects are named
-	// "<label>-<suffix>" (generated) and "<label>-original-<suffix>" (source), not opaque hex.
+	// One upload = one folder under the device key: the original photo and every generated state
+	// share a batch folder instead of piling up flat in the device directory.
 	svc := newImageTestService(t, t.TempDir())
 	uploaded, err := svc.Upload("device-A", petTestCode, "my cat!!!.png", testImage(t, "png"))
 	if err != nil {
@@ -398,33 +398,53 @@ func TestPetImageFileLabel(t *testing.T) {
 	}
 	item := uploaded.Images[0]
 	awaitPet(t, svc, "device-A", item.ID)
-	if !strings.HasPrefix(item.ID, "my_cat-") || !strings.HasPrefix(item.SourceID, "my_cat-original-") {
-		t.Fatalf("upload ids not label-prefixed: id=%q source=%q", item.ID, item.SourceID)
+	// The client-visible ID stays a bare 32-hex cache key (CustomSpriteStore.validID).
+	if len(item.ID) != 32 || strings.Trim(item.ID, "0123456789abcdef") != "" {
+		t.Fatalf("id is not 32-hex: %q", item.ID)
 	}
-	if strings.ContainsAny(item.ID+item.SourceID, "/.") {
-		t.Fatalf("unsafe object name: %q / %q", item.ID, item.SourceID)
+	batch, sourceName, split := strings.Cut(item.SourceID, "/")
+	if !split || len(batch) != 22 || batch[8] != '-' || batch[15] != '-' {
+		t.Fatalf("source not inside an upload folder: %q", item.SourceID)
 	}
-	for _, id := range []string{item.ID, item.SourceID} {
+	if sourceName != "original-my_cat.png" {
+		t.Fatalf("source name = %q", sourceName)
+	}
+	if item.ObjectID != batch+"/shared-my_cat.png" {
+		t.Fatalf("result not in the same folder as its source: %q", item.ObjectID)
+	}
+	for _, id := range []string{item.SourceID, item.ObjectID} {
 		if _, err = svc.objects.Get(deviceImageKey("device-A") + "/" + id); err != nil {
 			t.Fatalf("object %q missing after upload: %v", id, err)
 		}
 	}
 	if result, _, err := svc.Read("device-A", item.ID); err != nil || len(result) == 0 {
-		t.Fatalf("label-prefixed result not readable: %v", err)
+		t.Fatalf("batched result not readable: %v", err)
 	}
-	// The composed object key (device hash + readable id) must still pass the storage validator.
+	// Both the batch layout and the older flat layout must pass the storage validator.
 	objects, err := storage.NewLocalPetImageObjects(filepath.Join(t.TempDir(), "objects"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	deviceKey := deviceImageKey("device-A")
-	for _, id := range []string{deviceKey + "/" + petImageFileLabel("cat.png") + "-1a2b3c4d", deviceKey + "/" + petImageFileLabel("cat.png") + "-original-1a2b3c4d"} {
+	batchKey := "20261026-151149-1a2b3c"
+	for _, id := range []string{
+		deviceKey + "/" + batchKey + "/original-cat.png",
+		deviceKey + "/" + batchKey + "/focus-cat.png",
+		deviceKey + "/legacy-cat-1a2b3c4d",
+	} {
 		if err = objects.Put(id, []byte("x")); err != nil {
 			t.Fatalf("object key %q rejected: %v", id, err)
 		}
 	}
-	if err = objects.Put(deviceKey+"/../escape", []byte("x")); err == nil {
-		t.Fatal("traversal object key accepted")
+	for _, bad := range []string{
+		deviceKey + "/../escape",
+		deviceKey + "/" + batchKey + "/../escape",
+		deviceKey + "/notabatch/escape.png",
+		deviceKey + "/" + batchKey + "/.hidden",
+	} {
+		if err = objects.Put(bad, []byte("x")); err == nil {
+			t.Fatalf("unsafe object key accepted: %q", bad)
+		}
 	}
 }
 

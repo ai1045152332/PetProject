@@ -17,10 +17,12 @@ type PetImageObjects interface {
 type LocalPetImageObjects struct{ root string }
 
 // petObjectKey guards object paths against traversal: the first segment is always the server-side
-// SHA-256 device key (64 lowercase hex), the second is a human-readable image name that must not
-// contain '/' and must not start with '.' (so "..", absolute or nested paths are rejected even
-// though the name stem originates from a client-supplied file name).
-var petObjectKey = regexp.MustCompile(`^[a-f0-9]{64}/[^./][^/]{0,127}$`)
+// SHA-256 device key (64 lowercase hex), the optional second is the upload batch folder
+// (YYYYMMDD-HHMMSS-<6 hex>), and the last is a human-readable file name that must not contain '/'
+// and must not start with '.' (so "..", absolute or deeper nested paths are rejected even though the
+// name stem originates from a client-supplied file name). Keys written before batch folders existed
+// (device/name) stay valid.
+var petObjectKey = regexp.MustCompile(`^[a-f0-9]{64}/(?:[0-9]{8}-[0-9]{6}-[a-f0-9]{6}/)?[^./][^/]{0,127}$`)
 
 func NewLocalPetImageObjects(root string) (*LocalPetImageObjects, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
@@ -56,7 +58,14 @@ func (s *LocalPetImageObjects) Delete(key string) error {
 	if err != nil {
 		return err
 	}
-	return os.Remove(p)
+	if err = os.Remove(p); err != nil {
+		return err
+	}
+	// Drop the now-empty upload folder so objects/<device>/ never accumulates empty batches.
+	if dir := filepath.Dir(p); filepath.Dir(dir) != s.root && filepath.Dir(filepath.Dir(dir)) == s.root {
+		_ = os.Remove(dir)
+	}
+	return nil
 }
 func AtomicPetWrite(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".pet-*")

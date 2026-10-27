@@ -11,6 +11,7 @@ type Heartbeat struct {
 	Machine  string `json:"machine"`  // 机器架构
 	PetName  string `json:"petName"`  // 宠物名称
 	PetState string `json:"petState"` // 宠物当前状态（focus/idel/sleep/pet/hide）
+	DeviceID string `json:"deviceId"` // 设备唯一标识（macOS IOPlatformUUID）；用于宠物号注册与好友消息拉取，旧客户端可不带
 }
 
 // Validate 校验必填字段，返回第一个缺失字段名；全部有效时返回空串
@@ -46,4 +47,5 @@ type DeviceView struct {
 	SecondsAgo int64  `json:"secondsAgo"` // 距最近心跳的秒数
 	Online     bool   `json:"online"`     // 是否在在线阈值内
 	Note       string `json:"note"`       // 设备备注（管理端维护，如使用人/部门）
+	PetNo      int64  `json:"petNo"`      // 宠物号（好友/消息体系分配；未注册为 0）
 }

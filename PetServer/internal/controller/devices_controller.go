@@ -11,11 +11,12 @@ import (
 type DevicesController struct {
 	svc     *service.HeartbeatService
 	noteSvc *service.DeviceNoteService
+	social  *service.SocialService // 可 nil：用于在列表展示宠物号
 }
 
 // NewDevicesController 创建在线列表控制器
-func NewDevicesController(svc *service.HeartbeatService, noteSvc *service.DeviceNoteService) *DevicesController {
-	return &DevicesController{svc: svc, noteSvc: noteSvc}
+func NewDevicesController(svc *service.HeartbeatService, noteSvc *service.DeviceNoteService, social *service.SocialService) *DevicesController {
+	return &DevicesController{svc: svc, noteSvc: noteSvc, social: social}
 }
 
 // List 处理 GET /api/devices：返回所有设备及其在线状态
@@ -32,6 +33,10 @@ func (c *DevicesController) List(w http.ResponseWriter, r *http.Request) {
 	for i := range devices {
 		if note, ok := notes[devices[i].Hostname]; ok {
 			devices[i].Note = note
+		}
+		// 宠物号由好友体系按 deviceId 分配；未注册时为 0，前端显示占位
+		if c.social != nil {
+			devices[i].PetNo = c.social.PetNoFor(devices[i].DeviceID)
 		}
 	}
 

@@ -87,6 +87,19 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private weak var chatDescLabel: NSTextField?
     private var chatIntervalButtons: [(Int, NSButton)] = []
 
+    // 好友消息（设置面板「好友消息」区）
+    /// 宠物号变化通知观察者（心跳/注册接口刷新后同步展示）
+    private var petNoObserver: NSObjectProtocol?
+    private weak var myPetNoLabel: NSTextField?
+    private weak var addFriendField: NSTextField?
+    private weak var friendsDocView: NSView?
+    private weak var socialStatusLabel: NSTextField?
+    private weak var refreshSocialBtn: NSButton?
+    private var socialFriends: [PetFriend] = []
+    private var friendsListWidth: CGFloat = 0
+    private var friendsViewportHeight: CGFloat = 0
+    private var socialLoading = false
+
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
     private let inset: CGFloat = 16
@@ -119,11 +132,25 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 self?.refreshSpriteAccessUI()
             }
         }
+
+        // 宠物号由心跳/注册接口刷新后，同步更新「好友消息」区展示
+        petNoObserver = NotificationCenter.default.addObserver(
+            forName: FriendService.petNoChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshMyPetNoUI()
+            }
+        }
     }
 
     deinit {
         if let accessObserver {
             NotificationCenter.default.removeObserver(accessObserver)
+        }
+        if let petNoObserver {
+            NotificationCenter.default.removeObserver(petNoObserver)
         }
     }
 
@@ -162,7 +189,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         contentView.addSubview(navBg)
 
         // 左侧导航项：固定从上往下顺序排列（不随高度自适应）
-        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置", "🖱️ 菜单设置"]
+        let navTitles = ["🐱 宠物信息", "⚙️ 通用设置", "🔔 提醒设置", "🖱️ 菜单设置", "👫 好友消息"]
         let itemH: CGFloat = 44
         let itemGap: CGFloat = 10
         let navTopPad: CGFloat = 12
@@ -186,20 +213,23 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         let contentW = W - contentX - inset
         let contentFrame = NSRect(x: contentX, y: 14, width: contentW, height: bodyH)
 
-        // 仅「宠物信息」区内容较高，包一层滚动容器；其余三区保持原有直接布局
+        // 仅「宠物信息」区内容较高，包一层滚动容器；其余各区保持原有直接布局
         let section0 = makeContentContainer(frame: contentFrame, scrollable: true, contentHeight: 372, in: contentView)
         let section1 = makeContentContainer(frame: contentFrame, in: contentView)
         let section2 = makeContentContainer(frame: contentFrame, in: contentView)
         let section3 = makeContentContainer(frame: contentFrame, in: contentView)
+        let section4 = makeContentContainer(frame: contentFrame, in: contentView)
         section1.isHidden = true
         section2.isHidden = true
         section3.isHidden = true
-        contentViews = [section0, section1, section2, section3]
+        section4.isHidden = true
+        contentViews = [section0, section1, section2, section3, section4]
 
         fillStateSection(section0)
         fillGeneralSection(section1)
         fillReminderSection(section2)
         fillMenuSettingsSection(section3)
+        fillSocialSection(section4)
 
         applyNavStyle()
     }
@@ -1563,6 +1593,314 @@ return row
         ContextMenuPrefs.setVisible(sender.state == .on, key: item.key)
     }
 
+    // MARK: - 分区 5：好友消息
+
+    private func fillSocialSection(_ container: NSView) {
+        let cw = container.bounds.width
+        let ch = container.bounds.height
+
+        let titleLbl = NSTextField(labelWithString: "好友消息")
+        titleLbl.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLbl.textColor = .labelColor
+        titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
+        container.addSubview(titleLbl)
+
+        let descLbl = NSTextField(labelWithString: "每只宠物都有一个专属宠物号；互加好友后可发消息，对方下次心跳即在头顶气泡收到")
+        descLbl.font = .systemFont(ofSize: 11)
+        descLbl.textColor = .tertiaryLabelColor
+        descLbl.lineBreakMode = .byTruncatingTail
+        descLbl.frame = NSRect(x: 16, y: ch - 60, width: cw - 32, height: 15)
+        container.addSubview(descLbl)
+
+        let divider = NSBox(frame: NSRect(x: 16, y: ch - 68, width: cw - 32, height: 1))
+        divider.boxType = .separator
+        divider.autoresizingMask = .width
+        container.addSubview(divider)
+
+        // ── 卡片 1：我的宠物号 ──
+        let card1H: CGFloat = 60
+        let card1Y = ch - 68 - 14 - card1H
+        let petRow = makeSettingRow(frame: NSRect(x: 16, y: card1Y, width: cw - 32, height: card1H), in: container)
+        let pw = petRow.bounds.width
+
+        let petTitle = NSTextField(labelWithString: "我的宠物号")
+        petTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        petTitle.textColor = .labelColor
+        petTitle.frame = NSRect(x: 14, y: card1H - 26, width: 120, height: 18)
+        petRow.addSubview(petTitle)
+
+        let petNoValue = NSTextField(labelWithString: "尚未分配")
+        petNoValue.font = .systemFont(ofSize: 15, weight: .bold)
+        petNoValue.textColor = .controlAccentColor
+        petNoValue.frame = NSRect(x: 14, y: 9, width: 220, height: 22)
+        petRow.addSubview(petNoValue)
+        myPetNoLabel = petNoValue
+
+        let copyW: CGFloat = 60
+        let refreshW: CGFloat = 84
+        let copyBtn = NSButton(title: "复制", target: self, action: #selector(copyMyPetNo(_:)))
+        copyBtn.bezelStyle = .rounded
+        copyBtn.font = .systemFont(ofSize: 12)
+        copyBtn.frame = NSRect(x: pw - 12 - refreshW - 8 - copyW, y: (card1H - 26) / 2, width: copyW, height: 26)
+        copyBtn.autoresizingMask = .minXMargin
+        petRow.addSubview(copyBtn)
+
+        let refreshBtn = NSButton(title: "刷新", target: self, action: #selector(refreshSocialFromServer(_:)))
+        refreshBtn.bezelStyle = .rounded
+        refreshBtn.font = .systemFont(ofSize: 12)
+        refreshBtn.frame = NSRect(x: pw - 12 - refreshW, y: (card1H - 26) / 2, width: refreshW, height: 26)
+        refreshBtn.autoresizingMask = .minXMargin
+        petRow.addSubview(refreshBtn)
+        refreshSocialBtn = refreshBtn
+
+        // ── 卡片 2：添加好友 ──
+        let card2H: CGFloat = 52
+        let card2Y = card1Y - 12 - card2H
+        let addRow = makeSettingRow(frame: NSRect(x: 16, y: card2Y, width: cw - 32, height: card2H), in: container)
+        let aw = addRow.bounds.width
+
+        let addTitle = NSTextField(labelWithString: "添加好友")
+        addTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        addTitle.textColor = .labelColor
+        addTitle.frame = NSRect(x: 14, y: (card2H - 18) / 2, width: 80, height: 18)
+        addRow.addSubview(addTitle)
+
+        let addBtnW: CGFloat = 60
+        let field = NSTextField(frame: NSRect(x: 100, y: (card2H - 28) / 2, width: aw - 100 - 12 - addBtnW - 8, height: 28))
+        field.placeholderString = "输入对方宠物号"
+        field.font = .systemFont(ofSize: 13)
+        field.bezelStyle = .roundedBezel
+        field.delegate = self
+        field.target = self
+        field.action = #selector(addFriendClicked(_:))
+        field.autoresizingMask = .width
+        addRow.addSubview(field)
+        addFriendField = field
+
+        let addBtn = NSButton(title: "添加", target: self, action: #selector(addFriendClicked(_:)))
+        addBtn.bezelStyle = .rounded
+        addBtn.frame = NSRect(x: aw - 12 - addBtnW, y: (card2H - 26) / 2, width: addBtnW, height: 26)
+        addBtn.autoresizingMask = .minXMargin
+        addRow.addSubview(addBtn)
+
+        // ── 好友列表标题 ──
+        let friendsTitle = NSTextField(labelWithString: "我的好友")
+        friendsTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        friendsTitle.textColor = .labelColor
+        friendsTitle.frame = NSRect(x: 16, y: card2Y - 14 - 18, width: 200, height: 18)
+        friendsTitle.autoresizingMask = .minYMargin
+        container.addSubview(friendsTitle)
+
+        // 好友列表（独立竖向滚动容器，容纳不定数量好友）
+        let listTopY = card2Y - 14 - 18 - 8
+        let listBottomY: CGFloat = 40
+        let listH = max(120, listTopY - listBottomY)
+        let listFrame = NSRect(x: 16, y: listBottomY, width: cw - 32, height: listH)
+        let scroll = NSScrollView(frame: listFrame)
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .lineBorder
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.autoresizingMask = [.width, .height, .minYMargin]
+        container.addSubview(scroll)
+
+        let doc = FlippedContainer(frame: NSRect(x: 0, y: 0, width: listFrame.width, height: listH))
+        doc.autoresizingMask = [.width]
+        scroll.documentView = doc
+        friendsDocView = doc
+        friendsListWidth = listFrame.width
+        friendsViewportHeight = listH
+
+        // ── 底部状态标签 ──
+        let statusLbl = NSTextField(labelWithString: "")
+        statusLbl.font = .systemFont(ofSize: 11)
+        statusLbl.textColor = .secondaryLabelColor
+        statusLbl.lineBreakMode = .byTruncatingTail
+        statusLbl.frame = NSRect(x: 16, y: 14, width: cw - 32, height: 16)
+        statusLbl.autoresizingMask = [.width, .minYMargin]
+        container.addSubview(statusLbl)
+        socialStatusLabel = statusLbl
+
+        refreshMyPetNoUI()
+        rebuildFriendsList(emptyHint: "还没有好友，输入对方宠物号点「添加」")
+        refreshSocialFromServer(nil)
+    }
+
+    /// 单条好友行：名字 + 「发消息」 + 「删除」（发消息/删除按 index 绑定当前 socialFriends）
+    private func makeFriendRow(_ f: PetFriend, index: Int, width: CGFloat, height: CGFloat) -> NSView {
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        row.wantsLayer = true
+        row.layer?.backgroundColor = NSColor(white: 0, alpha: 0.04).cgColor
+        row.layer?.cornerRadius = 8
+
+        let delW: CGFloat = 56
+        let sendW: CGFloat = 66
+
+        let name = NSTextField(labelWithString: f.display)
+        name.font = .systemFont(ofSize: 13, weight: .medium)
+        name.textColor = .labelColor
+        name.lineBreakMode = .byTruncatingTail
+        name.frame = NSRect(x: 12, y: (height - 18) / 2, width: width - 200, height: 18)
+        row.addSubview(name)
+
+        let send = NSButton(title: "发消息", target: self, action: #selector(sendToFriend(_:)))
+        send.bezelStyle = .rounded
+        send.controlSize = .small
+        send.font = .systemFont(ofSize: 11)
+        send.tag = index
+        send.frame = NSRect(x: width - 12 - delW - 8 - sendW, y: (height - 24) / 2, width: sendW, height: 24)
+        row.addSubview(send)
+
+        let del = NSButton(title: "删除", target: self, action: #selector(removeFriendClicked(_:)))
+        del.bezelStyle = .rounded
+        del.controlSize = .small
+        del.font = .systemFont(ofSize: 11)
+        del.tag = index
+        del.frame = NSRect(x: width - 12 - delW, y: (height - 24) / 2, width: delW, height: 24)
+        row.addSubview(del)
+
+        return row
+    }
+
+    /// 依据 socialFriends 重建好友列表；列表短于视口时保持视口高度，超出时随内容增高（可滚动）
+    private func rebuildFriendsList(emptyHint: String) {
+        guard let doc = friendsDocView else { return }
+        for v in doc.subviews { v.removeFromSuperview() }
+        let w = friendsListWidth
+
+        if socialFriends.isEmpty {
+            let hint = NSTextField(labelWithString: emptyHint)
+            hint.font = .systemFont(ofSize: 12)
+            hint.textColor = .tertiaryLabelColor
+            hint.alignment = .center
+            hint.frame = NSRect(x: 0, y: 24, width: w, height: 18)
+            doc.addSubview(hint)
+            doc.frame = NSRect(x: 0, y: 0, width: w, height: friendsViewportHeight)
+            return
+        }
+
+        var y: CGFloat = 0
+        let rowH: CGFloat = 40
+        let gap: CGFloat = 6
+        for (i, f) in socialFriends.enumerated() {
+            let row = makeFriendRow(f, index: i, width: w, height: rowH)
+            row.frame = NSRect(x: 0, y: y, width: w, height: rowH)
+            doc.addSubview(row)
+            y += rowH + gap
+        }
+        doc.frame = NSRect(x: 0, y: 0, width: w, height: max(y, friendsViewportHeight))
+    }
+
+    private func refreshMyPetNoUI() {
+        let petNo = FriendService.myPetNo
+        myPetNoLabel?.stringValue = petNo > 0 ? "#\(petNo)" : "尚未分配（联网后自动同步）"
+    }
+
+    @objc private func copyMyPetNo(_ sender: Any?) {
+        let petNo = FriendService.myPetNo
+        guard petNo > 0 else {
+            socialStatusLabel?.stringValue = "宠物号尚未分配，先点「刷新」获取"
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(String(petNo), forType: .string)
+        socialStatusLabel?.stringValue = "已复制你的宠物号 #\(petNo)，发给好友即可被搜索添加"
+    }
+
+    /// 向服务端注册取宠物号 + 拉好友列表（打开分区与「刷新」按钮触发）
+    @objc private func refreshSocialFromServer(_ sender: Any?) {
+        guard !socialLoading else { return }
+        socialLoading = true
+        refreshSocialBtn?.title = "刷新中…"
+        socialStatusLabel?.stringValue = "正在同步…"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.socialLoading = false; self.refreshSocialBtn?.title = "刷新" }
+            do {
+                _ = try await FriendService.refreshMyPetNo()
+                self.refreshMyPetNoUI()
+                self.socialFriends = try await FriendService.listFriends()
+                self.rebuildFriendsList(emptyHint: "还没有好友，输入对方宠物号点「添加」")
+                self.socialStatusLabel?.stringValue = ""
+            } catch {
+                self.socialStatusLabel?.stringValue = "同步失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    @objc private func addFriendClicked(_ sender: Any?) {
+        guard let field = addFriendField else { return }
+        let raw = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let petNo = Int(raw), petNo > 0 else {
+            socialStatusLabel?.stringValue = "请输入正确的宠物号（纯数字）"
+            return
+        }
+        guard !socialLoading else { return }
+        socialLoading = true
+        socialStatusLabel?.stringValue = "正在添加…"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.socialLoading = false }
+            do {
+                self.socialFriends = try await FriendService.addFriend(petNo: petNo)
+                field.stringValue = ""
+                field.window?.makeFirstResponder(nil)
+                self.rebuildFriendsList(emptyHint: "还没有好友")
+                self.socialStatusLabel?.stringValue = "已添加好友 #\(petNo)"
+            } catch {
+                self.socialStatusLabel?.stringValue = "添加失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    @objc private func removeFriendClicked(_ sender: NSButton) {
+        guard socialFriends.indices.contains(sender.tag) else { return }
+        let f = socialFriends[sender.tag]
+        guard !socialLoading else { return }
+        socialLoading = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.socialLoading = false }
+            do {
+                self.socialFriends = try await FriendService.removeFriend(petNo: f.petNo)
+                self.rebuildFriendsList(emptyHint: "还没有好友")
+                self.socialStatusLabel?.stringValue = "已删除好友 \(f.display)"
+            } catch {
+                self.socialStatusLabel?.stringValue = "删除失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    @objc private func sendToFriend(_ sender: NSButton) {
+        guard socialFriends.indices.contains(sender.tag) else { return }
+        let f = socialFriends[sender.tag]
+        let alert = NSAlert()
+        alert.messageText = "发消息给 \(f.display)"
+        alert.alertStyle = .informational
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.placeholderString = "想对 TA 说的话…"
+        field.font = .systemFont(ofSize: 13)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "发送")
+        alert.addButton(withTitle: "取消")
+        alert.beginSheetModal(for: self) { [weak self] resp in
+            guard resp == .alertFirstButtonReturn else { return }
+            let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, let self else { return }
+            self.socialStatusLabel?.stringValue = "正在发送…"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await FriendService.sendMessage(toPetNo: f.petNo, text: text)
+                    self.socialStatusLabel?.stringValue = "已发送，对方下次心跳（约 1 分钟内）即可收到"
+                } catch {
+                    self.socialStatusLabel?.stringValue = "发送失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     // MARK: - 左侧导航
 
     @objc private func selectSection(_ sender: NSButton) {
@@ -1683,6 +2021,12 @@ return row
         NSApp.activate(ignoringOtherApps: true)
     }
     
+}
+
+// MARK: - 好友列表翻转文档视图（内容自顶向下排布）
+
+final class FlippedContainer: NSView {
+    override var isFlipped: Bool { true }
 }
 
 // MARK: - 通用居中按钮容器（按钮在 layout 时自动居中）

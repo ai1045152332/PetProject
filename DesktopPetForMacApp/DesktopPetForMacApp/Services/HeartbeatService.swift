@@ -65,7 +65,8 @@ final class HeartbeatService {
             "os": "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
             "machine": machine,
             "petName": PetName.currentName(),
-            "petState": viewModel?.animationState.rawValue ?? CatAnimationState.idel.rawValue
+            "petState": viewModel?.animationState.rawValue ?? CatAnimationState.idel.rawValue,
+            "deviceId": AccessControl.deviceID
         ]
     }
 
@@ -83,17 +84,51 @@ final class HeartbeatService {
             return
         }
 
-        URLSession.shared.dataTask(with: request) { _, response, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 FileLogger.log("[Heartbeat] 上报失败: \(error.localizedDescription)")
                 return
             }
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 FileLogger.log("[Heartbeat] 上报成功")
+                // 心跳响应顺带回传宠物号与待展示好友消息（后端取后即清）
+                if let data {
+                    Task { @MainActor in HeartbeatService.consume(data) }
+                }
             } else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 FileLogger.log("[Heartbeat] 上报异常，状态码: \(code)")
             }
         }.resume()
+    }
+
+    /// 解析心跳响应：缓存宠物号，并把好友消息用宠物头顶气泡展示（于 MainActor 上调用）
+    @MainActor private static func consume(_ data: Data) {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = json["data"] as? [String: Any] else { return }
+
+        // 宠物号：写入本地缓存（供设置面板展示），变化时广播通知
+        if let petNo = intValue(payload["petNo"]), petNo > 0 {
+            FriendService.setMyPetNo(petNo)
+        }
+
+        // 待展示消息：合并为一条气泡（多条时前缀条数，展示最新一条正文）
+        guard let messages = payload["messages"] as? [[String: Any]], !messages.isEmpty else { return }
+        let latest = messages.last ?? [:]
+        let fromName = latest["fromName"] as? String ?? ""
+        let fromPetNo = intValue(latest["fromPetNo"]) ?? 0
+        let text = latest["text"] as? String ?? ""
+        var bubble = "\(fromName.isEmpty ? "好友" : fromName)(#\(fromPetNo))：\(text)"
+        if messages.count > 1 { bubble = "收到 \(messages.count) 条好友消息｜" + bubble }
+        FileLogger.log("[Heartbeat] 收到好友消息 \(messages.count) 条")
+        HeartbeatService.shared.viewModel?.onPetSay?(bubble)
+    }
+
+    /// JSON 数字统一取 Int
+    private static func intValue(_ value: Any?) -> Int? {
+        if let i = value as? Int { return i }
+        if let n = value as? NSNumber { return n.intValue }
+        if let s = value as? String { return Int(s) }
+        return nil
     }
 }

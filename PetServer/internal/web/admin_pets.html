@@ -67,11 +67,11 @@
                 <thead>
                   <tr>
                     <th>宠物</th>
+                    <th>宠物号</th>
                     <th>状态</th>
                     <th>主机</th>
                     <th>版本</th>
                     <th>系统</th>
-                    <th>架构</th>
                     <th>最近心跳</th>
                     <th>备注</th>
                     <th class="w-1">在线</th>
@@ -147,11 +147,11 @@
           : '<span class="badge bg-secondary-lt">离线</span>';
         return '<tr' + (d.online ? '' : ' class="text-secondary"') + '>' +
           '<td><span class="me-1">' + st.face + '</span><strong>' + esc(d.petName) + '</strong></td>' +
+          '<td class="font-monospace">' + (d.petNo ? '#' + d.petNo : '—') + '</td>' +
           '<td>' + esc(st.label) + '</td>' +
           '<td class="font-monospace">' + esc(d.hostname) + '</td>' +
           '<td>' + esc(d.version) + '</td>' +
           '<td>' + esc(d.os) + '</td>' +
-          '<td>' + esc(d.machine) + '</td>' +
           '<td>' + agoText(d.secondsAgo) + '</td>' +
           '<td><input class="form-control form-control-sm note-input" style="min-width:120px" ' +
             'placeholder="点击填写备注" value="' + esc(d.note || '') + '" ' +

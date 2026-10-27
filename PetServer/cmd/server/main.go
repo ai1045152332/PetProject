@@ -52,14 +52,21 @@ func main() {
 		log.Fatalf("初始化设备快照存储失败: %v", err)
 	}
 	heartbeatSvc := service.NewHeartbeatService(store, snapshotStore)
-	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc)
+
+	// 好友与宠物消息：宠物号注册 + 好友关系 + 收件箱（云端本地 JSON，心跳拉取）
+	socialStore, err := storage.NewSocialStore("data/social.json")
+	if err != nil {
+		log.Fatalf("初始化好友消息存储失败: %v", err)
+	}
+	socialSvc := service.NewSocialService(socialStore)
+	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc, socialSvc)
 
 	noteStore, err := storage.NewDeviceNoteStore("data/device_notes.json")
 	if err != nil {
 		log.Fatalf("初始化设备备注存储失败: %v", err)
 	}
 	noteSvc := service.NewDeviceNoteService(noteStore)
-	devicesCtrl := controller.NewDevicesController(heartbeatSvc, noteSvc)
+	devicesCtrl := controller.NewDevicesController(heartbeatSvc, noteSvc, socialSvc)
 	activationStore, err := storage.NewActivationStore("data/activation_codes.json")
 	if err != nil {
 		log.Fatalf("初始化激活码存储失败: %v", err)
@@ -160,13 +167,16 @@ func main() {
 	defer imageSvc.Close()
 	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
 
+	// 好友/消息控制器：加密信封需 keyPair，故在密钥就绪后创建
+	socialCtrl := controller.NewSocialController(socialSvc, keyPair)
+
 	// ACME HTTP-01 验证目录（certbot webroot 模式写入 challenge 文件）
 	acmeDir := os.Getenv("PETSERVER_ACME_DIR")
 	if acmeDir == "" {
 		acmeDir = "data/acme-challenges"
 	}
 	_ = os.MkdirAll(acmeDir, 0o755)
-	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir, imageCtrl)
+	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl, releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir, imageCtrl, socialCtrl)
 
 	// HTTPS：证书/私钥文件存在时启用 443 监听，证书更新后自动热加载（配合 certbot 续期）
 	tlsCert := os.Getenv("PETSERVER_TLS_CERT")

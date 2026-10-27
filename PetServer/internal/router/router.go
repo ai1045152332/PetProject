@@ -97,11 +97,14 @@ func New(
 	metricsSvc *service.MetricsService,
 	acmeDir string,
 	petImages *controller.PetImageController,
+	socialCtrl *controller.SocialController,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/pet-images/", petImages.Handle)
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
 	mux.HandleFunc("/api/devices", devicesCtrl.List)
+	// 好友与宠物消息（register/add/list/remove/send）
+	mux.HandleFunc("/api/social/", socialCtrl.Handle)
 	mux.HandleFunc("/api/access/verify", accessCtrl.Verify)
 	mux.HandleFunc("/api/ping", pingCtrl.Ping)
 	mux.HandleFunc("/api/weather", weatherCtrl.Query)

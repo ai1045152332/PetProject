@@ -1603,7 +1603,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
 // MARK: - 小猫说话对话框（粉色手绘风气泡视图）
 
 /// 仿素材风格的对话气泡：胖圆泡泡 + 左下弯钩尾巴 + 左上→右下粉白渐变 + 釉面高光
-/// 优先加载 Resources/SpeechBubble.png 素材整图铺底（自动裁掉底部 AI 水印条，效果与素材 100% 一致）；
+/// 优先加载 Resources/SpeechBubble.png 素材整图铺底（素材已预裁水印、缩到 1024 宽，效果与素材 100% 一致）；
 /// 素材缺失时回退为贝塞尔矢量手绘。文案居中、自动换行、尺寸自适应。
 final class SpeechBubbleView: NSView {
     private let text: String
@@ -1629,8 +1629,10 @@ final class SpeechBubbleView: NSView {
     private static var textColor: NSColor { NSColor(red: 0.42, green: 0.31, blue: 0.25, alpha: 1) }
 
     /// 素材图（可选）：Resources/SpeechBubble.png
-    /// 大图（AI 生成原图 ≥800pt 高）自动裁掉底部 8%，去掉右下角「AI 生成」水印徽标
-    private static var assetImage: NSImage? {
+    /// 用 static let 只加载一次并缓存：metrics()/draw() 会反复访问，避免每次重读磁盘。
+    /// 随包素材已预裁水印、缩到 1024×707（高 <800），下面的裁剪分支不会触发；
+    /// 保留该分支仅作兜底——若日后换回 AI 生成大图（≥800pt 高），仍会自动裁掉底部 8% 去水印。
+    private static let assetImage: NSImage? = {
         let candidates: [URL?] = [
             Bundle.main.url(forResource: "SpeechBubble", withExtension: "png"),
             Bundle.main.resourceURL?.appendingPathComponent("SpeechBubble.png"),
@@ -1650,7 +1652,7 @@ final class SpeechBubbleView: NSView {
                  from: .zero, operation: .copy, fraction: 1)
         cropped.unlockFocus()
         return cropped
-    }
+    }()
 
     /// 排版度量：文案尺寸 + 气泡整体尺寸
     private static func metrics(for text: String) -> (bubbleSize: NSSize, textSize: NSSize) {

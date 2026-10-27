@@ -23,7 +23,7 @@ const (
 
 // 业务错误：控制器据此回给用户可读文案
 var (
-	ErrSocialInvalidDevice = errors.New("无效的设备标识，请确认宠物已联网上报心跳")
+	ErrSocialInvalidDevice = errors.New("还没获取到你的宠物号，请确认宠物已联网")
 	ErrSocialPetNotFound   = errors.New("宠物号不存在（对方尚未激活或从未联网）")
 	ErrSocialAddSelf       = errors.New("不能添加自己为好友")
 	ErrSocialNotFriend     = errors.New("请先添加对方为好友，再发消息")

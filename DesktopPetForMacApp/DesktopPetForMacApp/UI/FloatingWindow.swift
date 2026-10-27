@@ -70,6 +70,11 @@ final class FloatingWindow {
             cv?.catSay(text)
         }
 
+        // 设置 Todo 到期提醒回调：到点用气泡强调触达（宠物已在 ViewModel 侧播放专注动画）
+        viewModel.onTodoReminder = { [weak cv] item in
+            cv?.catSay("⏰ 到点啦：\(item.text)")
+        }
+
         // 贴边躲藏：ViewModel 吸附算出新原点后，由视图层移动窗口
         viewModel.onMoveWindow = { [weak win] origin in
             win?.setFrameOrigin(origin)
@@ -786,8 +791,8 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     /// 显示 Todo 清单弹窗
     func showTodoList() {
         let todos = TodoManager.shared.load()
-        HTMLAlertWindow.showTodo(title: "Todo 清单 📝", todos: todos, onAdd: { text in
-            TodoManager.shared.add(text: text)
+        HTMLAlertWindow.showTodo(title: "Todo 清单 📝", todos: todos, onAdd: { text, due in
+            TodoManager.shared.add(text: text, dueDate: due)
         }, onDelete: { id in
             TodoManager.shared.delete(id: id)
         })

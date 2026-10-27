@@ -95,6 +95,7 @@ final class PetViewModel: ObservableObject {
         static let chatFirst = "chatFirst"
         static let chatRepeat = "chatRepeat"
         static let newsRefresh = "newsRefresh"
+        static let todoCheck = "todoCheck"
     }
 
     /// 鼠标位置
@@ -178,6 +179,7 @@ final class PetViewModel: ObservableObject {
         startFrameLoop()
         startBehaviorLoop()
         startDrinkWaterReminder()
+        startTodoReminderLoop()
         resetIdleSleepTimer()
         startProactiveChat()
         cloudRestoreObserver = NotificationCenter.default.addObserver(forName: AccessControl.accessLevelChanged, object: nil, queue: .main) { [weak self] _ in
@@ -623,6 +625,58 @@ final class PetViewModel: ObservableObject {
         showContextMenu = false
         onShowHotNews?("")
     }
+
+    // MARK: - Todo 到期提醒（设定时间→主动触达）
+
+    /// 到期检查周期（秒）：每隔该时长扫描一次是否有到点未提醒的待办
+    static let todoCheckSeconds: TimeInterval = 30
+    static let todoReminderRepeatMinutesKey = "settings.todoReminder.repeatMinutes"
+    static let defaultTodoReminderRepeatMinutes: Int = 5
+    /// 同一条到期后重复提醒的间隔（分钟），持久化到 UserDefaults
+    var todoReminderRepeatMinutes: Int {
+        get {
+            let v = UserDefaults.standard.integer(forKey: Self.todoReminderRepeatMinutesKey)
+            return v > 0 ? v : Self.defaultTodoReminderRepeatMinutes
+        }
+        set {
+            let clamped = max(1, min(newValue, 240))
+            UserDefaults.standard.set(clamped, forKey: Self.todoReminderRepeatMinutesKey)
+        }
+    }
+
+    /// 启动到期提醒扫描（周期定时器，每次扫描到点的待办并触达）
+    private func startTodoReminderLoop() {
+        timers.schedule(name: TimerName.todoCheck, interval: Self.todoCheckSeconds, repeats: true) { [weak self] in
+            self?.checkTodoReminders()
+        }
+    }
+
+    /// 扫描到期待办：命中则播专注动画 + 回调触达，并记录本次触达时间以按间隔重复提醒
+    private func checkTodoReminders() {
+        // 复用“主动触达”总开关；勿扰/睡觉/躲藏时不打扰
+        guard proactiveChatEnabled else { return }
+        guard !systemFocusActive, animationState != .sleep, animationState != .hide, !isPlayingOneShot else { return }
+
+        let now = Date()
+        let repeatInterval = TimeInterval(todoReminderRepeatMinutes * 60)
+        let todos = TodoManager.shared.load()
+        // 只处理已到期且（从未提醒过 或 距上次提醒已超过重复间隔）的第一条
+        guard let hit = todos.first(where: { item in
+            guard let due = item.dueDate, due <= now else { return false }
+            if let last = item.lastNotifiedAt { return now.timeIntervalSince(last) >= repeatInterval }
+            return true
+        }) else { return }
+
+        TodoManager.shared.markNotified(id: hit.id, at: now)
+        // 提醒表现：播放专注动画（躲藏中不切回完整姿态，仅靠气泡触达）
+        if animationState != .hide {
+            isFacingLocked = true
+            facing = .right
+            playOneShot(.focus)
+        }
+        FileLogger.log("[DesktopPet] Todo 到期提醒: 「\(hit.text)」")
+        onTodoReminder?(hit)
+    }
     
     // MARK: - 背单词功能
     
@@ -637,6 +691,9 @@ final class PetViewModel: ObservableObject {
 
     /// 主动搭话回调（供视图层用气泡展示台词）
     var onPetSay: ((String) -> Void)?
+
+    /// Todo 到期提醒回调（供视图层用气泡强调触达；专注动画由 ViewModel 侧播放）
+    var onTodoReminder: ((TodoItem) -> Void)?
 
     static let proactiveChatKey = "settings.proactiveChat.enabled"
     /// 是否开启主动搭话（默认开启），持久化到 UserDefaults

@@ -1605,7 +1605,7 @@ return row
         titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
         container.addSubview(titleLbl)
 
-        let descLbl = NSTextField(labelWithString: "每只宠物都有一个专属宠物号；互加好友后可发消息，对方下次心跳即在头顶气泡收到")
+        let descLbl = NSTextField(labelWithString: "每只宠物都有一个专属宠物号。互加好友后，就能给对方留言，消息会出现在它头顶的气泡里")
         descLbl.font = .systemFont(ofSize: 11)
         descLbl.textColor = .tertiaryLabelColor
         descLbl.lineBreakMode = .byTruncatingTail
@@ -1794,7 +1794,7 @@ return row
 
     private func refreshMyPetNoUI() {
         let petNo = FriendService.myPetNo
-        myPetNoLabel?.stringValue = petNo > 0 ? "#\(petNo)" : "尚未分配（联网后自动同步）"
+        myPetNoLabel?.stringValue = petNo > 0 ? "#\(petNo)" : "尚未获取，稍后会自动出现"
     }
 
     @objc private func copyMyPetNo(_ sender: Any?) {
@@ -1805,7 +1805,7 @@ return row
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(String(petNo), forType: .string)
-        socialStatusLabel?.stringValue = "已复制你的宠物号 #\(petNo)，发给好友即可被搜索添加"
+        socialStatusLabel?.stringValue = "已复制你的宠物号 #\(petNo)，把它告诉朋友，对方输入这个号就能加你"
     }
 
     /// 向服务端注册取宠物号 + 拉好友列表（打开分区与「刷新」按钮触发）
@@ -1813,7 +1813,7 @@ return row
         guard !socialLoading else { return }
         socialLoading = true
         refreshSocialBtn?.title = "刷新中…"
-        socialStatusLabel?.stringValue = "正在同步…"
+        socialStatusLabel?.stringValue = "正在加载…"
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.socialLoading = false; self.refreshSocialBtn?.title = "刷新" }
@@ -1824,7 +1824,7 @@ return row
                 self.rebuildFriendsList(emptyHint: "还没有好友，输入对方宠物号点「添加」")
                 self.socialStatusLabel?.stringValue = ""
             } catch {
-                self.socialStatusLabel?.stringValue = "同步失败：\(error.localizedDescription)"
+                self.socialStatusLabel?.stringValue = "加载失败：\(error.localizedDescription)"
             }
         }
     }
@@ -1893,7 +1893,7 @@ return row
                 guard let self else { return }
                 do {
                     try await FriendService.sendMessage(toPetNo: f.petNo, text: text)
-                    self.socialStatusLabel?.stringValue = "已发送，对方下次心跳（约 1 分钟内）即可收到"
+                    self.socialStatusLabel?.stringValue = "已发送，对方很快就能收到（通常 1 分钟内）"
                 } catch {
                     self.socialStatusLabel?.stringValue = "发送失败：\(error.localizedDescription)"
                 }

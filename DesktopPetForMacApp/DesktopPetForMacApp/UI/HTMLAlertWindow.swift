@@ -27,7 +27,7 @@ class HTMLAlertWindow: NSWindow {
     private var todoEstimatedHeight: CGFloat?
     
     // MARK: - Todo
-    private var onTodoAdd: ((String) -> Void)?
+    private var onTodoAdd: ((String, Date?) -> Void)?
     private var onTodoDelete: ((String) -> Void)?
     private var todoAddHandler: TodoAddMessageHandler?
     private var todoDeleteHandler: TodoDeleteMessageHandler?
@@ -51,6 +51,8 @@ class HTMLAlertWindow: NSWindow {
     // MARK: - 天气窗口追踪
     /// 当前天气查询窗口引用（用于在同一窗口内更新内容）
     private static weak var currentWeatherWindow: HTMLAlertWindow?
+    /// 当前 Todo 窗口引用（单例守卫：已打开且可见时只置顶复用，杜绝连续打开多个）
+    private static weak var currentTodoWindow: HTMLAlertWindow?
     /// 页面是否已加载完成（didFinish 后置 true，之前到达的内容暂存）
     private var isPageLoaded = false
     /// 页面加载完成前到达的天气内容（JS 字符串字面量，待刷新）
@@ -427,6 +429,22 @@ class HTMLAlertWindow: NSWindow {
             transition: all 0.2s;
         }
         .todo-input-group button:hover { opacity: 0.92; transform: translateY(-1px); }
+        .todo-due-input {
+            flex-shrink: 0;
+            width: 150px;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            padding: 0 10px;
+            color: #c8cce8;
+            font-size: 12px;
+            outline: none;
+            font-family: inherit;
+            color-scheme: dark;
+            transition: all 0.2s;
+        }
+        .todo-due-input:focus { border-color: rgba(102, 126, 234, 0.6); background: rgba(255,255,255,0.08); }
+        .todo-hint { font-size: 11px; color: #666680; margin: -6px 0 12px 2px; }
         .todo-list { display: flex; flex-direction: column; gap: 6px; }
         .todo-empty { text-align: center; color: #666680; font-size: 13px; padding: 20px 0; }
         .todo-item {
@@ -463,10 +481,33 @@ class HTMLAlertWindow: NSWindow {
             transition: opacity 0.2s;
             flex-shrink: 0;
         }
+        .todo-chip {
+            font-size: 11px;
+            color: #a0a8e0;
+            background: rgba(102,126,234,0.16);
+            border: 1px solid rgba(102,126,234,0.28);
+            padding: 3px 8px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .todo-chip-overdue {
+            color: #ff9a9a;
+            background: rgba(255,80,80,0.14);
+            border-color: rgba(255,80,80,0.4);
+        }
+        .todo-item-overdue { border-color: rgba(255,80,80,0.32); }
     """
 
     /// 显示 Todo 清单弹窗
-    static func showTodo(title: String, todos: [TodoItem], width: CGFloat = 440, maxHeight: CGFloat = 640, onAdd: @escaping (String) -> Void, onDelete: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
+    static func showTodo(title: String, todos: [TodoItem], width: CGFloat = 440, maxHeight: CGFloat = 640, onAdd: @escaping (String, Date?) -> Void, onDelete: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
+        // 单例守卫：已有可见的 Todo 窗口时只置顶复用，不再新建（修复“连续打开两个”）
+        if let existing = currentTodoWindow, existing.isVisible {
+            existing.refreshTodoList()
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
+            return
+        }
         // Todo 用标准带边框窗口（可缩放、去阴影、有系统边框），区别于其他无边框弹窗
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
@@ -482,14 +523,16 @@ class HTMLAlertWindow: NSWindow {
         FileLogger.log("[TodoWindow] styleMask=\(window.styleMask.rawValue) resizable=\(window.styleMask.contains(.resizable))")
         window.targetWidth = width
         window.targetMaxHeight = maxHeight
-        // 初始高度按待办数量估算（空列表 320，每条约 52），避免依赖 scrollHeight
-        window.todoEstimatedHeight = min(maxHeight, max(320, 320 + CGFloat(todos.count) * 52))
+        // 初始高度按待办数量估算（空列表 344，每条约 52），避免依赖 scrollHeight
+        window.todoEstimatedHeight = min(maxHeight, max(344, 344 + CGFloat(todos.count) * 52))
         window.onTodoAdd = onAdd
         window.onTodoDelete = onDelete
         window.onClose = onClose
         
         let todosJSON: String
-        if let data = try? JSONEncoder().encode(todos),
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970  // dueDate 以 epoch 秒输出，JS 直接 new Date(due*1000)
+        if let data = try? encoder.encode(todos),
            let json = String(data: data, encoding: .utf8) {
             // 防止待办文本含 "</script>" 提前闭合 script 标签（XSS/页面破坏）
             todosJSON = json.replacingOccurrences(of: "<", with: "\\u003c")
@@ -500,12 +543,26 @@ class HTMLAlertWindow: NSWindow {
         let htmlBody = """
         <div class="todo-input-group">
             <input type="text" id="todoInput" placeholder="输入待办事项，按回车添加..." />
+            <input type="datetime-local" id="todoDue" class="todo-due-input" title="选填：到点提醒你" />
             <button id="addBtn">➕</button>
         </div>
+        <div class="todo-hint">⏰ 选填到期时间，到点我会冒泡提醒你（每 5 分钟重复直到完成）</div>
         <div class="todo-list" id="todoList"></div>
         <script>
             var todos = \(todosJSON);
             var pendingDeleteId = null;
+            function pad(n){ return (n < 10 ? '0' : '') + n; }
+            function fmtDue(sec){
+                if (!sec) return '';
+                var d = new Date(sec * 1000);
+                var now = new Date();
+                var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+                if (d.toDateString() === now.toDateString()) return '今天 ' + hm;
+                var tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+                if (d.toDateString() === tomorrow.toDateString()) return '明天 ' + hm;
+                return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+            }
+            function isOverdue(sec){ return sec && (sec * 1000) < Date.now(); }
             function renderTodos() {
                 var list = document.getElementById('todoList');
                 list.innerHTML = '';
@@ -513,27 +570,44 @@ class HTMLAlertWindow: NSWindow {
                     list.innerHTML = '<div class="todo-empty">暂无待办事项 🎉</div>';
                     return;
                 }
-                for (var i = 0; i < todos.length; i++) {
-                    var isPending = todos[i].id === pendingDeleteId;
+                // 有到期时间的按时间升序排在前（逾期自然置顶），无时间的保持原序在后
+                var sorted = todos.slice().sort(function(a, b){
+                    var ad = a.dueDate || Infinity, bd = b.dueDate || Infinity;
+                    return ad - bd;
+                });
+                for (var i = 0; i < sorted.length; i++) {
+                    var t = sorted[i];
+                    var isPending = t.id === pendingDeleteId;
+                    var overdue = isOverdue(t.dueDate);
                     var item = document.createElement('div');
-                    item.className = isPending ? 'todo-item todo-item-confirm' : 'todo-item';
+                    var cls = 'todo-item';
+                    if (isPending) cls += ' todo-item-confirm';
+                    else if (overdue) cls += ' todo-item-overdue';
+                    item.className = cls;
 
                     var dot = document.createElement('span');
                     dot.className = 'todo-dot';
-                    dot.textContent = isPending ? '⚠️' : '●';
+                    dot.textContent = isPending ? '⚠️' : (overdue ? '🔴' : '●');
                     dot.style.cursor = 'pointer';
-                    dot.onclick = (function(t){ return function(){ copyTodo(t); }; })(todos[i].text);
+                    dot.onclick = (function(x){ return function(){ copyTodo(x); }; })(t.text);
 
                     var txt = document.createElement('span');
                     txt.className = 'todo-text';
-                    txt.textContent = isPending ? '再次点击确认删除' : todos[i].text;
+                    txt.textContent = isPending ? '再次点击确认删除' : t.text;
                     txt.style.cursor = 'pointer';
-                    txt.onclick = (function(t){ return function(){ copyTodo(t); }; })(todos[i].text);
+                    txt.onclick = (function(x){ return function(){ copyTodo(x); }; })(t.text);
+
+                    if (t.dueDate) {
+                        var chip = document.createElement('span');
+                        chip.className = 'todo-chip' + (overdue ? ' todo-chip-overdue' : '');
+                        chip.textContent = (overdue ? '⏰ 已逾期 · ' : '⏰ ') + fmtDue(t.dueDate);
+                        item.appendChild(chip);
+                    }
 
                     var del = document.createElement('span');
                     del.className = 'todo-delete';
                     del.textContent = isPending ? '删除' : '✕';
-                    del.onclick = (function(id){ return function(){ deleteTodo(id); }; })(todos[i].id);
+                    del.onclick = (function(id){ return function(){ deleteTodo(id); }; })(t.id);
 
                     item.appendChild(dot);
                     item.appendChild(txt);
@@ -543,10 +617,15 @@ class HTMLAlertWindow: NSWindow {
             }
             function addTodo() {
                 var input = document.getElementById('todoInput');
+                var dueInput = document.getElementById('todoDue');
                 var text = input.value.trim();
-                if (text && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.addTodo) {
-                    window.webkit.messageHandlers.addTodo.postMessage(text);
+                if (!text) { return; }
+                var due = null;
+                if (dueInput && dueInput.value) { due = new Date(dueInput.value).getTime() / 1000; }
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.addTodo) {
+                    window.webkit.messageHandlers.addTodo.postMessage(JSON.stringify({ text: text, due: due }));
                     input.value = '';
+                    if (dueInput) dueInput.value = '';
                 }
             }
             function deleteTodo(id) {
@@ -599,6 +678,7 @@ class HTMLAlertWindow: NSWindow {
         """
         
         window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isTodoMode: true)
+        currentTodoWindow = window
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -711,9 +791,19 @@ class HTMLAlertWindow: NSWindow {
         }
         
         if isTodoMode {
-            let addHandler = TodoAddMessageHandler { [weak self] text in
+            let addHandler = TodoAddMessageHandler { [weak self] payload in
                 DispatchQueue.main.async {
-                    self?.onTodoAdd?(text)
+                    // JS 侧以 JSON 字符串回传 {text, due}；兼容旧版纯文本 payload
+                    var text = payload
+                    var due: Date? = nil
+                    if let data = payload.data(using: .utf8),
+                       let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                        text = (obj["text"] as? String) ?? payload
+                        if let dueNum = obj["due"] as? Double {
+                            due = Date(timeIntervalSince1970: dueNum)
+                        }
+                    }
+                    self?.onTodoAdd?(text, due)
                     self?.refreshTodoList()
                 }
             }
@@ -871,6 +961,7 @@ class HTMLAlertWindow: NSWindow {
 
     /// 网页内 ✕ 按钮关闭路径（orderOut 隐藏，与系统红点行为对齐）
     private func closeWindow() {
+        if HTMLAlertWindow.currentTodoWindow === self { HTMLAlertWindow.currentTodoWindow = nil }
         removeScriptMessageHandlers()
         self.orderOut(nil)
         self.onClose?()
@@ -878,6 +969,7 @@ class HTMLAlertWindow: NSWindow {
 
     /// 系统标题栏红点关闭路径：与网页 ✕ 一致地清理 handler + 回调，再真正关闭
     override func close() {
+        if HTMLAlertWindow.currentTodoWindow === self { HTMLAlertWindow.currentTodoWindow = nil }
         removeScriptMessageHandlers()
         self.onClose?()
         super.close()
@@ -886,7 +978,9 @@ class HTMLAlertWindow: NSWindow {
     /// 刷新 Todo 列表（通过 JS 更新 DOM，不重建窗口）
     private func refreshTodoList() {
         let todos = TodoManager.shared.load()
-        guard let data = try? JSONEncoder().encode(todos),
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        guard let data = try? encoder.encode(todos),
               let json = String(data: data, encoding: .utf8) else { return }
         // 与 showTodo 保持一致：转义 < 防 </script> 注入
         let safeJSON = json.replacingOccurrences(of: "<", with: "\\u003c")

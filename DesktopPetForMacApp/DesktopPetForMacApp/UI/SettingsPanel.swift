@@ -90,12 +90,16 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     // 好友消息（设置面板「好友消息」区）
     /// 宠物号变化通知观察者（心跳/注册接口刷新后同步展示）
     private var petNoObserver: NSObjectProtocol?
+    /// 好友关系变化通知观察者（申请卡上同意后，列表与待处理申请都要刷新）
+    private var friendsObserver: NSObjectProtocol?
     private weak var myPetNoLabel: NSTextField?
     private weak var addFriendField: NSTextField?
     private weak var friendsDocView: NSView?
     private weak var socialStatusLabel: NSTextField?
     private weak var refreshSocialBtn: NSButton?
     private var socialFriends: [PetFriend] = []
+    /// 发给本机、还没处理的好友申请（列在好友列表上方，同意/拒绝后消失）
+    private var socialRequests: [PetFriendRequest] = []
     private var friendsListWidth: CGFloat = 0
     private var friendsViewportHeight: CGFloat = 0
     private var socialLoading = false
@@ -143,6 +147,17 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
                 self?.refreshMyPetNoUI()
             }
         }
+
+        // 好友申请在宠物卡上被同意/拒绝后，设置面板同步刷新好友与待处理申请
+        friendsObserver = NotificationCenter.default.addObserver(
+            forName: FriendService.friendsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshSocialFromServer(nil)
+            }
+        }
     }
 
     deinit {
@@ -151,6 +166,9 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
         }
         if let petNoObserver {
             NotificationCenter.default.removeObserver(petNoObserver)
+        }
+        if let friendsObserver {
+            NotificationCenter.default.removeObserver(friendsObserver)
         }
     }
 
@@ -1605,7 +1623,7 @@ return row
         titleLbl.frame = NSRect(x: 16, y: ch - 42, width: cw - 32, height: 22)
         container.addSubview(titleLbl)
 
-        let descLbl = NSTextField(labelWithString: "每只宠物都有一个专属宠物号。互加好友后，就能给对方留言，消息会出现在它头顶的气泡里")
+        let descLbl = NSTextField(labelWithString: "每只宠物都有一个专属宠物号。发好友申请需对方同意，同意后就能给对方留言")
         descLbl.font = .systemFont(ofSize: 11)
         descLbl.textColor = .tertiaryLabelColor
         descLbl.lineBreakMode = .byTruncatingTail
@@ -1659,13 +1677,13 @@ return row
         let addRow = makeSettingRow(frame: NSRect(x: 16, y: card2Y, width: cw - 32, height: card2H), in: container)
         let aw = addRow.bounds.width
 
-        let addTitle = NSTextField(labelWithString: "添加好友")
+        let addTitle = NSTextField(labelWithString: "加好友")
         addTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         addTitle.textColor = .labelColor
         addTitle.frame = NSRect(x: 14, y: (card2H - 18) / 2, width: 80, height: 18)
         addRow.addSubview(addTitle)
 
-        let addBtnW: CGFloat = 60
+        let addBtnW: CGFloat = 72
         let field = NSTextField(frame: NSRect(x: 100, y: (card2H - 28) / 2, width: aw - 100 - 12 - addBtnW - 8, height: 28))
         field.placeholderString = "输入对方宠物号"
         field.font = .systemFont(ofSize: 13)
@@ -1677,14 +1695,14 @@ return row
         addRow.addSubview(field)
         addFriendField = field
 
-        let addBtn = NSButton(title: "添加", target: self, action: #selector(addFriendClicked(_:)))
+        let addBtn = NSButton(title: "发申请", target: self, action: #selector(addFriendClicked(_:)))
         addBtn.bezelStyle = .rounded
         addBtn.frame = NSRect(x: aw - 12 - addBtnW, y: (card2H - 26) / 2, width: addBtnW, height: 26)
         addBtn.autoresizingMask = .minXMargin
         addRow.addSubview(addBtn)
 
-        // ── 好友列表标题 ──
-        let friendsTitle = NSTextField(labelWithString: "我的好友")
+        // ── 好友与待处理申请列表标题 ──
+        let friendsTitle = NSTextField(labelWithString: "好友与申请")
         friendsTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         friendsTitle.textColor = .labelColor
         friendsTitle.frame = NSRect(x: 16, y: card2Y - 14 - 18, width: 200, height: 18)
@@ -1723,8 +1741,44 @@ return row
         socialStatusLabel = statusLbl
 
         refreshMyPetNoUI()
-        rebuildFriendsList(emptyHint: "还没有好友，输入对方宠物号点「添加」")
+        rebuildSocialList(emptyHint: "还没有好友，输入对方宠物号点「发申请」，对方同意后你们就互为好友了")
         refreshSocialFromServer(nil)
+    }
+
+    /// 单条好友申请行：申请人 + 「同意」 + 「拒绝」（同意按 index 绑定 socialRequests）
+    private func makeRequestRow(_ r: PetFriendRequest, index: Int, width: CGFloat, height: CGFloat) -> NSView {
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        row.wantsLayer = true
+        row.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
+        row.layer?.cornerRadius = 8
+
+        let rejectW: CGFloat = 56
+        let acceptW: CGFloat = 56
+
+        let name = NSTextField(labelWithString: "\(r.display) 申请加你为好友")
+        name.font = .systemFont(ofSize: 13, weight: .medium)
+        name.textColor = .labelColor
+        name.lineBreakMode = .byTruncatingTail
+        name.frame = NSRect(x: 12, y: (height - 18) / 2, width: width - 200, height: 18)
+        row.addSubview(name)
+
+        let accept = NSButton(title: "同意", target: self, action: #selector(acceptFriendRequestClicked(_:)))
+        accept.bezelStyle = .rounded
+        accept.controlSize = .small
+        accept.font = .systemFont(ofSize: 11)
+        accept.tag = index
+        accept.frame = NSRect(x: width - 12 - rejectW - 8 - acceptW, y: (height - 24) / 2, width: acceptW, height: 24)
+        row.addSubview(accept)
+
+        let reject = NSButton(title: "拒绝", target: self, action: #selector(rejectFriendRequestClicked(_:)))
+        reject.bezelStyle = .rounded
+        reject.controlSize = .small
+        reject.font = .systemFont(ofSize: 11)
+        reject.tag = index
+        reject.frame = NSRect(x: width - 12 - rejectW, y: (height - 24) / 2, width: rejectW, height: 24)
+        row.addSubview(reject)
+
+        return row
     }
 
     /// 单条好友行：名字 + 「发消息」 + 「删除」（发消息/删除按 index 绑定当前 socialFriends）
@@ -1763,13 +1817,14 @@ return row
         return row
     }
 
-    /// 依据 socialFriends 重建好友列表；列表短于视口时保持视口高度，超出时随内容增高（可滚动）
-    private func rebuildFriendsList(emptyHint: String) {
+    /// 重建「好友与申请」列表：上方为待处理申请（同意/拒绝），下方为好友（发消息/删除）
+    /// 列表短于视口时保持视口高度，超出时随内容增高（可滚动）
+    private func rebuildSocialList(emptyHint: String) {
         guard let doc = friendsDocView else { return }
         for v in doc.subviews { v.removeFromSuperview() }
         let w = friendsListWidth
 
-        if socialFriends.isEmpty {
+        if socialFriends.isEmpty && socialRequests.isEmpty {
             let hint = NSTextField(labelWithString: emptyHint)
             hint.font = .systemFont(ofSize: 12)
             hint.textColor = .tertiaryLabelColor
@@ -1782,12 +1837,39 @@ return row
 
         var y: CGFloat = 0
         let rowH: CGFloat = 40
+        let headerH: CGFloat = 20
         let gap: CGFloat = 6
-        for (i, f) in socialFriends.enumerated() {
-            let row = makeFriendRow(f, index: i, width: w, height: rowH)
-            row.frame = NSRect(x: 0, y: y, width: w, height: rowH)
-            doc.addSubview(row)
-            y += rowH + gap
+
+        // 待处理申请靠上展示，避免被好友列表顶到下面看不见
+        if !socialRequests.isEmpty {
+            let header = NSTextField(labelWithString: "收到的申请（同意后才互为好友）")
+            header.font = .systemFont(ofSize: 11, weight: .semibold)
+            header.textColor = .tertiaryLabelColor
+            header.frame = NSRect(x: 4, y: y, width: w - 8, height: headerH)
+            doc.addSubview(header)
+            y += headerH
+            for (i, r) in socialRequests.enumerated() {
+                let row = makeRequestRow(r, index: i, width: w, height: rowH)
+                row.frame = NSRect(x: 0, y: y, width: w, height: rowH)
+                doc.addSubview(row)
+                y += rowH + gap
+            }
+        }
+
+        if !socialFriends.isEmpty {
+            if !socialRequests.isEmpty { y += 4 }
+            let header = NSTextField(labelWithString: "我的好友")
+            header.font = .systemFont(ofSize: 11, weight: .semibold)
+            header.textColor = .tertiaryLabelColor
+            header.frame = NSRect(x: 4, y: y, width: w - 8, height: headerH)
+            doc.addSubview(header)
+            y += headerH
+            for (i, f) in socialFriends.enumerated() {
+                let row = makeFriendRow(f, index: i, width: w, height: rowH)
+                row.frame = NSRect(x: 0, y: y, width: w, height: rowH)
+                doc.addSubview(row)
+                y += rowH + gap
+            }
         }
         doc.frame = NSRect(x: 0, y: 0, width: w, height: max(y, friendsViewportHeight))
     }
@@ -1805,10 +1887,10 @@ return row
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(String(petNo), forType: .string)
-        socialStatusLabel?.stringValue = "已复制你的宠物号 #\(petNo)，把它告诉朋友，对方输入这个号就能加你"
+        socialStatusLabel?.stringValue = "已复制你的宠物号 #\(petNo)，把它告诉朋友，对方发申请、你同意后就是好友"
     }
 
-    /// 向服务端注册取宠物号 + 拉好友列表（打开分区与「刷新」按钮触发）
+    /// 向服务端注册取宠物号 + 拉好友列表与待处理申请（打开分区与「刷新」按钮触发）
     @objc private func refreshSocialFromServer(_ sender: Any?) {
         guard !socialLoading else { return }
         socialLoading = true
@@ -1821,8 +1903,12 @@ return row
                 _ = try await FriendService.refreshMyPetNo()
                 self.refreshMyPetNoUI()
                 self.socialFriends = try await FriendService.listFriends()
-                self.rebuildFriendsList(emptyHint: "还没有好友，输入对方宠物号点「添加」")
-                self.socialStatusLabel?.stringValue = ""
+                // 申请列表失败不阻断好友列表（旧服务端可能还没这个接口）
+                self.socialRequests = (try? await FriendService.pendingRequests()) ?? []
+                self.rebuildSocialList(emptyHint: "还没有好友，输入对方宠物号点「发申请」，对方同意后你们就互为好友了")
+                self.socialStatusLabel?.stringValue = self.socialRequests.isEmpty
+                    ? ""
+                    : "有 \(self.socialRequests.count) 条好友申请等你处理"
             } catch {
                 self.socialStatusLabel?.stringValue = "加载失败：\(error.localizedDescription)"
             }
@@ -1838,18 +1924,54 @@ return row
         }
         guard !socialLoading else { return }
         socialLoading = true
-        socialStatusLabel?.stringValue = "正在添加…"
+        socialStatusLabel?.stringValue = "正在发送申请…"
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.socialLoading = false }
             do {
-                self.socialFriends = try await FriendService.addFriend(petNo: petNo)
+                let result = try await FriendService.requestFriend(petNo: petNo)
+                self.socialFriends = result.friends
                 field.stringValue = ""
                 field.window?.makeFirstResponder(nil)
-                self.rebuildFriendsList(emptyHint: "还没有好友")
-                self.socialStatusLabel?.stringValue = "已添加好友 #\(petNo)"
+                self.rebuildSocialList(emptyHint: "还没有好友，输入对方宠物号点「发申请」")
+                self.socialStatusLabel?.stringValue = "#\(petNo)：\(result.outcome.notice)"
             } catch {
-                self.socialStatusLabel?.stringValue = "添加失败：\(error.localizedDescription)"
+                self.socialStatusLabel?.stringValue = "申请失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// 同意某条好友申请：同意后双方互为好友
+    @objc private func acceptFriendRequestClicked(_ sender: NSButton) {
+        decideFriendRequest(sender, accept: true)
+    }
+
+    /// 拒绝对方的好友申请（不建立好友关系）
+    @objc private func rejectFriendRequestClicked(_ sender: NSButton) {
+        decideFriendRequest(sender, accept: false)
+    }
+
+    /// 同意/拒绝的共用处理：按行 tag 定位申请，处理后从待处理列表移除并刷新列表
+    private func decideFriendRequest(_ sender: NSButton, accept: Bool) {
+        guard socialRequests.indices.contains(sender.tag) else { return }
+        let r = socialRequests[sender.tag]
+        guard !socialLoading else { return }
+        socialLoading = true
+        socialStatusLabel?.stringValue = accept ? "正在同意…" : "正在拒绝…"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.socialLoading = false }
+            do {
+                self.socialFriends = accept
+                    ? try await FriendService.acceptRequest(fromPetNo: r.fromPetNo)
+                    : try await FriendService.rejectRequest(fromPetNo: r.fromPetNo)
+                self.socialRequests.removeAll { $0.id == r.id }
+                self.rebuildSocialList(emptyHint: "还没有好友，输入对方宠物号点「发申请」")
+                self.socialStatusLabel?.stringValue = accept
+                    ? "已同意 \(r.display) 的申请，你们互为好友了"
+                    : "已拒绝 \(r.display) 的申请"
+            } catch {
+                self.socialStatusLabel?.stringValue = "处理失败：\(error.localizedDescription)"
             }
         }
     }
@@ -1864,8 +1986,8 @@ return row
             defer { self.socialLoading = false }
             do {
                 self.socialFriends = try await FriendService.removeFriend(petNo: f.petNo)
-                self.rebuildFriendsList(emptyHint: "还没有好友")
-                self.socialStatusLabel?.stringValue = "已删除好友 \(f.display)"
+                self.rebuildSocialList(emptyHint: "还没有好友")
+                self.socialStatusLabel?.stringValue = "已删除好友 \(f.display)（双方同时解除）"
             } catch {
                 self.socialStatusLabel?.stringValue = "删除失败：\(error.localizedDescription)"
             }

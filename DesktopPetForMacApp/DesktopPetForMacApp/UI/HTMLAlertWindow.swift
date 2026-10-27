@@ -43,6 +43,11 @@ class HTMLAlertWindow: NSWindow {
     // 苦练基本功：「换一题」回调
     private var onProblemNext: (() -> Void)?
     private var problemNextHandler: WordRetryLearningHandler?
+    /// 好友申请卡的「同意 / 拒绝」回调（卡片常驻，用户做出选择才消失）
+    private var onFriendAccept: (() -> Void)?
+    private var onFriendReject: (() -> Void)?
+    private var friendAcceptHandler: FriendDecisionHandler?
+    private var friendRejectHandler: FriendDecisionHandler?
     private var playAudioHandler: WordPlayAudioHandler?
     private var isWordLearningMode = false
     /// 天气查询回调（城市输入后传回）
@@ -61,6 +66,8 @@ class HTMLAlertWindow: NSWindow {
     private static weak var currentTodoReminderWindow: HTMLAlertWindow?
     /// 当前好友消息卡引用（只显示最新一条，不堆叠）
     private static weak var currentFriendMessageWindow: HTMLAlertWindow?
+    /// 当前好友申请卡引用（同一时刻只保留一张，避免堆叠）
+    private static weak var currentFriendRequestWindow: HTMLAlertWindow?
     /// 页面是否已加载完成（didFinish 后置 true，之前到达的内容暂存）
     private var isPageLoaded = false
     /// 页面加载完成前到达的天气内容（JS 字符串字面量，待刷新）
@@ -181,22 +188,53 @@ class HTMLAlertWindow: NSWindow {
         currentTodoReminderWindow = window
     }
 
-    /// 好友消息：弹一张常驻卡片，用户点 ✕ 前不消失
-    static func showFriendMessage(body: String) {
-        // 已有未关闭的消息卡：先关掉，保证只显示最新一条、不堆叠
-        currentFriendMessageWindow?.closeWindow()
+    /// 好友消息：弹一张常驻卡片，用户点 ✕ 前不消失；关闭时把消息 ID 上报服务端确认已读
+    static func showFriendMessage(body: String, ids: [String] = []) {
+        // 已有未关闭的消息卡：先静默关掉（不标记已读），保证只显示最新一条、不堆叠
+        // 被顶掉的那条用户其实没看过，故清掉 onClose 避免误确认；服务端稍后会重投
+        if let old = currentFriendMessageWindow {
+            old.onClose = nil
+            old.closeWindow()
+        }
         let htmlBody = """
         <div class="water-icon">💬</div>
         <div class="water-text" style="font-size:15px;color:#f0f0f5;white-space:pre-wrap;line-height:1.7;">\(htmlEscape(body))</div>
-        <div class="water-tips">好友的留言，看完点 ✕ 关闭</div>
+        <div class="water-tips">好友的留言，看完点 ✕ 关闭（关闭后对方能看到已读）</div>
         """
         let window = presentNotice(title: "好友消息 💬", width: 360, htmlBody: htmlBody)
-        window.onClose = { if HTMLAlertWindow.currentFriendMessageWindow === window { HTMLAlertWindow.currentFriendMessageWindow = nil } }
+        window.onClose = {
+            if HTMLAlertWindow.currentFriendMessageWindow === window { HTMLAlertWindow.currentFriendMessageWindow = nil }
+            guard !ids.isEmpty else { return }
+            Task { await FriendService.confirmRead(ids: ids) }
+        }
         currentFriendMessageWindow = window
     }
 
+    /// 好友申请：弹一张常驻卡片，由用户点「同意 ✅ / 拒绝 ✕」后才消失（同意后双方互为好友）
+    static func showFriendRequest(display: String, onAccept: @escaping () -> Void, onReject: @escaping () -> Void) {
+        if let existing = currentFriendRequestWindow, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
+            return
+        }
+        let htmlBody = """
+        <div class="water-icon">🐾</div>
+        <div class="water-text" style="font-size:15px;color:#f0f0f5;white-space:pre-wrap;line-height:1.7;">\(htmlEscape(display)) 想加你为好友</div>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+            <button type="button" style="flex:1;padding:9px 0;border-radius:18px;border:1px solid rgba(47,179,110,.5);background:rgba(47,179,110,.18);color:#7de2b0;font-size:14px;cursor:pointer;" onclick="window.webkit.messageHandlers.acceptFriend.postMessage('')">同意 ✅</button>
+            <button type="button" style="flex:1;padding:9px 0;border-radius:18px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#c0c0d0;font-size:14px;cursor:pointer;" onclick="window.webkit.messageHandlers.rejectFriend.postMessage('')">拒绝 ✕</button>
+        </div>
+        <div class="water-tips" style="margin-top:10px;">同意后你们互为好友，TA 才能给你发消息</div>
+        """
+        let window = presentNotice(title: "好友申请 🐾", width: 340, htmlBody: htmlBody, isFriendRequestMode: true)
+        window.onClose = { if HTMLAlertWindow.currentFriendRequestWindow === window { HTMLAlertWindow.currentFriendRequestWindow = nil } }
+        window.onFriendAccept = onAccept
+        window.onFriendReject = onReject
+        currentFriendRequestWindow = window
+    }
+
     /// 创建并弹出一张常驻通知窗（borderless + 非可缩放 → didFinish 会自动挂原生拖动条，可拖）
-    private static func presentNotice(title: String, width: CGFloat, htmlBody: String) -> HTMLAlertWindow {
+    private static func presentNotice(title: String, width: CGFloat, htmlBody: String, isFriendRequestMode: Bool = false) -> HTMLAlertWindow {
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
             styleMask: [.borderless],
@@ -206,7 +244,7 @@ class HTMLAlertWindow: NSWindow {
         window.hasShadow = false
         window.targetWidth = width
         window.targetMaxHeight = 420
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false)
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isFriendRequestMode: isFriendRequestMode)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -954,7 +992,7 @@ class HTMLAlertWindow: NSWindow {
         }
     }
 
-    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, isProblemMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
+    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, isProblemMode: Bool = false, isFriendRequestMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
         let config = WKWebViewConfiguration()
         config.setValue(false, forKey: "drawsBackground")
 
@@ -1069,6 +1107,28 @@ class HTMLAlertWindow: NSWindow {
             config.userContentController.add(problemNextHandler, name: "problemNext")
         }
 
+        if isFriendRequestMode {
+            // 同意/拒绝：先收起卡片（onClose 会清掉静态引用），再回调业务侧发请求
+            let acceptHandler = FriendDecisionHandler { [weak self] in
+                DispatchQueue.main.async {
+                    let action = self?.onFriendAccept
+                    self?.closeWindow()
+                    action?()
+                }
+            }
+            let rejectHandler = FriendDecisionHandler { [weak self] in
+                DispatchQueue.main.async {
+                    let action = self?.onFriendReject
+                    self?.closeWindow()
+                    action?()
+                }
+            }
+            self.friendAcceptHandler = acceptHandler
+            self.friendRejectHandler = rejectHandler
+            config.userContentController.add(acceptHandler, name: "acceptFriend")
+            config.userContentController.add(rejectHandler, name: "rejectFriend")
+        }
+
         // 注入 JS：拦截所有链接点击，阻止默认导航，通过 message handler 打开外部浏览器
         let linkInterceptor = """
         document.addEventListener('click', function(e) {
@@ -1158,6 +1218,8 @@ class HTMLAlertWindow: NSWindow {
         if switchCategoryHandler != nil { ucc.removeScriptMessageHandler(forName: "switchCategory") }
         if playAudioHandler != nil { ucc.removeScriptMessageHandler(forName: "playAudio") }
         if problemNextHandler != nil { ucc.removeScriptMessageHandler(forName: "problemNext") }
+        if friendAcceptHandler != nil { ucc.removeScriptMessageHandler(forName: "acceptFriend") }
+        if friendRejectHandler != nil { ucc.removeScriptMessageHandler(forName: "rejectFriend") }
     }
 
     /// 网页内 ✕ 按钮关闭路径（orderOut 隐藏，与系统红点行为对齐）
@@ -1395,6 +1457,16 @@ class WordSwitchCategoryHandler: NSObject, WKScriptMessageHandler {
         if let raw = message.body as? String {
             action(raw)
         }
+    }
+}
+
+// MARK: - 好友申请处理器（同意 / 拒绝）
+
+class FriendDecisionHandler: NSObject, WKScriptMessageHandler {
+    private let action: () -> Void
+    init(action: @escaping () -> Void) { self.action = action }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        action()
     }
 }
 

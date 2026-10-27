@@ -91,7 +91,7 @@ final class HeartbeatService {
             }
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 FileLogger.log("[Heartbeat] 上报成功")
-                // 心跳响应顺带回传宠物号与待展示好友消息（后端取后即清）
+                // 心跳响应顺带回传宠物号、待展示好友消息与待处理好友申请
                 if let data {
                     Task { @MainActor in HeartbeatService.consume(data) }
                 }
@@ -102,7 +102,7 @@ final class HeartbeatService {
         }.resume()
     }
 
-    /// 解析心跳响应：缓存宠物号，并把好友消息用宠物头顶气泡展示（于 MainActor 上调用）
+    /// 解析心跳响应：缓存宠物号，并把好友消息用常驻卡片展示、好友申请用申请卡询问（于 MainActor 上调用）
     @MainActor private static func consume(_ data: Data) {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let payload = json["data"] as? [String: Any] else { return }
@@ -110,6 +110,20 @@ final class HeartbeatService {
         // 宠物号：写入本地缓存（供设置面板展示），变化时广播通知
         if let petNo = intValue(payload["petNo"]), petNo > 0 {
             FriendService.setMyPetNo(petNo)
+        }
+
+        // 待处理好友申请：服务端在用户同意/拒绝前会持续下发，靠本地「已弹过 ID」去重只弹一次
+        if let rawRequests = payload["requests"] as? [[String: Any]] {
+            let requests = rawRequests.compactMap { dict -> PetFriendRequest? in
+                guard let petNo = intValue(dict["fromPetNo"]), petNo > 0 else { return nil }
+                let id = dict["id"] as? String ?? ""
+                guard !id.isEmpty else { return nil }
+                return PetFriendRequest(id: id, fromPetNo: petNo, fromName: dict["fromName"] as? String ?? "")
+            }
+            for req in FriendService.markRequestsShown(requests) {
+                FileLogger.log("[Heartbeat] 收到好友申请: #\(req.fromPetNo) \(req.fromName)")
+                HeartbeatService.shared.viewModel?.onFriendRequest?(req)
+            }
         }
 
         // 待展示消息：合并为一条气泡（多条时前缀条数，展示最新一条正文）
@@ -120,9 +134,11 @@ final class HeartbeatService {
         let text = latest["text"] as? String ?? ""
         var bubble = "\(fromName.isEmpty ? "好友" : fromName)(#\(fromPetNo))：\(text)"
         if messages.count > 1 { bubble = "收到 \(messages.count) 条好友消息｜" + bubble }
+        // 消息 ID 随卡片一起传出：用户看完点 ✕ 时回服务端确认已读（未确认前服务端会重投几次）
+        let ids = messages.map { ($0["id"] as? String) ?? "" }.filter { !$0.isEmpty }
         FileLogger.log("[Heartbeat] 收到好友消息 \(messages.count) 条")
         // 不再用会自动淡出的气泡，改走常驻消息卡（用户点 ✕ 关闭前不消失）
-        HeartbeatService.shared.viewModel?.onFriendMessage?(bubble)
+        HeartbeatService.shared.viewModel?.onFriendMessage?(bubble, ids)
     }
 
     /// JSON 数字统一取 Int

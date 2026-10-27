@@ -16,11 +16,12 @@ type AdminController struct {
 	systemSvc  *service.SystemService
 	hbSvc      *service.HeartbeatService
 	metricsSvc *service.MetricsService
+	socialSvc  *service.SocialService // 可 nil：用于后台查看宠物对话
 }
 
 // NewAdminController 创建管理控制器
-func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService, hbSvc *service.HeartbeatService, metricsSvc *service.MetricsService) *AdminController {
-	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc, hbSvc: hbSvc, metricsSvc: metricsSvc}
+func NewAdminController(accessSvc *service.AccessService, authSvc *service.AuthService, noteSvc *service.DeviceNoteService, systemSvc *service.SystemService, hbSvc *service.HeartbeatService, metricsSvc *service.MetricsService, socialSvc *service.SocialService) *AdminController {
+	return &AdminController{accessSvc: accessSvc, authSvc: authSvc, noteSvc: noteSvc, systemSvc: systemSvc, hbSvc: hbSvc, metricsSvc: metricsSvc, socialSvc: socialSvc}
 }
 
 // authorized 校验管理身份：
@@ -349,5 +350,43 @@ func (c *AdminController) ResetApiMetrics(w http.ResponseWriter, r *http.Request
 	}
 
 	c.metricsSvc.Reset()
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
+}
+
+// SocialConversations 处理 GET /api/admin/social/conversations：返回好友间的对话留痕（旧 → 新）
+func (c *AdminController) SocialConversations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+	if c.socialSvc == nil {
+		writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{"conversations": []model.PetConversationRecord{}}})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{"conversations": c.socialSvc.Conversations()}})
+}
+
+// ClearSocialConversations 处理 POST /api/admin/social/conversations/clear：清空全部对话留痕
+func (c *AdminController) ClearSocialConversations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{Code: 405, Msg: "method not allowed"})
+		return
+	}
+	if !c.authorized(w, r) {
+		return
+	}
+	if c.socialSvc == nil {
+		writeJSON(w, http.StatusOK, Response{Code: 1, Msg: "social service unavailable"})
+		return
+	}
+
+	if err := c.socialSvc.ClearConversations(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{Code: 500, Msg: "clear failed: " + err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok"})
 }

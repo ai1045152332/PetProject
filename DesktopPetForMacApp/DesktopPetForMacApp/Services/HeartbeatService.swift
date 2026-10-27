@@ -121,7 +121,8 @@ final class HeartbeatService {
         var bubble = "\(fromName.isEmpty ? "好友" : fromName)(#\(fromPetNo))：\(text)"
         if messages.count > 1 { bubble = "收到 \(messages.count) 条好友消息｜" + bubble }
         FileLogger.log("[Heartbeat] 收到好友消息 \(messages.count) 条")
-        HeartbeatService.shared.viewModel?.onPetSay?(bubble)
+        // 不再用会自动淡出的气泡，改走常驻消息卡（用户点 ✕ 关闭前不消失）
+        HeartbeatService.shared.viewModel?.onFriendMessage?(bubble)
     }
 
     /// JSON 数字统一取 Int

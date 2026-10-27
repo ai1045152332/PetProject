@@ -53,6 +53,9 @@ func (s *SocialStore) Load() (model.SocialState, error) {
 	if state.Inbox == nil {
 		state.Inbox = map[string][]model.PetMessage{}
 	}
+	if state.History == nil {
+		state.History = []model.PetConversationRecord{}
+	}
 	return state, nil
 }
 
@@ -69,6 +72,9 @@ func (s *SocialStore) Save(state model.SocialState) error {
 	}
 	if state.Inbox == nil {
 		state.Inbox = map[string][]model.PetMessage{}
+	}
+	if state.History == nil {
+		state.History = []model.PetConversationRecord{}
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -87,5 +93,6 @@ func newEmptySocialState() model.SocialState {
 		Registry: map[string]*model.PetRegistration{},
 		Friends:  map[string][]model.FriendEntry{},
 		Inbox:    map[string][]model.PetMessage{},
+		History:  []model.PetConversationRecord{},
 	}
 }

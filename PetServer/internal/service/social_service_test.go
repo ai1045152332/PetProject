@@ -102,4 +102,20 @@ func TestSendMessageRequiresFriendshipAndDrainsOnTake(t *testing.T) {
 	if again := svc.TakePendingMessages("device-b"); again != nil {
 		t.Errorf("再次拉取应为空，得到 %+v", again)
 	}
+
+	// 对话留痕：取走后后台仍能看到这条往来消息
+	convs := svc.Conversations()
+	if len(convs) != 1 {
+		t.Fatalf("期望留痕 1 条，得到 %d", len(convs))
+	}
+	if convs[0].Text != "在吗" || convs[0].FromName != "A" || convs[0].ToName != "B" {
+		t.Errorf("留痕内容不符: %+v", convs[0])
+	}
+	// 清空后不再展示
+	if err := svc.ClearConversations(); err != nil {
+		t.Fatalf("清空留痕应成功: %v", err)
+	}
+	if left := svc.Conversations(); len(left) != 0 {
+		t.Errorf("清空后应无留痕，得到 %d 条", len(left))
+	}
 }

@@ -48,11 +48,19 @@ class HTMLAlertWindow: NSWindow {
     /// 天气查询回调（城市输入后传回）
     var onCityQuery: ((String) -> Void)?
 
+    /// 单击宠物时是否把本窗口一并提到最前。
+    /// Todo 这类可长期常驻的工具窗关掉它，避免每次点宠物都把清单拽回脸上。
+    var raisesOnPetClick = true
+
     // MARK: - 天气窗口追踪
     /// 当前天气查询窗口引用（用于在同一窗口内更新内容）
     private static weak var currentWeatherWindow: HTMLAlertWindow?
     /// 当前 Todo 窗口引用（单例守卫：已打开且可见时只置顶复用，杜绝连续打开多个）
     private static weak var currentTodoWindow: HTMLAlertWindow?
+    /// 当前到期 Todo 提醒卡引用（同一时刻只保留一张，避免重复弹堆叠）
+    private static weak var currentTodoReminderWindow: HTMLAlertWindow?
+    /// 当前好友消息卡引用（只显示最新一条，不堆叠）
+    private static weak var currentFriendMessageWindow: HTMLAlertWindow?
     /// 页面是否已加载完成（didFinish 后置 true，之前到达的内容暂存）
     private var isPageLoaded = false
     /// 页面加载完成前到达的天气内容（JS 字符串字面量，待刷新）
@@ -143,6 +151,66 @@ class HTMLAlertWindow: NSWindow {
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
+    }
+
+    // MARK: - 常驻通知卡（到期 Todo / 好友消息）
+    // 与会自动淡出的气泡不同：这里用标准 borderless 弹窗（自带原生拖动条 + ✕），
+    // 弹出后常驻，必须用户点 ✕ 才消失；同类通知复用同一窗口，避免堆叠。
+
+    private static func htmlEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+         .replacingOccurrences(of: "<", with: "&lt;")
+         .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    /// 到期 Todo 提醒：弹一张常驻卡片，用户点 ✕ 前不消失
+    static func showTodoReminder(body: String, subtitle: String) {
+        if let existing = currentTodoReminderWindow, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
+            return
+        }
+        let subLine = subtitle.isEmpty ? "" : "\n        <div class=\"water-tips\">\(htmlEscape(subtitle))</div>"
+        let htmlBody = """
+        <div class="water-icon">⏰</div>
+        <div class="water-text" style="font-size:17px;color:#f0f0f5;white-space:pre-wrap;">\(htmlEscape(body))</div>
+        <div class="water-tips">到点啦，别忘了～\(subLine)</div>
+        """
+        let window = presentNotice(title: "Todo 提醒 ⏰", width: 340, htmlBody: htmlBody)
+        window.onClose = { if HTMLAlertWindow.currentTodoReminderWindow === window { HTMLAlertWindow.currentTodoReminderWindow = nil } }
+        currentTodoReminderWindow = window
+    }
+
+    /// 好友消息：弹一张常驻卡片，用户点 ✕ 前不消失
+    static func showFriendMessage(body: String) {
+        // 已有未关闭的消息卡：先关掉，保证只显示最新一条、不堆叠
+        currentFriendMessageWindow?.closeWindow()
+        let htmlBody = """
+        <div class="water-icon">💬</div>
+        <div class="water-text" style="font-size:15px;color:#f0f0f5;white-space:pre-wrap;line-height:1.7;">\(htmlEscape(body))</div>
+        <div class="water-tips">好友的留言，看完点 ✕ 关闭</div>
+        """
+        let window = presentNotice(title: "好友消息 💬", width: 360, htmlBody: htmlBody)
+        window.onClose = { if HTMLAlertWindow.currentFriendMessageWindow === window { HTMLAlertWindow.currentFriendMessageWindow = nil } }
+        currentFriendMessageWindow = window
+    }
+
+    /// 创建并弹出一张常驻通知窗（borderless + 非可缩放 → didFinish 会自动挂原生拖动条，可拖）
+    private static func presentNotice(title: String, width: CGFloat, htmlBody: String) -> HTMLAlertWindow {
+        let window = HTMLAlertWindow(
+            contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.hasShadow = false
+        window.targetWidth = width
+        window.targetMaxHeight = 420
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false)
+        window.alphaValue = 0
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        return window
     }
 
     /// 显示带输入框的弹窗
@@ -499,6 +567,15 @@ class HTMLAlertWindow: NSWindow {
         .todo-item-overdue { border-color: rgba(255,80,80,0.32); }
     """
 
+    /// Todo 窗口目标高度：空态就偏大，随待办逐条增高，上限接近整屏（不遮挡）。
+    /// 返回的是最终窗口高度（含标题栏与内边距）。
+    static func todoFinalHeight(count: Int) -> CGFloat {
+        let screenH = NSScreen.main?.visibleFrame.height ?? 900
+        let cap = screenH * 0.72
+        let ideal = 560 + CGFloat(count) * 52
+        return max(420, min(ideal, cap))
+    }
+
     /// 显示 Todo 清单弹窗
     static func showTodo(title: String, todos: [TodoItem], width: CGFloat = 440, maxHeight: CGFloat = 640, onAdd: @escaping (String, Date?) -> Void, onDelete: @escaping (String) -> Void, onClose: (() -> Void)? = nil) {
         // 单例守卫：已有可见的 Todo 窗口时只置顶复用，不再新建（修复“连续打开两个”）
@@ -508,23 +585,29 @@ class HTMLAlertWindow: NSWindow {
             existing.orderFrontRegardless()
             return
         }
-        // Todo 用标准带边框窗口（可缩放、去阴影、有系统边框），区别于其他无边框弹窗
+        // Todo 用无边框圆角卡片（与天气/新闻弹窗一致）：渐变标题栏 + ✕ 关闭 + 边缘拖拽缩放，
+        // 去掉之前的系统标题栏外边框与红绿灯，风格与其它弹窗统一
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
         window.hasShadow = false  // 去阴影
         window.title = title
-        // 强制深色外观：标题栏与深色内容同色调，消除浅色系统标题栏造成的巨大色差
+        // 强制深色外观：与卡片深色底同色调
         window.appearance = NSAppearance(named: .darkAqua)
-        // 标准系统标题栏：清晰边框 + 红绿灯（绿点缩放），让用户一眼看出窗口边界与缩放位置
-        FileLogger.log("[TodoWindow] styleMask=\(window.styleMask.rawValue) resizable=\(window.styleMask.contains(.resizable))")
+        // 常驻工具窗：不随点击宠物被强制拉到最前
+        window.raisesOnPetClick = false
+        // Todo 现在是 borderless：无系统标题栏可拖，页面渲染后 styleMask 会加入 .resizable，
+        // didFinish 里的原生拖动条分支会被跳过（与天气窗同病），靠 background 拖动从卡片空白处移动；
+        // 输入框/按钮仍可正常点击。
+        window.isMovableByWindowBackground = true
         window.targetWidth = width
-        window.targetMaxHeight = maxHeight
-        // 初始高度按待办数量估算（空列表 344，每条约 52），避免依赖 scrollHeight
-        window.todoEstimatedHeight = min(maxHeight, max(344, 344 + CGFloat(todos.count) * 52))
+        // Todo 允许随待办增多而长高（上限接近整屏），不再锁死在 maxHeight=640
+        window.targetMaxHeight = NSScreen.main?.visibleFrame.height ?? 900
+        // 初始高度按待办数量估算（空态即偏大，逐条增高）；didFinish 会 +24 还原为最终高度
+        window.todoEstimatedHeight = HTMLAlertWindow.todoFinalHeight(count: todos.count) - 24
         window.onTodoAdd = onAdd
         window.onTodoDelete = onDelete
         window.onClose = onClose
@@ -542,15 +625,59 @@ class HTMLAlertWindow: NSWindow {
         
         let htmlBody = """
         <div class="todo-input-group">
-            <input type="text" id="todoInput" placeholder="输入待办事项，按回车添加..." />
-            <input type="datetime-local" id="todoDue" class="todo-due-input" title="选填：到点提醒你" />
-            <button id="addBtn">➕</button>
+            <input type="text" id="todoInput" placeholder="记下要做的事，回车添加…" />
+            <button id="remindBtn" type="button">🕐 无提醒</button>
+            <button id="addBtn" type="button">➕</button>
         </div>
-        <div class="todo-hint">⏰ 选填到期时间，到点我会冒泡提醒你（每 5 分钟重复直到完成）</div>
+        <div class="todo-hint">默认只是随手记；需要到点提醒时点「🕐」设个时间</div>
+        <div id="duePicker" class="due-picker">
+            <div class="dp-quick">
+                <span class="dp-chip" data-q="15m">15分钟后</span>
+                <span class="dp-chip" data-q="30m">30分钟后</span>
+                <span class="dp-chip" data-q="1h">1小时后</span>
+                <span class="dp-chip" data-q="tonight">今晚8点</span>
+                <span class="dp-chip" data-q="tom9">明早9点</span>
+            </div>
+            <div class="dp-custom">
+                <select id="dpDate" class="dp-select"></select>
+                <select id="dpHour" class="dp-select"></select>
+                <select id="dpMin" class="dp-select"></select>
+            </div>
+            <div class="dp-preview" id="dpPreview"></div>
+            <div class="dp-actions">
+                <button id="dpClear" type="button">清除提醒</button>
+                <button id="dpOk" type="button">确定</button>
+            </div>
+        </div>
         <div class="todo-list" id="todoList"></div>
+        <style>
+            #remindBtn {
+                width: auto !important; padding: 0 12px !important; font-size: 13px !important;
+                background: rgba(255,255,255,0.08) !important; border: 1px solid rgba(255,255,255,0.16) !important;
+                color: #c8cce8 !important; white-space: nowrap;
+            }
+            #remindBtn:hover { opacity: 1 !important; transform: none !important; background: rgba(255,255,255,0.12) !important; }
+            #remindBtn.remind-on { background: linear-gradient(135deg,#667eea,#764ba2) !important; color: #fff !important; border-color: transparent !important; }
+            .due-picker { display: none; margin: -4px 0 14px; padding: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+            .dp-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+            .dp-custom { display: flex; gap: 8px; }
+            .dp-select { flex: 1; min-width: 0; font-family: inherit; font-size: 13px; padding: 7px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.06); color: #e8eaf6; }
+            .dp-preview { font-size: 12px; color: #a9b0d8; margin-top: 9px; }
+            .dp-chip { font-size: 12px; color: #c8cce8; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); padding: 5px 10px; border-radius: 8px; cursor: pointer; transition: all 0.15s; }
+            .dp-chip:hover { background: rgba(255,255,255,0.12); }
+            .dp-chip.dp-on { background: linear-gradient(135deg,#667eea,#764ba2); color: #fff; border-color: transparent; }
+            .dp-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+            .dp-actions button { border: none; border-radius: 9px; padding: 7px 16px; font-size: 13px; cursor: pointer; font-family: inherit; }
+            #dpClear { background: transparent; color: #9098b8; }
+            #dpClear:hover { color: #ff8a8a; }
+            #dpOk { background: linear-gradient(135deg,#667eea,#764ba2); color: #fff; }
+        </style>
         <script>
             var todos = \(todosJSON);
             var pendingDeleteId = null;
+            var pendingDue = null;                        // 待添加待办的提醒时间（epoch 秒），null=不提醒
+            var pickDay = 0, pickHour = 9, pickMin = 0;   // 弹层内临时选择
+            var WD = ['周日','周一','周二','周三','周四','周五','周六'];
             function pad(n){ return (n < 10 ? '0' : '') + n; }
             function fmtDue(sec){
                 if (!sec) return '';
@@ -563,6 +690,13 @@ class HTMLAlertWindow: NSWindow {
                 return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
             }
             function isOverdue(sec){ return sec && (sec * 1000) < Date.now(); }
+            function dayLabel(off){
+                if (off === 0) return '今天';
+                if (off === 1) return '明天';
+                if (off === 2) return '后天';
+                var d = new Date(); d.setDate(d.getDate() + off);
+                return WD[d.getDay()];
+            }
             function renderTodos() {
                 var list = document.getElementById('todoList');
                 list.innerHTML = '';
@@ -615,17 +749,70 @@ class HTMLAlertWindow: NSWindow {
                     list.appendChild(item);
                 }
             }
+            function updateRemindChip(){
+                var btn = document.getElementById('remindBtn');
+                if (pendingDue) { btn.textContent = '⏰ ' + fmtDue(pendingDue); btn.classList.add('remind-on'); }
+                else { btn.textContent = '🕐 无提醒'; btn.classList.remove('remind-on'); }
+            }
+            function renderPicker(){
+                var dd = document.getElementById('dpDate'); dd.innerHTML = '';
+                for (var i = 0; i < 7; i++) {
+                    var o = document.createElement('option'); o.value = i; o.textContent = dayLabel(i);
+                    if (pickDay === i) o.selected = true; dd.appendChild(o);
+                }
+                var hh = document.getElementById('dpHour'); hh.innerHTML = '';
+                for (var h = 0; h < 24; h++) {
+                    var o = document.createElement('option'); o.value = h; o.textContent = pad(h) + '点';
+                    if (pickHour === h) o.selected = true; hh.appendChild(o);
+                }
+                var mm = document.getElementById('dpMin'); mm.innerHTML = '';
+                [0,15,30,45].forEach(function(mn){
+                    var o = document.createElement('option'); o.value = mn; o.textContent = pad(mn) + '分';
+                    if (pickMin === mn) o.selected = true; mm.appendChild(o);
+                });
+                updatePreview();
+            }
+            function updatePreview(){
+                var d = new Date(); d.setDate(d.getDate() + pickDay); d.setHours(pickHour, pickMin, 0, 0);
+                var el = document.getElementById('dpPreview');
+                if (el) el.textContent = '将于 ' + fmtDue(d.getTime() / 1000) + ' 提醒';
+            }
+            function togglePicker(open){
+                var p = document.getElementById('duePicker');
+                var willOpen = (open === undefined) ? (p.style.display !== 'block') : open;
+                if (willOpen) { renderPicker(); p.style.display = 'block'; }
+                else { p.style.display = 'none'; }
+            }
+            function confirmPicker(){
+                var d = new Date();
+                d.setDate(d.getDate() + pickDay);
+                d.setHours(pickHour, pickMin, 0, 0);
+                pendingDue = d.getTime() / 1000;
+                updateRemindChip();
+                togglePicker(false);
+            }
+            function quickSet(kind){
+                var d = new Date();
+                if (kind === '15m') { d.setMinutes(d.getMinutes() + 15); }
+                else if (kind === '30m') { d.setMinutes(d.getMinutes() + 30); }
+                else if (kind === '1h') { d.setHours(d.getHours() + 1); }
+                else if (kind === 'tonight') { d.setHours(20, 0, 0, 0); }
+                else if (kind === 'tom9') { d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); }
+                pendingDue = d.getTime() / 1000;
+                updateRemindChip();
+                togglePicker(false);
+            }
+            function clearReminder(){ pendingDue = null; updateRemindChip(); togglePicker(false); }
             function addTodo() {
                 var input = document.getElementById('todoInput');
-                var dueInput = document.getElementById('todoDue');
                 var text = input.value.trim();
                 if (!text) { return; }
-                var due = null;
-                if (dueInput && dueInput.value) { due = new Date(dueInput.value).getTime() / 1000; }
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.addTodo) {
-                    window.webkit.messageHandlers.addTodo.postMessage(JSON.stringify({ text: text, due: due }));
+                    window.webkit.messageHandlers.addTodo.postMessage(JSON.stringify({ text: text, due: pendingDue }));
                     input.value = '';
-                    if (dueInput) dueInput.value = '';
+                    pendingDue = null;
+                    updateRemindChip();
+                    togglePicker(false);
                 }
             }
             function deleteTodo(id) {
@@ -666,14 +853,25 @@ class HTMLAlertWindow: NSWindow {
                 setTimeout(function(){ tip.style.opacity = '0'; }, 1000);
             }
             document.getElementById('addBtn').addEventListener('click', addTodo);
+            document.getElementById('remindBtn').addEventListener('click', function(){ togglePicker(); });
+            document.getElementById('dpOk').addEventListener('click', confirmPicker);
+            document.getElementById('dpClear').addEventListener('click', clearReminder);
+            document.querySelector('.dp-quick').addEventListener('click', function(e){
+                var t = e.target.closest('.dp-chip'); if (t && t.getAttribute('data-q')) quickSet(t.getAttribute('data-q'));
+            });
+            document.getElementById('dpDate').addEventListener('change', function(e){ pickDay = parseInt(e.target.value, 10); updatePreview(); });
+            document.getElementById('dpHour').addEventListener('change', function(e){ pickHour = parseInt(e.target.value, 10); updatePreview(); });
+            document.getElementById('dpMin').addEventListener('change', function(e){ pickMin = parseInt(e.target.value, 10); updatePreview(); });
             document.getElementById('todoInput').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') addTodo();
             });
             document.getElementById('todoInput').addEventListener('focus', function() {
                 pendingDeleteId = null;
                 renderTodos();
+                togglePicker(false);
             });
             renderTodos();
+            updateRemindChip();
         </script>
         """
         
@@ -893,12 +1091,15 @@ class HTMLAlertWindow: NSWindow {
         // 统一经 CardFrame 边框基类渲染：所有弹窗共享同一套「渐变标题栏 + 深色卡片」骨架
         var frameConfig = CardFrame.Config(title: title, body: htmlBody)
         if isTodoMode {
-            // Todo：标准系统标题栏窗口（红绿灯关闭），内部隐藏渐变标题栏与底部按钮，全出血铺满
-            frameConfig.showHeader = false
+            // Todo：无边框圆角卡片 + 渐变标题栏（右上角 ✕ 关闭、标题栏可拖动），与天气/新闻等弹窗统一
+            frameConfig.showHeader = true
             frameConfig.showFooter = false
-            frameConfig.fullBleed = true
-            frameConfig.maxContentHeight = nil
-            frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS
+            frameConfig.cardWidth = targetWidth
+            frameConfig.headerDraggable = true
+            frameConfig.maxContentHeight = targetMaxHeight
+            // 卡片撑满窗口高度：否则 .card 只 hug 内容（body align-items:flex-start），
+            // 空清单/待办少时卡片只有一小块、窗口下方全是透明空白，看着“还是很小”
+            frameConfig.extraCSS = HTMLAlertWindow.sharedBusinessCSS + "\nbody{align-items:stretch;} .card{height:100%;} .card-content{flex:1 1 auto;}"
         } else if isWordLearningMode {
             // 背单词：无边框窗口 + 渐变标题栏卡片 + 无底部按钮 + 标题栏可拖动
             frameConfig.showHeader = true
@@ -986,6 +1187,13 @@ class HTMLAlertWindow: NSWindow {
         let safeJSON = json.replacingOccurrences(of: "<", with: "\\u003c")
         let js = "todos = \(safeJSON); renderTodos();"
         webView?.evaluateJavaScript(js, completionHandler: nil)
+        // 待办增多/减少时让窗口随之长高/变矮（保持顶边不动，向下扩展）
+        let newH = HTMLAlertWindow.todoFinalHeight(count: todos.count)
+        var frame = self.frame
+        let top = frame.maxY
+        frame.size.height = newH
+        frame.origin.y = top - newH
+        self.setFrame(frame, display: true)
     }
 
     private func centerOnScreen() {
@@ -1058,9 +1266,10 @@ extension HTMLAlertWindow: WKNavigationDelegate {
             self.setFrame(frame, display: true)
             self.centerOnScreen()
 
-            // 所有无边框窗口（非可缩放）：sizing 完成后添加原生拖动条（此时 frame 已正确）
-            // 可缩放标准窗口（热点新闻）的渐变标题栏已启用 -webkit-app-region: drag，无需原生拖动条
-            if self.todoEstimatedHeight == nil && !self.styleMask.contains(.resizable) {
+            // 拖动条：Todo 清单（borderless+resizable 卡片）与非可缩放的 borderless 弹窗（喝水/通知/天气等）都需要。
+            // WKWebView 会吞掉标题区域的鼠标事件，isMovableByWindowBackground 拖不动标题，只能靠原生拖动条；
+            // -webkit-app-region: drag 在 WKWebView 里不生效。可缩放的非 Todo 窗口（热点新闻）不挂，避免盖住内容。
+            if self.todoEstimatedHeight != nil || !self.styleMask.contains(.resizable) {
                 // 右侧须给标题栏 ✕ 按钮让位（窗口 padding 8 + 卡片内边距 18 + 按钮 26，共约 52px），
                 // 否则拖动条盖住 ✕ 左半部分，点击变成拖窗口（点好几次才能关掉）
                 let dragView = DraggableTitleView(frame: NSRect(x: 0, y: self.frame.height - 48, width: self.frame.width - 60, height: 48))

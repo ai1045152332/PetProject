@@ -28,6 +28,11 @@ var AdminFilesPage []byte
 //go:embed admin_status.html
 var AdminStatusPage []byte
 
+// AdminSocialPage 后台管理：宠物对话页（好友间往来消息留痕）
+//
+//go:embed admin_social.html
+var AdminSocialPage []byte
+
 // StaticFS 内置静态资源（Tabler 后台 UI 框架样式等）
 //
 //go:embed static

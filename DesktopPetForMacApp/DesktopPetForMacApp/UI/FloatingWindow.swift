@@ -70,9 +70,14 @@ final class FloatingWindow {
             cv?.catSay(text)
         }
 
-        // 设置 Todo 到期提醒回调：到点用气泡强调触达（宠物已在 ViewModel 侧播放专注动画）
+        // 设置 Todo 到期提醒回调：到点弹常驻提醒卡片（需用户点 ✕ 确认才消失），宠物动画由 ViewModel 侧播放
         viewModel.onTodoReminder = { [weak cv] item in
-            cv?.catSay("⏰ 到点啦：\(item.text)")
+            cv?.showTodoReminderAlert(item)
+        }
+
+        // 好友消息：用常驻卡片展示，用户点 ✕ 关闭前不消失（不再用会自动淡出的气泡）
+        viewModel.onFriendMessage = { text in
+            HTMLAlertWindow.showFriendMessage(body: text)
         }
 
         // 贴边躲藏：ViewModel 吸附算出新原点后，由视图层移动窗口
@@ -348,11 +353,13 @@ class CatView: NSView {
                 viewModel?.transitionTo(.focus)
             }
             
-// 点击小猫：把小猫窗口及其相关弹窗（Todo/天气/做题等）全部放到最前
+// 点击小猫：把小猫窗口及其相关弹窗（天气/做题等）全部放到最前
 // 仅唤起仍可见的弹窗：已点 ✕ 关闭（orderOut 隐藏）的窗口不能被重新弹出，
 // 否则其 JS 关闭 handler 已被移除，会出现"关了又弹出、再也关不上"的僵尸窗口
+// Todo 属于常驻工具窗（raisesOnPetClick=false），不随点猫跳前，免得反复遮挡
 windowRef?.orderFrontRegardless()
 for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
+    if let alert = w as? HTMLAlertWindow, !alert.raisesOnPetClick { continue }
     w.orderFrontRegardless()
 }
 
@@ -725,6 +732,20 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
                 })
             }
         }
+    }
+
+    /// 显示 Todo 到期提醒（常驻卡片，需用户点 ✕ 确认才关闭）
+    func showTodoReminderAlert(_ item: TodoItem) {
+        let subtitle: String
+        if let due = item.dueDate {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "zh_CN")
+            f.dateFormat = "M月d日 HH:mm"
+            subtitle = "约定时间 \(f.string(from: due))"
+        } else {
+            subtitle = ""
+        }
+        HTMLAlertWindow.showTodoReminder(body: item.text, subtitle: subtitle)
     }
 
     /// 显示喝水提醒弹窗（HTML 样式）

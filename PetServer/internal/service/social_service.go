@@ -19,6 +19,7 @@ const (
 	firstPetNo        = int64(100001) // 宠物号起始水位（自增分配，贴近 QQ 早期号段的观感、便于口头传播）
 	maxInboxPerDevice = 50            // 每设备待拉取消息上限（超出丢弃最旧的）
 	maxMessageRunes   = 200           // 单条消息文本长度上限（按字符计）
+	maxHistoryRecords = 1000          // 对话留痕全局上限（超出丢弃最旧的，供后台查看）
 )
 
 // 业务错误：控制器据此回给用户可读文案
@@ -231,6 +232,21 @@ func (s *SocialService) SendMessage(fromDeviceID string, toPetNo int64, text str
 	}
 	state.Inbox[target.DeviceID] = inbox
 
+	// 对话留痕：收件箱取后即清，这里持久保留一份供管理后台查看好友间对话
+	state.History = append(state.History, model.PetConversationRecord{
+		FromPetNo: sender.PetNo,
+		FromName:  sender.PetName,
+		FromHost:  sender.Hostname,
+		ToPetNo:   target.PetNo,
+		ToName:    target.PetName,
+		ToHost:    target.Hostname,
+		Text:      text,
+		SentAt:    msg.SentAt,
+	})
+	if len(state.History) > maxHistoryRecords { // 超出上限丢弃最旧，保证有界
+		state.History = state.History[len(state.History)-maxHistoryRecords:]
+	}
+
 	if err := s.store.Save(state); err != nil {
 		return err
 	}
@@ -261,6 +277,38 @@ func (s *SocialService) TakePendingMessages(deviceID string) []model.PetMessage 
 		log.Printf("[social] 保存状态失败(取消息): %v", err)
 	}
 	return msgs
+}
+
+// Conversations 返回全部对话留痕（旧 → 新），供管理后台展示；无记录时返回空切片。
+func (s *SocialService) Conversations() []model.PetConversationRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.store.Load()
+	if err != nil {
+		log.Printf("[social] 读取状态失败(对话记录): %v", err)
+		return []model.PetConversationRecord{}
+	}
+	out := make([]model.PetConversationRecord, len(state.History))
+	copy(out, state.History)
+	return out
+}
+
+// ClearConversations 清空全部对话留痕（管理后台维护用）。
+func (s *SocialService) ClearConversations() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.store.Load()
+	if err != nil {
+		return err
+	}
+	state.History = []model.PetConversationRecord{}
+	if err := s.store.Save(state); err != nil {
+		return err
+	}
+	log.Printf("[social] 对话记录已清空")
+	return nil
 }
 
 // PetNoFor 只读查询某设备已分配的宠物号；未注册或 deviceID 无效时返回 0。

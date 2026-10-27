@@ -651,11 +651,11 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    /// 扫描到期待办：命中则播专注动画 + 回调触达，并记录本次触达时间以按间隔重复提醒
+    /// 扫描到期待办：命中则弹常驻提醒窗（需用户确认关闭），并播专注动画
     private func checkTodoReminders() {
-        // 复用“主动触达”总开关；勿扰/睡觉/躲藏时不打扰
-        guard proactiveChatEnabled else { return }
-        guard !systemFocusActive, animationState != .sleep, animationState != .hide, !isPlayingOneShot else { return }
+        // 到点提醒不再受“主动搭话”开关控制（那是闲聊，不等同于用户设定的待办）；
+        // 仅在系统专注（勿扰）时暂停，专注结束后下个扫描周期自动补上。
+        guard !systemFocusActive else { return }
 
         let now = Date()
         let repeatInterval = TimeInterval(todoReminderRepeatMinutes * 60)
@@ -668,14 +668,15 @@ final class PetViewModel: ObservableObject {
         }) else { return }
 
         TodoManager.shared.markNotified(id: hit.id, at: now)
-        // 提醒表现：播放专注动画（躲藏中不切回完整姿态，仅靠气泡触达）
-        if animationState != .hide {
+        FileLogger.log("[DesktopPet] Todo 到期提醒: 「\(hit.text)」")
+        // 到点触达：弹常驻提醒窗（睡/躲藏中也要弹，否则会漏提醒）
+        onTodoReminder?(hit)
+        // 宠物动画仅在醒着、未躲藏且没在播其它动画时补充播放
+        if animationState != .sleep, animationState != .hide, !isPlayingOneShot {
             isFacingLocked = true
             facing = .right
             playOneShot(.focus)
         }
-        FileLogger.log("[DesktopPet] Todo 到期提醒: 「\(hit.text)」")
-        onTodoReminder?(hit)
     }
     
     // MARK: - 背单词功能
@@ -692,8 +693,11 @@ final class PetViewModel: ObservableObject {
     /// 主动搭话回调（供视图层用气泡展示台词）
     var onPetSay: ((String) -> Void)?
 
-    /// Todo 到期提醒回调（供视图层用气泡强调触达；专注动画由 ViewModel 侧播放）
+    /// Todo 到期提醒回调（供视图层用常驻卡片触达；专注动画由 ViewModel 侧播放）
     var onTodoReminder: ((TodoItem) -> Void)?
+
+    /// 好友消息触达回调（供视图层用常驻卡片展示，用户点击关闭前不消失）
+    var onFriendMessage: ((String) -> Void)?
 
     static let proactiveChatKey = "settings.proactiveChat.enabled"
     /// 是否开启主动搭话（默认开启），持久化到 UserDefaults

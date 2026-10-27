@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>宠物对话 · cute pet 后台</title>
+  <link rel="stylesheet" href="/static/tabler.min.css" />
+  <style>
+    /* 对话气泡：左右分侧展示收发双方，一眼看出谁发给谁 */
+    .chat-list { display: flex; flex-direction: column; gap: .5rem; }
+    .chat-row { display: flex; }
+    .chat-row.out { justify-content: flex-end; }
+    .chat-bubble {
+      max-width: 70%;
+      background: var(--tblr-bg-surface-secondary, #f1f5fb);
+      border-radius: 8px;
+      padding: .5rem .75rem;
+    }
+    .chat-row.out .chat-bubble { background: rgba(32, 147, 250, .12); }
+    .chat-meta { font-size: .75rem; color: var(--tblr-secondary); margin-bottom: .2rem; }
+    .chat-text { word-break: break-all; white-space: pre-wrap; }
+    .pair-select .btn { margin-right: .5rem; margin-bottom: .5rem; }
+  </style>
+  <script>
+    if (!localStorage.getItem('petAdminSession')) location.replace('/admin/login');
+  </script>
+</head>
+<body class="antialiased">
+  <div class="page">
+    <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
+      <div class="container-xl">
+        <span class="navbar-brand">🐾 cute pet 后台管理</span>
+        <div class="navbar-nav flex-row ms-auto align-items-center">
+          <a class="nav-link" href="/admin">在线宠物</a>
+          <a class="nav-link" href="/admin/codes">激活码管理</a>
+          <a class="nav-link active fw-bold" href="/admin/social">宠物对话</a>
+          <a class="nav-link" href="/admin/status">服务器状态</a>
+          <a class="nav-link" href="/admin/files">文件管理</a>
+          <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <h2 class="page-title">宠物对话</h2>
+              <div class="text-secondary mt-1" id="status">加载中…</div>
+            </div>
+            <div class="col-auto ms-auto">
+              <button class="btn" onclick="load()">刷新</button>
+              <button class="btn btn-outline-danger ms-2" onclick="clearAll()">清空记录</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards">
+            <div class="col-12" id="pairCard" style="display:none">
+              <div class="card">
+                <div class="card-header"><h3 class="card-title">对话双方</h3></div>
+                <div class="card-body pair-select" id="pairs"></div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title" id="chatTitle">全部消息</h3>
+                  <span class="ms-2 text-secondary" id="chatCount"></span>
+                </div>
+                <div class="card-body">
+                  <div class="chat-list" id="chat"></div>
+                  <div class="text-secondary text-center py-4" id="empty" style="display:none">
+                    还没有宠物之间的对话哦～ 加好友后发消息，这里就能看到留痕
+                  </div>
+                </div>
+                <div class="card-body text-secondary" style="font-size:.8rem">
+                  仅保留最近 1000 条对话留痕（旧消息超出后自动丢弃）；宠物端消息仍按原逻辑取后即清，不受本页影响。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer footer-transparent d-print-none">
+        <div class="container-xl text-center text-secondary">
+          cute pet 后端服务 · UI 基于 Tabler（MIT）
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    let all = [];              // 全部对话记录（旧 → 新）
+    let currentPair = '';      // 当前选中的对话双方，'' 表示全部
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      ));
+    }
+    function session() { return localStorage.getItem('petAdminSession') || ''; }
+
+    async function logout() {
+      const token = session();
+      localStorage.removeItem('petAdminSession');
+      localStorage.removeItem('petAdminSessionExp');
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Session-Token': token } });
+      } catch (e) { /* 忽略网络异常 */ }
+      location.href = '/admin/login';
+    }
+
+    // pairKey 按宠物号大小归一化：A↔B 与 B↔A 视为同一对
+    function pairKey(rec) {
+      return Math.min(rec.fromPetNo, rec.toPetNo) + '-' + Math.max(rec.fromPetNo, rec.toPetNo);
+    }
+
+    function petLabel(petNo, name, host) {
+      return (name || '宠物') + ' #' + petNo + (host ? '（' + host + '）' : '');
+    }
+
+    function render() {
+      // 按对话双方分组（保持首次出现顺序）
+      const pairs = new Map();
+      for (const rec of all) {
+        const k = pairKey(rec);
+        if (!pairs.has(k)) pairs.set(k, { a: { petNo: rec.fromPetNo, name: rec.fromName, host: rec.fromHost },
+                                          b: { petNo: rec.toPetNo, name: rec.toName, host: rec.toHost },
+                                          count: 0 });
+        const p = pairs.get(k);
+        p.count++;
+        // 名称可能后来才刷新出来，取非空者
+        if (p.a.petNo === rec.fromPetNo) {
+          if (rec.fromName) p.a.name = rec.fromName;
+          if (rec.fromHost) p.a.host = rec.fromHost;
+          if (rec.toName) p.b.name = rec.toName;
+          if (rec.toHost) p.b.host = rec.toHost;
+        } else {
+          if (rec.fromName) p.b.name = rec.fromName;
+          if (rec.fromHost) p.b.host = rec.fromHost;
+          if (rec.toName) p.a.name = rec.toName;
+          if (rec.toHost) p.a.host = rec.toHost;
+        }
+      }
+
+      // 分组按钮
+      const pairCard = document.getElementById('pairCard');
+      pairCard.style.display = pairs.size > 1 ? '' : 'none';
+      let html = '<button class="btn btn-sm ' + (currentPair === '' ? 'btn-primary' : 'btn-outline-primary') +
+        '" onclick="selectPair(\'\')">全部（' + all.length + '）</button>';
+      for (const [k, p] of pairs) {
+        html += '<button class="btn btn-sm ' + (currentPair === k ? 'btn-primary' : 'btn-outline-primary') +
+          '" onclick="selectPair(\'' + k + '\')">' + esc(petLabel(p.a.petNo, p.a.name, '')) + ' ↔ ' +
+          esc(petLabel(p.b.petNo, p.b.name, '')) + '（' + p.count + '）</button>';
+      }
+      document.getElementById('pairs').innerHTML = html;
+
+      // 消息列表：选中某对时以该对左侧宠物为「我」的视角分左右气泡
+      const list = currentPair === '' ? all : all.filter(r => pairKey(r) === currentPair);
+      document.getElementById('empty').style.display = list.length ? 'none' : '';
+      document.getElementById('chatCount').textContent = '共 ' + list.length + ' 条';
+      document.getElementById('chatTitle').textContent = currentPair === '' ? '全部消息' : '对话详情';
+
+      const leftPetNo = currentPair === '' ? 0 : Number(currentPair.split('-')[0]);
+      document.getElementById('chat').innerHTML = list.map(rec => {
+        const out = rec.fromPetNo !== leftPetNo; // 全部视图统一左箭头方向；配对视图按左侧宠物区分
+        const time = new Date(rec.sentAt).toLocaleString('zh-CN');
+        return '<div class="chat-row' + (currentPair === '' || !out ? '' : ' out') + '">' +
+          '<div class="chat-bubble">' +
+            '<div class="chat-meta">' + esc(petLabel(rec.fromPetNo, rec.fromName, rec.fromHost)) +
+            ' → ' + esc(petLabel(rec.toPetNo, rec.toName, rec.toHost)) + ' · ' + time + '</div>' +
+            '<div class="chat-text">' + esc(rec.text) + '</div>' +
+          '</div></div>';
+      }).join('');
+    }
+
+    function selectPair(k) {
+      currentPair = k;
+      render();
+    }
+
+    async function load() {
+      document.getElementById('status').textContent = '加载中…';
+      try {
+        const resp = await fetch('/api/admin/social/conversations', {
+          headers: { 'X-Session-Token': session() }
+        });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '接口返回异常');
+        all = json.data.conversations || [];
+        if (currentPair && !all.some(r => pairKey(r) === currentPair)) currentPair = '';
+        document.getElementById('status').textContent =
+          '更新于 ' + new Date().toLocaleTimeString('zh-CN') + ' · 共 ' + all.length + ' 条留痕';
+        render();
+      } catch (e) {
+        document.getElementById('status').textContent = '加载失败：' + e.message;
+      }
+    }
+
+    async function clearAll() {
+      if (!all.length) return;
+      if (!confirm('确定清空全部对话留痕吗？\n清空后不可恢复（宠物端已收消息不受影响）。')) return;
+      try {
+        const resp = await fetch('/api/admin/social/conversations/clear', {
+          method: 'POST',
+          headers: { 'X-Session-Token': session() }
+        });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '清空失败');
+        currentPair = '';
+        await load();
+      } catch (e) {
+        alert('清空失败：' + e.message);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

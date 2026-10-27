@@ -616,6 +616,36 @@ curl http://101.96.248.75/api/admin/metrics \
 - 计数内存累加，每 30 秒落盘到 `data/api_metrics.json`，**服务重启不丢累计**；清零会立即落盘
 - 后台「服务器状态」页（`/admin/status`）底部有可视化表格与「清零重统计」按钮
 
+### 3.15 宠物对话（查看好友间消息留痕）
+
+```
+GET /api/admin/social/conversations
+```
+
+需登录（鉴权方式同其他管理接口）。返回发送消息时在服务端持久保留的对话留痕（旧 → 新，
+全局最多 1000 条，超出丢弃最旧）；宠物端收件箱仍按原逻辑「取后即清」，两者互不影响。
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "conversations": [
+      {"fromPetNo": 100001, "fromName": "毛豆", "fromHost": "Mac-A",
+       "toPetNo": 100002, "toName": "汤圆", "toHost": "Mac-B",
+       "text": "在吗", "sentAt": "2026-10-27T14:15:01+08:00"}
+    ]
+  }
+}
+```
+
+```
+POST /api/admin/social/conversations/clear
+```
+
+清空全部对话留痕（不可恢复，不影响宠物端已收/待收消息）。后台「宠物对话」页
+（`/admin/social`）提供可视化列表：按对话双方分组筛选、气泡展示收发方向、支持刷新与清空。
+
 ## 4. App 更新接口
 
 ### 4.1 查询最新版本
@@ -708,8 +738,9 @@ GET /api/wordbank/get?name=cet4
 | `GET /admin/login` | 登录页（账号密码） |
 | `GET /admin` | 菜单一：小猫在线列表 |
 | `GET /admin/codes` | 菜单二：激活码管理（激活码/设备绑定/备注/生成时间/过期时间/每码 AI 生图次数，可行内改次数） |
-| `GET /admin/files` | 菜单三：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
-| `GET /admin/status` | 菜单四：服务器状态（CPU/内存/网络流量 + 接口调用统计） |
+| `GET /admin/social` | 菜单三：宠物对话（查看好友宠物间的往来消息留痕，可按对话双方筛选、可清空） |
+| `GET /admin/files` | 菜单四：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
+| `GET /admin/status` | 菜单五：服务器状态（CPU/内存/网络流量 + 接口调用统计） |
 | `GET /` | 官网落地页（产品介绍与 App 下载） |
 
 ## 自定义宠物图片

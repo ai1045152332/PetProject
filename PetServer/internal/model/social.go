@@ -31,10 +31,24 @@ type PetMessage struct {
 	SentAt    time.Time `json:"sentAt"`
 }
 
+// PetConversationRecord 宠物对话记录：发送消息时在服务端留痕，供管理后台查看好友之间的往来对话
+// （收件箱消息被心跳取走后即清除，这里独立持久保留）
+type PetConversationRecord struct {
+	FromPetNo int64     `json:"fromPetNo"`
+	FromName  string    `json:"fromName"`
+	FromHost  string    `json:"fromHost"` // 发送方主机名，便于后台识别是哪台设备
+	ToPetNo   int64     `json:"toPetNo"`
+	ToName    string    `json:"toName"`
+	ToHost    string    `json:"toHost"`
+	Text      string    `json:"text"`
+	SentAt    time.Time `json:"sentAt"`
+}
+
 // SocialState 好友与消息的整体持久化状态（单 JSON 文件，整体读写）
 type SocialState struct {
 	Counter  int64                       `json:"counter"`  // 已发放的宠物号水位（用于自增分配）
 	Registry map[string]*PetRegistration `json:"registry"` // deviceId → 注册信息
 	Friends  map[string][]FriendEntry    `json:"friends"`  // deviceId → 好友列表
 	Inbox    map[string][]PetMessage     `json:"inbox"`    // deviceId → 待拉取消息
+	History  []PetConversationRecord     `json:"history"`  // 对话留痕（旧 → 新，有界）
 }

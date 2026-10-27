@@ -122,6 +122,9 @@ func New(
 	// 接口调用统计（需登录）：查看各接口被调用次数/失败数/耗时，可清零重新计数
 	mux.HandleFunc("/api/admin/metrics", adminCtrl.ApiMetrics)
 	mux.HandleFunc("/api/admin/metrics/reset", adminCtrl.ResetApiMetrics)
+	// 宠物对话（需登录）：后台查看好友间的往来消息留痕，可清空
+	mux.HandleFunc("/api/admin/social/conversations", adminCtrl.SocialConversations)
+	mux.HandleFunc("/api/admin/social/conversations/clear", adminCtrl.ClearSocialConversations)
 	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)
 	mux.HandleFunc("/api/admin/files/preview", filesCtrl.Preview)
 	mux.HandleFunc("/api/admin/files/download", filesCtrl.Download)
@@ -189,6 +192,12 @@ func New(
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		noCache(w)
 		w.Write(web.AdminStatusPage)
+	})
+	// 后台管理：宠物对话页（查看好友间的往来消息）
+	mux.HandleFunc("/admin/social", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		noCache(w)
+		w.Write(web.AdminSocialPage)
 	})
 	// 内置静态资源（Tabler 样式等）：gzip + 长缓存，链路上只需传输一次
 	mux.HandleFunc("/static/", serveStatic)

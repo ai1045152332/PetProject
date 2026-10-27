@@ -79,6 +79,16 @@ objects/<sha256(设备ID)>/<YYYYMMDD-HHMMSS-6hex>/
 
 一次性迁移已于 2026-10-26 在线完成（旧平铺对象 → 批次目录、历史非 32 位 hex 的 ID → 32 位 hex），迁移脚本用完即删。若日后从旧备份恢复 `pet-images`，需先备份（`cp -a /opt/petserver/data/pet-images /opt/petserver/data/pet-images.bak-$(date +%Y%m%d%H%M%S)`）再按上述布局手工重排：同一次上传的文件放进同一个批次目录，记录里的 `sourceId`/`objectId` 改成相对设备目录的路径。
 
+## 好友与消息库（SQLite）
+
+好友/宠物消息已于 2026-10-27 从 `data/social.json` 迁到 `data/petserver.db`（驱动 `ncruces/go-sqlite3`，纯 Go 无 CGO，不影响交叉编译流程）：
+
+- 首次启动自动导入：只在「库里没设备 + `social.json` 非空」时跑，宠物号、未读消息、待处理申请原样保留；旧 `social.json` **原地保留不删**。
+- 部署后验收：`journalctl -u petserver | grep social`，可看到 `[social] 已从 social.json 导入：…` 与 `好友与消息存储: SQLite data/petserver.db`；导入后 `POST /api/heartbeat` 仍能下发消息、`POST /api/social/read` 回 `marked>=0` 即为正常。
+- 备份：`*.db` / `*-wal` / `*-shm` 三个文件必须一起（只拷 `.db` 会丢最近未 checkpoint 的写入）；打包整个 `data/` 目录自然满足。
+- 回滚：脚本的健康回滚只换二进制，不会退数据。旧版二进制仍读 `social.json`（内容是切换那一刻的快照），因此回滚后**所有宠物号不会丢**，但切库之后新产生的好友/消息不在里面；要完整回滚先用新版把库导回去（`SocialSQLite.ExportSocialState` + `SocialStore.Save`）再换二进制。
+- 库文件丢了也不怕：`data/` 从备份恢复后重启，只要 `social.json` 还在就会重新导入一次。
+
 ## 关键约束（容易踩）
 
 1. **版本号只能递增，同一版本号不要重复发布不同内容**。已升级到该版本的客户端不会再次下载，等于这批人永远收不到修复。

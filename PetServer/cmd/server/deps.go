@@ -34,12 +34,12 @@ func buildDeps() (*deps, func(), error) {
 	}
 	heartbeatSvc := service.NewHeartbeatService(store, snapshotStore)
 
-	// 好友与宠物消息：宠物号注册 + 好友关系 + 收件箱（云端本地 JSON，心跳拉取）
-	socialStore, err := storage.NewSocialStore("data/social.json")
+	// 好友与宠物消息：宠物号注册 + 好友关系 + 收件箱（SQLite，心跳拉取）
+	socialRepo, err := openSocialRepo()
 	if err != nil {
-		return nil, nil, fmt.Errorf("初始化好友消息存储失败: %w", err)
+		return nil, nil, err
 	}
-	socialSvc := service.NewSocialService(socialStore)
+	socialSvc := service.NewSocialService(socialRepo)
 	heartbeatCtrl := controller.NewHeartbeatController(heartbeatSvc, socialSvc)
 
 	noteStore, err := storage.NewDeviceNoteStore("data/device_notes.json")
@@ -155,6 +155,62 @@ func buildDeps() (*deps, func(), error) {
 		imageSvc.Close()
 		metricsSvc.Flush()
 		store.Close()
+		_ = socialRepo.Close()
 	}
 	return &deps{handler: handler, store: store}, cleanup, nil
+}
+
+// legacySocialJSONPath 旧版好友与消息的单 JSON 存储（仅首次启用 SQLite 时作为导入来源）
+const legacySocialJSONPath = "data/social.json"
+
+// openSocialRepo 打开好友与消息的 SQLite 库（默认 data/petserver.db，可用 PETSERVER_DB_PATH 覆盖）。
+// 库不存在会自动建表；首次启用时把旧 data/social.json 原样搬进来，宠物号与未读消息都保持不变。
+func openSocialRepo() (*storage.SocialSQLite, error) {
+	path := envOrDefault("PETSERVER_DB_PATH", "data/petserver.db")
+	repo, err := storage.NewSocialSQLite(path, storage.DefaultFirstPetNo)
+	if err != nil {
+		return nil, fmt.Errorf("初始化好友消息库失败: %w", err)
+	}
+	if err := importLegacySocial(repo); err != nil {
+		_ = repo.Close()
+		return nil, err
+	}
+	log.Printf("[social] 好友与消息存储: SQLite %s", path)
+	return repo, nil
+}
+
+// importLegacySocial 把旧 JSON 状态导入 SQLite：只在「空库 + 有旧数据」时跑。
+// 旧文件原地保留（不改名、不删除）：回滚到旧版本二进制时它还能读到自己的宠物号；
+// 库文件意外丢失时，重启会从它重建，不至于把所有设备的号段归零。
+func importLegacySocial(repo *storage.SocialSQLite) error {
+	hasDevices, err := repo.HasDevices()
+	if err != nil {
+		return fmt.Errorf("检查好友库现状失败: %w", err)
+	}
+	if hasDevices {
+		return nil // 已经在用 SQLite，不碰运行期数据
+	}
+
+	if info, err := os.Stat(legacySocialJSONPath); err != nil || info.Size() == 0 {
+		return nil // 没有旧数据（全新部署）
+	}
+	legacy, err := storage.NewSocialStore(legacySocialJSONPath)
+	if err != nil {
+		return fmt.Errorf("初始化旧好友存储失败: %w", err)
+	}
+	state, err := legacy.Load()
+	if err != nil {
+		// 旧文件坏了就启动失败，交给部署脚本回滚，避免默默给老设备重发宠物号
+		return fmt.Errorf("读取旧好友数据失败: %w", err)
+	}
+	stats, err := repo.ImportSocialState(state)
+	if err != nil {
+		return fmt.Errorf("导入旧好友数据失败: %w", err)
+	}
+	if stats.Devices == 0 && stats.Friends == 0 && stats.Requests == 0 && stats.Messages == 0 && stats.History == 0 {
+		return nil // 旧文件本就是空的
+	}
+	log.Printf("[social] 已从 social.json 导入：设备 %d、好友 %d、申请 %d、消息 %d、留痕 %d（旧文件保留不动）",
+		stats.Devices, stats.Friends, stats.Requests, stats.Messages, stats.History)
+	return nil
 }

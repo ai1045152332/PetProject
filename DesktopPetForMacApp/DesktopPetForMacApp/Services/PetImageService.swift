@@ -30,12 +30,6 @@ struct PetImageLibrary: Decodable {
     let generationLimit: Int?
     let generationRemaining: Int?
 
-    func currentID(for state: CatAnimationState) -> String {
-        currentIds?[state.rawValue] ?? currentId
-    }
-    func history(for state: CatAnimationState) -> [PetImageRecord] {
-        images.filter { $0.state == nil || $0.state == "" || $0.state == state.rawValue }
-    }
     var selections: [String: String] {
         // States absent from the server are left untouched, preserving existing local uploads.
         var result = currentIds ?? [:]

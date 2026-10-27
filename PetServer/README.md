@@ -15,7 +15,7 @@ PetServer/
     ├── controller/                     # 控制器：解析请求、统一响应
     ├── router/router.go                # 路由注册
     ├── web/                            # 内置后台管理页与官网落地页（go:embed）
-    └── storage/heartbeat_store.go      # 存储：心跳 JSON Lines 落盘
+    └── storage/                        # 存储：心跳 JSON Lines 落盘；好友与消息走 SQLite（social_sqlite.go）
 ```
 
 ## 数据存储
@@ -30,6 +30,23 @@ PetServer/
 | `activation_codes.json` | 激活码（含设备绑定、有效期） | — |
 | `sessions.json` | 管理后台登录会话 | 重启后登录态不丢 |
 | `private_key.pem` | 载荷加密 RSA 私钥（0600） | 首次启动自动生成 |
+| `petserver.db` | **好友与宠物消息（SQLite）** | 设备注册/宠物号、好友关系、待处理申请、收件箱、对话留痕；WAL 模式，备份时 `*.db`/`*-wal`/`*-shm` 一起搬 |
+| `social.json` | 好友与消息的旧版单 JSON 存储 | 仅首次启用 SQLite 时作为导入来源，之后不再写入（保留不动，便于回滚与灾难恢复） |
+
+### 好友与消息为什么单独进了 SQLite
+
+这部分是典型的关系型数据（按接收设备查未读、按时间裁剪、只改一两行状态），其余仍用 JSON 整读整写。库只有一个写入进程（服务端自己），而 WAL 模式让读取不阻塞写入，所以下面这些方式都能本地直连：
+
+```bash
+cd PetServer && go run ./cmd/server        # 库落在 data/petserver.db（服务不用停）
+sqlite3 data/petserver.db ".tables"        # devices friends requests messages history history_ids meta
+sqlite3 -header -column data/petserver.db "select id,to_device,from_name,text,deliver_times from messages"
+sqlite3 -header -column data/petserver.db "select kind,from_no,to_no,status,datetime(sent_ms/1000,'unixepoch','localtime') sent, read_ms from history order by seq desc limit 20"
+```
+
+图形界面用 IDEA 的 Database 工具窗口（Data Source 选 SQLite，指向该文件，建议勾 Read-only 免得 GUI 抢写锁）。时间列统一存 UnixMilli 整数，上面用 `datetime(x/1000,'unixepoch','localtime')` 转成可读时间。线上库同样只能先 `rsync` 拉到本地再看（没有端口可连，也不建议对外开放）。
+
+环境变量：`PETSERVER_DB_PATH`（默认 `data/petserver.db`）。驱动用 `github.com/ncruces/go-sqlite3`（纯 Go + 内嵌 wasm），**不需要 CGO**，`GOOS=linux` 交叉编译与原有发布流程不变。
 
 发布物在 `dist/`（`latest.json` + 各版本 zip），由 `DesktopPetForMacApp/release.sh` 上传。
 

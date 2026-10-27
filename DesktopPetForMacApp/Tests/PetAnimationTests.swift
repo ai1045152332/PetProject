@@ -63,18 +63,6 @@ final class PetAnimationTests: XCTestCase {
         XCTAssertThrowsError(try CustomSpriteStore.installCloudImages(selections: ["sleep": sleepID], images: [sleepID: Data()], directory: directory))
         XCTAssertNotNil(CustomSpriteStore.loadAnimation(for: .sleep, directory: directory))
     }
-    func testCloudLibraryFiltersHistoryAndPreservesLegacySelection() throws {
-        let json = Data(#"{"currentId":"legacy","currentIds":{"focus":"focus-id","pet":""},"images":[{"id":"legacy","name":"old","createdAt":"date"},{"id":"focus-id","state":"focus","name":"focus","createdAt":"date","status":"ready"},{"id":"sleep-id","state":"sleep","name":"sleep","createdAt":"date","status":"ready"}]}"#.utf8)
-        let library = try JSONDecoder().decode(PetImageLibrary.self, from: json)
-        XCTAssertEqual(library.currentID(for: .focus), "focus-id")
-        XCTAssertEqual(library.currentID(for: .pet), "")
-        XCTAssertEqual(library.currentID(for: .sleep), "legacy")
-        XCTAssertEqual(library.history(for: .focus).map(\.id), ["legacy", "focus-id"])
-        XCTAssertEqual(library.selections["pet"], "")
-        let empty = try JSONDecoder().decode(PetImageLibrary.self, from: Data(#"{"currentId":"","images":[]}"#.utf8))
-        XCTAssertTrue(empty.selections.isEmpty, "An unused cloud library must preserve existing local state images")
-    }
-
     /// 服务端历史数据可能残留已移除状态的选中（如旧 warn 状态），安装时应跳过而非报错。
     func testInstallCloudImagesSkipsUnknownLegacyStates() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

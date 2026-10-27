@@ -601,9 +601,8 @@ final class PetViewModel: ObservableObject {
     
     /// 触发喝水提醒
     func triggerDrinkWaterReminder() {
-        // 弹窗未关闭时不弹下一次
-        if isWaterAlertShowing { return }
         lastWaterReminderTime = Date()
+        FileLogger.log("[DesktopPet] 喝水提醒触发（间隔 \(reminderInterval)min，上张卡片\(isWaterAlertShowing ? "仍未关闭，重新置顶" : "待新建")）")
         // 躲藏中只弹提醒窗，不把半截身子的宠物切回完整专注动画
         if animationState != .hide {
             isFacingLocked = true
@@ -611,6 +610,8 @@ final class PetViewModel: ObservableObject {
             // 提醒表现：播放专注动画 + 喝水弹窗气泡（原 warn 状态已合并进专注）
             playOneShot(.focus)
         }
+        // 上一张卡片还挂着时不再静默跳过：多因卡片被其它 App 压住、用户根本没看见，
+        // 若此处 return 会让后续每一轮提醒都被吞掉；交给视图层复用同一张卡片重新置顶
         onDrinkWaterReminder?()
     }
     

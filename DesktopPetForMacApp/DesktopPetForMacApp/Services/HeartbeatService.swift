@@ -18,6 +18,8 @@ final class HeartbeatService {
     private var started = false
     /// 宠物状态机（弱引用，用于上报当前状态）
     private weak var viewModel: PetViewModel?
+    /// 上一次已记录的失败原因：心跳每 60s 一次，网络持续不通时同一原因只记一条，避免日志被刷满
+    private var lastLoggedFailure = ""
 
     private init() {}
 
@@ -85,21 +87,36 @@ final class HeartbeatService {
         }
 
         URLSession.shared.dataTask(with: request) { data, response, error in
+            // 心跳成功路径不再写日志（每 60s 一条，量级过大），只保留「有变化」的异常信号
+            let failure: String?
             if let error = error {
-                FileLogger.log("[Heartbeat] 上报失败: \(error.localizedDescription)")
-                return
-            }
-            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                FileLogger.log("[Heartbeat] 上报成功")
-                // 心跳响应顺带回传宠物号、待展示好友消息与待处理好友申请
-                if let data {
-                    Task { @MainActor in HeartbeatService.consume(data) }
-                }
+                failure = "上报失败: \(error.localizedDescription)"
+            } else if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                failure = nil
             } else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                FileLogger.log("[Heartbeat] 上报异常，状态码: \(code)")
+                failure = "上报异常，状态码: \(code)"
+            }
+
+            if let failure {
+                Task { @MainActor in HeartbeatService.shared.recordFailure(failure) }
+                return
+            }
+
+            Task { @MainActor in
+                // 恢复成功后清空记录，下次再断开会重新记一条
+                HeartbeatService.shared.lastLoggedFailure = ""
+                // 心跳响应顺带回传宠物号、待展示好友消息与待处理好友申请
+                if let data { HeartbeatService.consume(data) }
             }
         }.resume()
+    }
+
+    /// 同一失败原因连续出现时只记首条、原因变化时再记新的一条（断网时不会被 60s 一条刷满日志）
+    private func recordFailure(_ message: String) {
+        guard message != lastLoggedFailure else { return }
+        lastLoggedFailure = message
+        FileLogger.log("[Heartbeat] \(message)")
     }
 
     /// 解析心跳响应：缓存宠物号，并把好友消息用常驻卡片展示、好友申请用申请卡询问（于 MainActor 上调用）

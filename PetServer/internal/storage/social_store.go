@@ -1,5 +1,6 @@
-// social_store.go 好友与宠物消息的本地持久化
-// 单 JSON 文件整体读写（量级小、开销可忽略），沿用仓库内先写临时文件再 rename 的原子替换写法。
+// social_store.go 旧版好友与消息的单 JSON 存储
+// 运行期读写已由 SocialSQLite 接管，这里只保留作为「首次导入的来源」与「回滚到文件存储」的出口，
+// 不再随业务扩展。沿用仓库内先写临时文件再 rename 的原子替换写法。
 package storage
 
 import (

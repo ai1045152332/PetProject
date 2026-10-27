@@ -1,6 +1,7 @@
 // social_service.go 好友与宠物消息业务
 // 职责：给设备分配稳定宠物号、维护好友关系（加好友需对方同意，同意后双向互加）、
-// 投递/拉取消息（心跳一次性取走，接收端看完关卡后确认已读供后台留痕）。
+// 投递/拉取消息（下发后等接收端看完关卡确认已读，未确认按间隔重投几次）。
+// 本文件只写业务规则与分支，数据读写一律走 storage.SocialRepo（当前为 SQLite 实现）。
 package service
 
 import (
@@ -9,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +18,11 @@ import (
 	"petserver/internal/storage"
 )
 
-// 宠物号、消息与好友申请相关的边界常量
+// 消息与好友申请相关的边界常量
 const (
-	firstPetNo        = int64(100001)    // 宠物号起始水位（自增分配，贴近 QQ 早期号段的观感、便于口头传播）
-	maxInboxPerDevice = 50               // 每设备待拉取/待确认消息上限（超出丢弃最旧的）
+	maxInboxPerDevice = 50               // 每设备收件箱待确认消息上限（超出丢弃最旧的）
 	maxMessageRunes   = 200              // 单条消息文本长度上限（按字符计）
-	maxHistoryRecords = 1000             // 对话留痕全局上限（超出丢弃最旧的，供后台查看）
+	maxHistoryRecords = 1000             // 对话留痕保留条数（超出丢弃最旧的，供后台查看）
 	maxPendingReqs    = 20               // 全局待处理好友申请上限（超出丢弃最旧的）
 	redeliverAfter    = 10 * time.Minute // 已下发但未确认已读的重投间隔（跟着心跳节奏走）
 	maxDeliverTimes   = 3                // 同一条消息最多下发次数（避免无限弹卡）
@@ -47,15 +46,22 @@ const (
 	FriendRequestMutual  = "mutual"  // 对方也申请过，已直接双向成为好友
 )
 
+// 好友申请留痕的三种状态
+const (
+	requestStatusPending  = "pending"
+	requestStatusAccepted = "accepted"
+	requestStatusRejected = "rejected"
+)
+
 // SocialService 好友与消息服务
 type SocialService struct {
-	mu    sync.Mutex // 保护「读-改-写」整体状态的一致性
-	store *storage.SocialStore
+	mu   sync.Mutex // 串行化业务动作：申请/同意、下发/已读都是成对读改写
+	repo storage.SocialRepo
 }
 
 // NewSocialService 创建好友与消息服务
-func NewSocialService(store *storage.SocialStore) *SocialService {
-	return &SocialService{store: store}
+func NewSocialService(repo storage.SocialRepo) *SocialService {
+	return &SocialService{repo: repo}
 }
 
 // validDevice 判断 deviceId 是否可用于好友/消息（排除空与本地占位）
@@ -64,7 +70,7 @@ func validSocialDevice(deviceID string) bool {
 }
 
 // EnsureRegistered 确保设备已注册：新设备分配自增宠物号，刷新展示信息与最近在线时间。
-// 返回该设备的宠物号；deviceID 无效时返回 0（该设备暂不参与好友/消息）。
+// 返回该设备的宠物号；deviceID 无效或存储异常时返回 0（该设备暂不参与好友/消息）。
 // 心跳每次上报都会调用，设置面板「刷新」也会调用，故宠物号在未心跳时也能即时拿到。
 func (s *SocialService) EnsureRegistered(deviceID, hostname, petName string) int64 {
 	if !validSocialDevice(deviceID) {
@@ -74,37 +80,21 @@ func (s *SocialService) EnsureRegistered(deviceID, hostname, petName string) int
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	// 先看一眼是否新设备，只为把「分配宠物号」这条日志留在业务层
+	reg, err := s.repo.DeviceByID(deviceID)
+	if err != nil {
+		log.Printf("[social] 读取状态失败(注册前查): %v", err)
+		return 0
+	}
+	petNo, err := s.repo.Register(deviceID, hostname, petName, time.Now())
 	if err != nil {
 		log.Printf("[social] 读取状态失败(注册): %v", err)
 		return 0
 	}
-
-	now := time.Now()
-	reg, ok := state.Registry[deviceID]
-	if !ok {
-		state.Counter++
-		petNo := firstPetNo + state.Counter - 1
-		reg = &model.PetRegistration{
-			DeviceID:    deviceID,
-			PetNo:       petNo,
-			FirstSeenAt: now,
-		}
-		state.Registry[deviceID] = reg
+	if reg == nil {
 		log.Printf("[social] 新设备注册，分配宠物号 %d", petNo)
 	}
-	if petName != "" {
-		reg.PetName = petName
-	}
-	if hostname != "" {
-		reg.Hostname = hostname
-	}
-	reg.LastSeenAt = now
-
-	if err := s.store.Save(state); err != nil {
-		log.Printf("[social] 保存状态失败(注册): %v", err)
-	}
-	return reg.PetNo
+	return petNo
 }
 
 // RequestFriend 发起加好友申请：ownerDeviceID 申请添加宠物号 petNo 为好友。
@@ -118,51 +108,77 @@ func (s *SocialService) RequestFriend(ownerDeviceID string, petNo int64) ([]mode
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	now := time.Now()
+	owner, err := s.repo.DeviceByID(ownerDeviceID)
 	if err != nil {
 		return nil, "", err
 	}
-	owner, ok := state.Registry[ownerDeviceID]
-	if !ok {
+	if owner == nil {
 		return nil, "", ErrSocialInvalidDevice
 	}
 	if owner.PetNo == petNo {
 		return nil, "", ErrSocialAddSelf
 	}
-	target, ok := findRegByPetNo(state, petNo)
-	if !ok {
+	target, err := s.repo.DeviceByPetNo(petNo)
+	if err != nil {
+		return nil, "", err
+	}
+	if target == nil {
 		return nil, "", ErrSocialPetNotFound
 	}
 
 	// 双向已是好友：幂等成功，不重复发申请
-	if isFriendOf(state, ownerDeviceID, petNo) && isFriendOf(state, target.DeviceID, owner.PetNo) {
-		return cloneFriends(state.Friends[ownerDeviceID]), FriendRequestMutual, nil
+	mine, err := s.repo.IsFriend(ownerDeviceID, petNo)
+	if err != nil {
+		return nil, "", err
+	}
+	theirs, err := s.repo.IsFriend(target.DeviceID, owner.PetNo)
+	if err != nil {
+		return nil, "", err
+	}
+	if mine && theirs {
+		friends, err := s.repo.Friends(ownerDeviceID)
+		return friends, FriendRequestMutual, err
 	}
 
 	// 对向申请待处理（对方也加过我方）：本次视为互相同意，直接双向互加
-	if _, req, ok := findPendingRequest(state, owner.PetNo, target.DeviceID, 0); ok {
-		delete(state.Requests, req.FromDevice)
-		markHistoryStatus(state, req.ID, "accepted", time.Now())
-		addMutualFriendship(state, owner, target)
-		if err := s.store.Save(state); err != nil {
+	_, opposed, err := s.repo.FindRequest(owner.PetNo, target.DeviceID, 0)
+	if err != nil {
+		return nil, "", err
+	}
+	if opposed != nil {
+		if err := s.repo.DropRequest(opposed.FromDevice); err != nil {
+			return nil, "", err
+		}
+		if err := s.repo.MarkRequestHandled(opposed.ID, requestStatusAccepted, now); err != nil {
+			return nil, "", err
+		}
+		if err := s.repo.MakeMutualFriends(owner, target, now); err != nil {
 			return nil, "", err
 		}
 		log.Printf("[social] 双向申请自动成为好友：%d(%s) ↔ %d(%s)", owner.PetNo, owner.PetName, target.PetNo, target.PetName)
-		return cloneFriends(state.Friends[ownerDeviceID]), FriendRequestMutual, nil
+		friends, err := s.repo.Friends(ownerDeviceID)
+		return friends, FriendRequestMutual, err
 	}
 
 	// 已有相同方向的待处理申请：幂等，不重复发
-	if _, _, ok := findPendingRequest(state, target.PetNo, ownerDeviceID, 0); !ok {
+	_, pending, err := s.repo.FindRequest(target.PetNo, ownerDeviceID, 0)
+	if err != nil {
+		return nil, "", err
+	}
+	if pending == nil {
 		req := &model.FriendRequest{
 			ID:         newSocialID(),
 			FromDevice: ownerDeviceID,
 			FromPetNo:  owner.PetNo,
 			FromName:   owner.PetName,
 			ToPetNo:    target.PetNo,
-			CreatedAt:  time.Now(),
+			CreatedAt:  now,
 		}
-		state.Requests[ownerDeviceID] = req
-		state.History = appendHistory(state.History, model.PetConversationRecord{
+		if err := s.repo.PutRequest(req); err != nil {
+			return nil, "", err
+		}
+		if err := s.repo.AppendHistory(model.PetConversationRecord{
 			Kind:       model.ConversationKindRequest,
 			FromPetNo:  owner.PetNo,
 			FromName:   owner.PetName,
@@ -172,18 +188,20 @@ func (s *SocialService) RequestFriend(ownerDeviceID string, petNo int64) ([]mode
 			ToHost:     target.Hostname,
 			ToDeviceID: target.DeviceID,
 			IDs:        []string{req.ID},
-			Status:     "pending",
+			Status:     requestStatusPending,
 			Text:       fmt.Sprintf("%s(#%d) 申请加你为好友", owner.PetName, owner.PetNo),
 			SentAt:     req.CreatedAt,
-		})
-		trimPendingRequests(state)
+		}, maxHistoryRecords); err != nil {
+			return nil, "", err
+		}
+		if err := s.repo.TrimRequests(maxPendingReqs); err != nil {
+			return nil, "", err
+		}
+		log.Printf("[social] 设备 %s 向 %d(%s) 发起好友申请（待对方同意）", maskDeviceID(ownerDeviceID), target.PetNo, target.PetName)
 	}
 
-	if err := s.store.Save(state); err != nil {
-		return nil, "", err
-	}
-	log.Printf("[social] 设备 %s 向 %d(%s) 发起好友申请（待对方同意）", maskDeviceID(ownerDeviceID), target.PetNo, target.PetName)
-	return cloneFriends(state.Friends[ownerDeviceID]), FriendRequestPending, nil
+	friends, err := s.repo.Friends(ownerDeviceID)
+	return friends, FriendRequestPending, err
 }
 
 // PendingRequests 拉取发给某设备的全部待处理好友申请（只读：不清除，直到对方同意/拒绝）。
@@ -196,36 +214,29 @@ func (s *SocialService) PendingRequests(deviceID string) []model.FriendRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	self, err := s.repo.DeviceByID(deviceID)
+	if err != nil || self == nil {
+		return nil
+	}
+	reqs, err := s.repo.RequestsTo(self.PetNo)
 	if err != nil {
+		log.Printf("[social] 读取待处理申请失败: %v", err)
 		return nil
 	}
-	self, ok := state.Registry[deviceID]
-	if !ok {
+	if len(reqs) == 0 {
 		return nil
 	}
-	var out []model.FriendRequest
-	for _, req := range state.Requests {
-		if req == nil {
-			continue
-		}
-		if req.ToPetNo != self.PetNo || req.FromDevice == deviceID {
-			continue // 只收发给自己的申请
-		}
-		out = append(out, *req)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
+	return reqs
 }
 
 // AcceptFriendRequest 同意发给本设备的好友申请：同意后双方互为好友，返回本设备的好友列表。
 func (s *SocialService) AcceptFriendRequest(handlerDeviceID string, fromPetNo int64) ([]model.FriendEntry, error) {
-	return s.handleFriendRequest(handlerDeviceID, fromPetNo, "accepted")
+	return s.handleFriendRequest(handlerDeviceID, fromPetNo, requestStatusAccepted)
 }
 
 // RejectFriendRequest 拒绝对方的好友申请（不建立好友关系）。
 func (s *SocialService) RejectFriendRequest(handlerDeviceID string, fromPetNo int64) ([]model.FriendEntry, error) {
-	return s.handleFriendRequest(handlerDeviceID, fromPetNo, "rejected")
+	return s.handleFriendRequest(handlerDeviceID, fromPetNo, requestStatusRejected)
 }
 
 // handleFriendRequest 同意/拒绝的共用处理：定位待处理申请，仅同意时双向互加
@@ -237,36 +248,48 @@ func (s *SocialService) handleFriendRequest(handlerDeviceID string, fromPetNo in
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	now := time.Now()
+	handler, err := s.repo.DeviceByID(handlerDeviceID)
 	if err != nil {
 		return nil, err
 	}
-	handler, ok := state.Registry[handlerDeviceID]
-	if !ok {
+	if handler == nil {
 		return nil, ErrSocialInvalidDevice
 	}
-	requesterDev, req, ok := findPendingRequest(state, handler.PetNo, "", fromPetNo)
-	if !ok {
+	_, req, err := s.repo.FindRequest(handler.PetNo, "", fromPetNo)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
 		return nil, ErrSocialNoRequest
 	}
 
-	now := time.Now()
-	markHistoryStatus(state, req.ID, status, now)
-	delete(state.Requests, requesterDev) // 处理完的申请不再占位（结果已落留痕）
-
-	if status == "accepted" {
-		requester, ok := state.Registry[requesterDev]
-		if !ok {
-			return nil, ErrSocialPetNotFound
-		}
-		addMutualFriendship(state, handler, requester)
+	if err := s.repo.MarkRequestHandled(req.ID, status, now); err != nil {
+		return nil, err
+	}
+	if err := s.repo.DropRequest(req.FromDevice); err != nil { // 处理完的申请不再占位（结果已落留痕）
+		return nil, err
 	}
 
-	if err := s.store.Save(state); err != nil {
+	if status == requestStatusAccepted {
+		requester, err := s.repo.DeviceByID(req.FromDevice)
+		if err != nil {
+			return nil, err
+		}
+		if requester == nil {
+			return nil, ErrSocialPetNotFound
+		}
+		if err := s.repo.MakeMutualFriends(handler, requester, now); err != nil {
+			return nil, err
+		}
+	}
+
+	friends, err := s.repo.Friends(handlerDeviceID)
+	if err != nil {
 		return nil, err
 	}
 	log.Printf("[social] 设备 %s %s 了 %d 的好友申请", maskDeviceID(handlerDeviceID), status, fromPetNo)
-	return cloneFriends(state.Friends[handlerDeviceID]), nil
+	return friends, nil
 }
 
 // ListFriends 返回某设备的好友列表
@@ -278,11 +301,7 @@ func (s *SocialService) ListFriends(ownerDeviceID string) ([]model.FriendEntry, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
-	if err != nil {
-		return nil, err
-	}
-	return cloneFriends(state.Friends[ownerDeviceID]), nil
+	return s.repo.Friends(ownerDeviceID)
 }
 
 // RemoveFriend 删除好友：同意后是双向关系，删除也双向解除，并清掉双方间的待处理申请。
@@ -295,27 +314,35 @@ func (s *SocialService) RemoveFriend(ownerDeviceID string, petNo int64) ([]model
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	owner, err := s.repo.DeviceByID(ownerDeviceID)
 	if err != nil {
 		return nil, err
 	}
-	ok := state.Registry[ownerDeviceID] != nil
-	state.Friends[ownerDeviceID] = filterFriends(state.Friends[ownerDeviceID], petNo)
-	if target, found := findRegByPetNo(state, petNo); found {
-		state.Friends[target.DeviceID] = filterFriends(state.Friends[target.DeviceID], ownerPetNo(state.Registry[ownerDeviceID]))
-		clearRequestsBetween(state, ownerDeviceID, target.DeviceID)
-	}
-	if err := s.store.Save(state); err != nil {
+	target, err := s.repo.DeviceByPetNo(petNo)
+	if err != nil {
 		return nil, err
 	}
-	if ok {
+
+	// 对方设备已不存在时只解自己这一侧，避免删不掉历史残留的好友条目
+	otherDeviceID, selfPetNo := "", int64(0)
+	if target != nil {
+		otherDeviceID, selfPetNo = target.DeviceID, petNoOf(owner)
+	}
+	if err := s.repo.DropFriendship(ownerDeviceID, petNo, otherDeviceID, selfPetNo); err != nil {
+		return nil, err
+	}
+	if target != nil {
+		if err := s.repo.DropRequestsBetween(ownerDeviceID, petNoOf(owner), target.DeviceID, target.PetNo); err != nil {
+			return nil, err
+		}
 		log.Printf("[social] 设备 %s 删除好友 %d（双向解除）", maskDeviceID(ownerDeviceID), petNo)
 	}
-	return cloneFriends(state.Friends[ownerDeviceID]), nil
+
+	return s.repo.Friends(ownerDeviceID)
 }
 
-// SendMessage 由 fromDeviceID 给宠物号 toPetNo 发一条消息，落到对方收件箱等待其心跳拉取。
-// 要求双方已互加好友（需对方同意过）；接收方离线时消息暂存云端本地。
+// SendMessage 由 fromDeviceID 给宠物号 toPetNo 发一条消息，落到对方收件箱等待其心跳拉取展示。
+// 要求双方已互加好友（需对方同意过）；接收方离线时消息暂存云端。
 func (s *SocialService) SendMessage(fromDeviceID string, toPetNo int64, text string) error {
 	if !validSocialDevice(fromDeviceID) {
 		return ErrSocialInvalidDevice
@@ -331,20 +358,30 @@ func (s *SocialService) SendMessage(fromDeviceID string, toPetNo int64, text str
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	sender, err := s.repo.DeviceByID(fromDeviceID)
 	if err != nil {
 		return err
 	}
-	sender, ok := state.Registry[fromDeviceID]
-	if !ok {
+	if sender == nil {
 		return ErrSocialInvalidDevice
 	}
-	target, ok := findRegByPetNo(state, toPetNo)
-	if !ok {
+	target, err := s.repo.DeviceByPetNo(toPetNo)
+	if err != nil {
+		return err
+	}
+	if target == nil {
 		return ErrSocialPetNotFound
 	}
 	// 好友校验：双方都在彼此好友列表里才允许发（同意后的互加状态）
-	if !isFriendOf(state, fromDeviceID, toPetNo) || !isFriendOf(state, target.DeviceID, sender.PetNo) {
+	mine, err := s.repo.IsFriend(fromDeviceID, toPetNo)
+	if err != nil {
+		return err
+	}
+	theirs, err := s.repo.IsFriend(target.DeviceID, sender.PetNo)
+	if err != nil {
+		return err
+	}
+	if !mine || !theirs {
 		return ErrSocialNotFriend
 	}
 
@@ -356,15 +393,13 @@ func (s *SocialService) SendMessage(fromDeviceID string, toPetNo int64, text str
 		Text:      text,
 		SentAt:    now,
 	}
-	inbox := append(state.Inbox[target.DeviceID], msg)
-	if len(inbox) > maxInboxPerDevice { // 超出上限丢弃最旧，保证有界
-		inbox = inbox[len(inbox)-maxInboxPerDevice:]
+	if err := s.repo.PushMessage(target.DeviceID, msg, maxInboxPerDevice); err != nil {
+		return err
 	}
-	state.Inbox[target.DeviceID] = inbox
 
 	// 对话留痕：这里持久保留一份供管理后台查看好友间对话，
 	// 并记下消息 ID 以便接收端关卡时回填下发/已读时间
-	state.History = appendHistory(state.History, model.PetConversationRecord{
+	if err := s.repo.AppendHistory(model.PetConversationRecord{
 		Kind:       model.ConversationKindMessage,
 		FromPetNo:  sender.PetNo,
 		FromName:   sender.PetName,
@@ -376,29 +411,34 @@ func (s *SocialService) SendMessage(fromDeviceID string, toPetNo int64, text str
 		IDs:        []string{msg.ID},
 		Text:       text,
 		SentAt:     now,
-	})
-
-	if err := s.store.Save(state); err != nil {
+	}, maxHistoryRecords); err != nil {
 		return err
 	}
+
 	log.Printf("[social] %d → %d 消息已投递（对方下次心跳拉取）", sender.PetNo, target.PetNo)
 	return nil
 }
 
 // PeekPendingMessages 只读预览某设备待展示消息：收件箱里从未下发过的，加上到点该重投的。
-// 不改动状态，供心跳先下发、确认deviceId 有效后再登记下发时间。
+// 不改动状态，供心跳先下发、确认设备有效后再登记下发时间。
 func (s *SocialService) PeekPendingMessages(deviceID string) []model.PetMessage {
 	if !validSocialDevice(deviceID) {
 		return nil
 	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	msgs, err := s.repo.PendingMessages(deviceID, time.Now(), storage.PendingQuery{
+		RedeliverAfter:  redeliverAfter,
+		MaxDeliverTimes: maxDeliverTimes,
+		TTL:             deliveredTTL,
+	})
 	if err != nil {
+		log.Printf("[social] 读取待下发消息失败: %v", err)
 		return nil
 	}
-	return pendingMessages(state, deviceID, time.Now())
+	return msgs
 }
 
 // DeliverMessages 登记这批消息为「已下发、待确认已读」：收件箱保留原样，
@@ -411,26 +451,18 @@ func (s *SocialService) DeliverMessages(deviceID string, msgs []model.PetMessage
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
-	if err != nil {
-		return
-	}
-	if state.Delivered[deviceID] == nil {
-		state.Delivered[deviceID] = map[string]model.DeliveredMessage{}
+	ids := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		ids = append(ids, m.ID)
 	}
 	now := time.Now()
-	for _, msg := range msgs {
-		d := state.Delivered[deviceID][msg.ID]
-		d.Message, d.DeliveredAt, d.Times = msg, now, d.Times+1
-		state.Delivered[deviceID][msg.ID] = d
-	}
-	if len(state.Delivered[deviceID]) > maxInboxPerDevice { // 长期未确认时丢弃最早下发的，保证有界
-		state.Delivered[deviceID] = dropOldestDelivered(state.Delivered[deviceID], maxInboxPerDevice)
-	}
-	markHistoryDelivered(state, deviceID, msgs, now)
-
-	if err := s.store.Save(state); err != nil {
+	// 收件箱与下发状态同表同行，行数已被 PushMessage 的每设备上限约束，无需再单独裁剪
+	if err := s.repo.MarkDelivered(deviceID, ids, now); err != nil {
 		log.Printf("[social] 保存状态失败(登记下发): %v", err)
+		return
+	}
+	if err := s.repo.MarkHistoryDelivered(deviceID, ids, now); err != nil {
+		log.Printf("[social] 保存状态失败(登记下发留痕): %v", err)
 	}
 }
 
@@ -441,11 +473,17 @@ func (s *SocialService) MarkMessagesRead(deviceID string, ids []string) (int, er
 	if !validSocialDevice(deviceID) {
 		return 0, ErrSocialInvalidDevice
 	}
-	wanted := make(map[string]struct{}, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	wanted := make([]string, 0, len(ids))
 	for _, id := range ids {
-		if id != "" {
-			wanted[id] = struct{}{}
+		if id == "" {
+			continue
 		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		wanted = append(wanted, id)
 	}
 	if len(wanted) == 0 {
 		return 0, nil
@@ -454,71 +492,15 @@ func (s *SocialService) MarkMessagesRead(deviceID string, ids []string) (int, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
-	if err != nil {
+	if err := s.repo.DeleteMessages(deviceID, wanted); err != nil {
 		return 0, err
 	}
-
-	kept := make([]model.PetMessage, 0, len(state.Inbox[deviceID]))
-	for _, msg := range state.Inbox[deviceID] {
-		if _, hit := wanted[msg.ID]; !hit {
-			kept = append(kept, msg)
-		}
-	}
-	if len(kept) == 0 {
-		delete(state.Inbox, deviceID)
-	} else {
-		state.Inbox[deviceID] = kept
-	}
-	for id := range wanted {
-		delete(state.Delivered[deviceID], id)
-	}
-	if len(state.Delivered[deviceID]) == 0 {
-		delete(state.Delivered, deviceID)
-	}
-
-	hit := markHistoryRead(state, deviceID, wanted, time.Now())
-	if err := s.store.Save(state); err != nil {
+	hit, err := s.repo.MarkHistoryRead(deviceID, wanted, time.Now())
+	if err != nil {
 		return 0, err
 	}
 	log.Printf("[social] 设备 %s 确认已读 %d 条消息", maskDeviceID(deviceID), hit)
 	return hit, nil
-}
-
-// pendingMessages 汇总该设备本次应下发的消息：从未下发过的 + 过了重投间隔仍未确认的。
-// 超过保留龄或下发次数达上限的没有继续打扰的必要，不再下发（留痕仍在，后台可查未读）。
-func pendingMessages(state model.SocialState, deviceID string, now time.Time) []model.PetMessage {
-	var out []model.PetMessage
-	for _, msg := range state.Inbox[deviceID] {
-		d, seen := state.Delivered[deviceID][msg.ID]
-		switch {
-		case !seen:
-			out = append(out, msg) // 首次下发
-		case now.Sub(msg.SentAt) > deliveredTTL, d.Times >= maxDeliverTimes:
-			// 没人看或已打扰到位，不再弹卡
-		case now.Sub(d.DeliveredAt) >= redeliverAfter:
-			out = append(out, msg) // 到点重投
-		}
-	}
-	return out
-}
-
-// dropOldestDelivered 按下发时间保留最近 limit 条，丢弃更早的占位
-func dropOldestDelivered(in map[string]model.DeliveredMessage, limit int) map[string]model.DeliveredMessage {
-	if len(in) <= limit {
-		return in
-	}
-	all := make([]model.DeliveredMessage, 0, len(in))
-	for _, d := range in {
-		all = append(all, d)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].DeliveredAt.After(all[j].DeliveredAt) })
-
-	out := make(map[string]model.DeliveredMessage, limit)
-	for _, d := range all[:limit] {
-		out[d.Message.ID] = d
-	}
-	return out
 }
 
 // Conversations 返回全部对话留痕（旧 → 新），供管理后台展示；无记录时返回空切片。
@@ -526,13 +508,11 @@ func (s *SocialService) Conversations() []model.PetConversationRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
+	out, err := s.repo.History(maxHistoryRecords)
 	if err != nil {
 		log.Printf("[social] 读取状态失败(对话记录): %v", err)
 		return []model.PetConversationRecord{}
 	}
-	out := make([]model.PetConversationRecord, len(state.History))
-	copy(out, state.History)
 	return out
 }
 
@@ -541,12 +521,7 @@ func (s *SocialService) ClearConversations() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.Load()
-	if err != nil {
-		return err
-	}
-	state.History = []model.PetConversationRecord{}
-	if err := s.store.Save(state); err != nil {
+	if err := s.repo.ClearHistory(); err != nil {
 		return err
 	}
 	log.Printf("[social] 对话记录已清空")
@@ -559,217 +534,23 @@ func (s *SocialService) PetNoFor(deviceID string) int64 {
 	if !validSocialDevice(deviceID) {
 		return 0
 	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state, err := s.store.Load()
-	if err != nil {
-		return 0
-	}
-	if reg, ok := state.Registry[deviceID]; ok && reg != nil {
-		return reg.PetNo
-	}
-	return 0
-}
 
-// findRegByPetNo 按宠物号查注册信息（量级小，直接遍历）
-func findRegByPetNo(state model.SocialState, petNo int64) (*model.PetRegistration, bool) {
-	for _, r := range state.Registry {
-		if r != nil && r.PetNo == petNo {
-			return r, true
-		}
-	}
-	return nil, false
-}
-
-// cloneFriends 复制好友列表，避免调用方修改内部状态；nil 归一为空切片
-func cloneFriends(in []model.FriendEntry) []model.FriendEntry {
-	out := make([]model.FriendEntry, len(in))
-	copy(out, in)
-	return out
-}
-
-// isFriendOf 某设备好友列表中是否有该宠物号
-func isFriendOf(state model.SocialState, deviceID string, petNo int64) bool {
-	for _, f := range state.Friends[deviceID] {
-		if f.PetNo == petNo {
-			return true
-		}
-	}
-	return false
-}
-
-// filterFriends 去掉列表中指定宠物号的条目
-func filterFriends(in []model.FriendEntry, petNo int64) []model.FriendEntry {
-	kept := make([]model.FriendEntry, 0, len(in))
-	for _, f := range in {
-		if f.PetNo != petNo {
-			kept = append(kept, f)
-		}
-	}
-	return kept
-}
-
-// ownerPetNo 取注册信息的宠物号；未注册时返回 0（只能匹配到无效好友号）
-func ownerPetNo(reg *model.PetRegistration) int64 {
-	if reg == nil {
+	reg, err := s.repo.DeviceByID(deviceID)
+	if err != nil || reg == nil {
 		return 0
 	}
 	return reg.PetNo
 }
 
-// addMutualFriendship 双向互加：双方好友列表各补上对方（已有则不重复）
-func addMutualFriendship(state model.SocialState, a, b *model.PetRegistration) {
-	now := time.Now()
-	for _, pair := range []struct {
-		deviceID    string
-		self, other *model.PetRegistration
-	}{
-		{a.DeviceID, a, b},
-		{b.DeviceID, b, a},
-	} {
-		if isFriendOf(state, pair.deviceID, pair.other.PetNo) {
-			continue
-		}
-		state.Friends[pair.deviceID] = append(state.Friends[pair.deviceID], model.FriendEntry{
-			PetNo:   pair.other.PetNo,
-			PetName: pair.other.PetName,
-			AddedAt: now,
-		})
+// petNoOf 取注册信息的宠物号；未注册时返回 0（只会匹配到无效好友号）
+func petNoOf(reg *model.PetRegistration) int64 {
+	if reg == nil {
+		return 0
 	}
-}
-
-// findPendingRequest 查待处理的好友申请，返回 map 键（发起设备）与申请本体。
-// toPetNo 必匹配；fromDevice / fromPetNo 传空或 0 时不作限定。
-func findPendingRequest(state model.SocialState, toPetNo int64, fromDevice string, fromPetNo int64) (string, *model.FriendRequest, bool) {
-	for dev, req := range state.Requests {
-		if req == nil || req.ToPetNo != toPetNo {
-			continue
-		}
-		if fromDevice != "" && req.FromDevice != fromDevice {
-			continue
-		}
-		if fromPetNo != 0 && req.FromPetNo != fromPetNo {
-			continue
-		}
-		return dev, req, true
-	}
-	return "", nil, false
-}
-
-// clearRequestsBetween 清掉两台设备之间双向的待处理申请（删好友时一并失效）
-func clearRequestsBetween(state model.SocialState, deviceA, deviceB string) {
-	for dev, req := range state.Requests {
-		if req == nil {
-			continue
-		}
-		if (req.FromDevice == deviceA && req.ToPetNo == ownerPetNo(state.Registry[deviceB])) ||
-			(req.FromDevice == deviceB && req.ToPetNo == ownerPetNo(state.Registry[deviceA])) {
-			delete(state.Requests, dev)
-		}
-	}
-}
-
-// trimPendingRequests 待处理申请全局限流：超出上限丢弃最旧的（按发起设备写入顺序）
-func trimPendingRequests(state model.SocialState) {
-	for len(state.Requests) > maxPendingReqs {
-		var oldestKey string
-		var oldest time.Time
-		for dev, req := range state.Requests {
-			if req == nil {
-				delete(state.Requests, dev)
-				break
-			}
-			if oldestKey == "" || req.CreatedAt.Before(oldest) {
-				oldestKey, oldest = dev, req.CreatedAt
-			}
-		}
-		if oldestKey == "" {
-			return
-		}
-		delete(state.Requests, oldestKey)
-	}
-}
-
-// appendHistory 追加一条对话留痕并保持有界（超出上限丢弃最旧的）
-func appendHistory(history []model.PetConversationRecord, rec model.PetConversationRecord) []model.PetConversationRecord {
-	history = append(history, rec)
-	if len(history) > maxHistoryRecords { // 超出上限丢弃最旧，保证有界
-		history = history[len(history)-maxHistoryRecords:]
-	}
-	return history
-}
-
-// markHistoryStatus 按申请 ID 回写留痕状态与处理时间
-func markHistoryStatus(state model.SocialState, requestID, status string, at time.Time) {
-	for i := range state.History {
-		if state.History[i].Kind != model.ConversationKindRequest {
-			continue
-		}
-		if !historyHasID(state.History[i], requestID) {
-			continue
-		}
-		state.History[i].Status = status
-		state.History[i].HandledAt = at
-		return
-	}
-}
-
-// markHistoryDelivered 记下本批消息的下发时间（接收端尚未确认已读时的中间态）
-func markHistoryDelivered(state model.SocialState, deviceID string, msgs []model.PetMessage, at time.Time) {
-	if len(msgs) == 0 {
-		return
-	}
-	ids := make(map[string]struct{}, len(msgs))
-	for _, m := range msgs {
-		ids[m.ID] = struct{}{}
-	}
-	for i := range state.History {
-		if state.History[i].ToDeviceID != deviceID {
-			continue
-		}
-		if state.History[i].DeliveredAt.IsZero() && historyHasAnyID(state.History[i], ids) {
-			state.History[i].DeliveredAt = at
-		}
-	}
-}
-
-// markHistoryRead 按消息 ID 给留痕盖已读时间，返回命中条数
-func markHistoryRead(state model.SocialState, deviceID string, ids map[string]struct{}, at time.Time) int {
-	hit := 0
-	for i := range state.History {
-		if state.History[i].Kind != model.ConversationKindMessage || !state.History[i].ReadAt.IsZero() {
-			continue
-		}
-		if deviceID != "" && state.History[i].ToDeviceID != deviceID {
-			continue
-		}
-		if !historyHasAnyID(state.History[i], ids) {
-			continue
-		}
-		state.History[i].ReadAt = at
-		hit++
-	}
-	return hit
-}
-
-// historyHasID 留痕是否关联了指定 ID
-func historyHasID(rec model.PetConversationRecord, id string) bool {
-	for _, v := range rec.IDs {
-		if v == id {
-			return true
-		}
-	}
-	return false
-}
-
-// historyHasAnyID 留痕是否关联了给定集合中的任一 ID
-func historyHasAnyID(rec model.PetConversationRecord, ids map[string]struct{}) bool {
-	for _, v := range rec.IDs {
-		if _, ok := ids[v]; ok {
-			return true
-		}
-	}
-	return false
+	return reg.PetNo
 }
 
 // newSocialID 生成 32 位 hex 的唯一 ID（消息与好友申请共用，风格与图片对象 ID 一致）

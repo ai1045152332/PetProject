@@ -3,7 +3,6 @@ package service
 
 import (
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,11 +12,13 @@ import (
 
 func newTestSocialService(t *testing.T) *SocialService {
 	t.Helper()
-	store, err := storage.NewSocialStore(filepath.Join(t.TempDir(), "social.json"))
+	// 内存库：每个用例一个独立库，既跑到真实 SQL，又不往工作目录落文件
+	repo, err := storage.NewSocialSQLite(":memory:", storage.DefaultFirstPetNo)
 	if err != nil {
-		t.Fatalf("创建存储失败: %v", err)
+		t.Fatalf("创建 SQLite 仓库失败: %v", err)
 	}
-	return NewSocialService(store)
+	t.Cleanup(func() { _ = repo.Close() })
+	return NewSocialService(repo)
 }
 
 func TestEnsureRegisteredAssignsStableIncrementalPetNo(t *testing.T) {
@@ -64,8 +65,8 @@ func TestRequestFriendWaitsForConsent(t *testing.T) {
 	if _, status, err := svc.RequestFriend("device-owner", target); err != nil || status != FriendRequestPending {
 		t.Fatalf("重复申请应幂等返回 pending，得到 status=%s err=%v", status, err)
 	}
-	if reqs := svc.PendingRequests("device-target"); len(reqs) != 1 {
-		t.Fatalf("待处理申请应只有 1 条，得到 %d 条", len(reqs))
+	if reqs := svc.PendingRequests("device-target"); len(reqs) != 1 || reqs[0].FromName != "主人" {
+		t.Fatalf("待处理申请应只有 1 条且带上发起方昵称，得到 %+v", reqs)
 	}
 
 	// 加自己 / 加不存在的宠物号

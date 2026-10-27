@@ -64,6 +64,8 @@ class HTMLAlertWindow: NSWindow {
     private static weak var currentTodoWindow: HTMLAlertWindow?
     /// 当前到期 Todo 提醒卡引用（同一时刻只保留一张，避免重复弹堆叠）
     private static weak var currentTodoReminderWindow: HTMLAlertWindow?
+    /// 当前喝水提醒卡引用（同一时刻只保留一张；定时器重复触发时只置顶复用，不堆叠新窗口）
+    private static weak var currentWaterReminderWindow: HTMLAlertWindow?
     /// 当前好友消息卡引用（只显示最新一条，不堆叠）
     private static weak var currentFriendMessageWindow: HTMLAlertWindow?
     /// 当前好友申请卡引用（同一时刻只保留一张，避免堆叠）
@@ -186,6 +188,21 @@ class HTMLAlertWindow: NSWindow {
         let window = presentNotice(title: "Todo 提醒 ⏰", width: 340, htmlBody: htmlBody)
         window.onClose = { if HTMLAlertWindow.currentTodoReminderWindow === window { HTMLAlertWindow.currentTodoReminderWindow = nil } }
         currentTodoReminderWindow = window
+    }
+
+    /// 喝水提醒：弹一张常驻卡片，用户点 ✕ 前不消失；已有卡片时只把它重新置顶（定时器兜底复用）
+    static func showWaterReminder(htmlBody: String, onClose: @escaping () -> Void) {
+        if let existing = currentWaterReminderWindow, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
+            return
+        }
+        let window = presentNotice(title: "喝水提醒", width: 340, htmlBody: htmlBody)
+        window.onClose = {
+            if HTMLAlertWindow.currentWaterReminderWindow === window { HTMLAlertWindow.currentWaterReminderWindow = nil }
+            onClose()
+        }
+        currentWaterReminderWindow = window
     }
 
     /// 好友消息：弹一张常驻卡片，用户点 ✕ 前不消失；关闭时把消息 ID 上报服务端确认已读
@@ -1279,8 +1296,11 @@ class HTMLAlertWindow: NSWindow {
             self.isOpaque = false
             self.hasShadow = false
         }
-        // 普通层级：切到其他 App 时窗口可正常落到后面（modalPanel 会一直浮在所有 App 之上）
-        self.level = .normal
+        // 提醒卡必须「被看到」：用 .normal 时，App 不在前台弹出的卡片会被活动 App 的窗口压住，
+        // 且默认 collectionBehavior 不会跟到全屏 App 所在的 Space，提醒于是静默失败。
+        // 提到 .floating（仍低于宠物窗的 .popUpMenu，猫永远浮在最前）并允许跨 Space 跟随。
+        self.level = .floating
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false
     }
 }

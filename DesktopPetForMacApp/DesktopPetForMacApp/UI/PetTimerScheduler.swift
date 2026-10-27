@@ -23,13 +23,16 @@ final class PetTimerScheduler {
                   repeats: Bool,
                   action: @escaping @MainActor () -> Void) -> Timer {
         cancel(name)
-        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: repeats) { [weak self] _ in
+        let timer = Timer(timeInterval: interval, repeats: repeats) { [weak self] _ in
             Task { @MainActor in
                 // 非重复定时器触发即失效：先从表里摘掉，避免字典里堆积已完成的一次性定时器
                 if !repeats { self?.timers[name] = nil }
                 action()
             }
         }
+        // 必须挂到 .common：默认的 scheduledTimer 只进 .default 模式，
+        // 一旦处于拖动/右键菜单/NSAlert.runModal 等 tracking 模式，喝水、Todo 等提醒会整体停摆到结束
+        RunLoop.main.add(timer, forMode: .common)
         timers[name] = timer
         return timer
     }

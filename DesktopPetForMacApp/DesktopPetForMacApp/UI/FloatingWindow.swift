@@ -874,6 +874,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     }
 
     /// 显示喝水提醒弹窗（HTML 样式）
+    /// 走常驻卡片单例入口：已有卡片只置顶，不重复叠加新窗口
     func showDrinkWaterAlert() {
         viewModel?.isWaterAlertShowing = true
         let htmlBody = """
@@ -881,7 +882,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
         <div class="water-text">该喝水啦！</div>
         <div class="water-tips">久坐对身体不好<br>起来倒杯水，活动一下吧～</div>
         """
-        HTMLAlertWindow.show(title: "喝水提醒", htmlBody: htmlBody, width: 340) { [weak self] in
+        HTMLAlertWindow.showWaterReminder(htmlBody: htmlBody) { [weak self] in
             self?.viewModel?.isWaterAlertShowing = false
             self?.viewModel?.transitionTo(.focus)
         }

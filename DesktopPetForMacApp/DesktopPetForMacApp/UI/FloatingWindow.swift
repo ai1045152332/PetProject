@@ -128,6 +128,8 @@ final class FloatingWindow {
         win.setFrame(NSRect(origin: newOrigin, size: newSize), display: true)
         viewModel.windowPosition = newOrigin
         viewModel.windowSize = newSize
+        // 尺寸变化后重新校正点击穿透状态
+        catView?.resyncHitTest()
         // 躲藏中调整大小时重新吸附，按新尺寸贴回边缘
         if viewModel.isHiding {
             viewModel.snapToEdgeForHiding(windowOrigin: newOrigin, size: newSize)
@@ -247,12 +249,9 @@ class CatView: NSView {
         FileLogger.log("[DesktopPet] setup: pure draw(_:) rendering")
     }
 
-    // 注意：不使用 NSTrackingArea / mouseEntered / mouseExited
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        // 已移除“看向鼠标”翻转，猫固定朝右；仅「贴边躲藏」时由 ViewModel 返回镜像帧
-        // 素材帧已统一为单张基准图（消除 AI 逐帧抖动），动作幅度完全由渲染层呼吸控制（±1%，4 秒周期，几乎静止）
-        guard let image = currentImage else { return }
+    /// 当前帧在视图内的实际绘制矩形（与 draw(_:) 完全一致：等比居中 + 呼吸缩放，
+    /// 含贴边躲藏时裁切边钉死屏幕边缘的 originX 修正），同时供点击命中测试复用
+    private func spriteRect(for image: NSImage) -> NSRect {
         let t = Date().timeIntervalSinceReferenceDate
         let breathe = 1.0 + 0.010 * sin(t * 2.0 * .pi / 4.0)
         let scale = min(bounds.width / max(1, image.size.width), bounds.height / max(1, image.size.height)) * breathe
@@ -264,8 +263,115 @@ class CatView: NSView {
         if let vm = viewModel, vm.animationState == .hide {
             originX = vm.facing == .right ? bounds.width - w : 0
         }
-        let rect = NSRect(x: originX, y: (bounds.height - h) / 2, width: w, height: h)
-        image.draw(in: rect)
+        return NSRect(x: originX, y: (bounds.height - h) / 2, width: w, height: h)
+    }
+
+    // 点击穿透：窗口是 160×160 全透明矩形，四周透明像素也接住点击，导致周围桌面点不了；
+    // 用 NSTrackingArea 感知光标进出，只在猫实际占位处让窗口接点击
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = trackingArea { removeTrackingArea(area) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        startHitTestTimer()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hitTestTimer?.invalidate()
+        hitTestTimer = nil
+        // 光标离开窗口：恢复点击穿透（若此刻仍悬在猫身上会收不到 mouseExited，由定时器兜底）
+        setIgnoresMouseEventsIfNotDragging(true)
+    }
+
+    /// 透明区点击穿透命测定时器（光标在窗口内期间约 20Hz 采样）
+    private var hitTestTimer: Timer?
+    /// 上一次命中的 CGImage 与其像素缓存（同一帧内多次采样不重复解图）
+    private weak var alphaCacheImage: CGImage?
+    private var alphaCacheData: [UInt8] = []
+
+    private func startHitTestTimer() {
+        guard hitTestTimer == nil else { return }
+        setIgnoresMouseEventsIfNotDragging(isOverCatSprite())
+        let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+            guard let self, let win = self.windowRef else { return }
+            let hit = self.isOverCatSprite()
+            if win.ignoresMouseEvents == hit {
+                win.ignoresMouseEvents = !hit
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        hitTestTimer = timer
+    }
+
+    /// 窗口 frame 变化（缩放/吸附贴边）后即时校正点击穿透状态
+    func resyncHitTest() {
+        guard let win = windowRef else { return }
+        if NSMouseInRect(NSEvent.mouseLocation, win.frame, false) {
+            let hit = isOverCatSprite()
+            win.ignoresMouseEvents = !hit
+        } else {
+            win.ignoresMouseEvents = true
+        }
+    }
+
+    /// 更新点击穿透状态；拖动期间不改（否则松手前窗口变穿透会中断拖拽事件流）
+    private func setIgnoresMouseEventsIfNotDragging(_ ignores: Bool) {
+        guard !isDragging, let win = windowRef else { return }
+        win.ignoresMouseEvents = ignores
+    }
+
+    /// 当前全局鼠标是否落在猫的不透明像素上（投喂期间整窗可点，保持原投喂交互）
+    private func isOverCatSprite() -> Bool {
+        if isFeeding { return true }
+        guard let image = currentImage, let win = windowRef else { return false }
+        let spriteRect = spriteRect(for: image)
+        // 外扩少量余量：素材四周有透明 padding，细缝处也能点得到猫
+        let hitRect = spriteRect.insetBy(dx: -6, dy: -6)
+        var p = win.convertPoint(fromScreen: NSEvent.mouseLocation)
+        if !hitRect.contains(p) { return false }
+        p.x = min(max(p.x, spriteRect.minX + 0.5), spriteRect.maxX - 0.5)
+        p.y = min(max(p.y, spriteRect.minY + 0.5), spriteRect.maxY - 0.5)
+        // 视图坐标 → 素材绘制矩形内的归一化坐标（本视图未翻转，y 向上与位图行序一致）
+        let u = (p.x - spriteRect.minX) / spriteRect.width
+        let v = (p.y - spriteRect.minY) / spriteRect.height
+        return isAlphaOpaque(in: image, u: u, v: v)
+    }
+
+    /// 采样帧图对应像素的 alpha（带缓存），alpha 高于阈值视为点在猫身上
+    private func isAlphaOpaque(in image: NSImage, u: CGFloat, v: CGFloat) -> Bool {
+        guard let rep = image.representations.first(where: { $0 is NSBitmapImageRep || $0 is NSCIImageRep })
+            ?? image.representations.first,
+            let cg = rep.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return true }
+        let w = cg.width, h = cg.height
+        let px = min(max(Int(u * CGFloat(w)), 0), w - 1)
+        let py = min(max(h - 1 - Int(v * CGFloat(h)), 0), h - 1)
+        if cg !== alphaCacheImage {
+            var data = [UInt8](repeating: 0, count: w * h * 4)
+            guard let ctx = CGContext(
+                data: &data, width: w, height: h,
+                bitsPerComponent: 8, bytesPerRow: w * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return true }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            alphaCacheImage = cg
+            alphaCacheData = data
+        }
+        return alphaCacheData[(py * w + px) * 4 + 3] > 40
+    }
+
+    // 已移除“看向鼠标”翻转，猫固定朝右；仅「贴边躲藏」时由 ViewModel 返回镜像帧
+    // 素材帧已统一为单张基准图（消除 AI 逐帧抖动），动作幅度完全由渲染层呼吸控制（±1%，4 秒周期，几乎静止）
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let image = currentImage else { return }
+        image.draw(in: spriteRect(for: image))
     }
 
     override func viewDidMoveToWindow() {
@@ -375,6 +481,8 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
             } else {
                 vm.snapToEdgeForHiding(windowOrigin: frame.origin, size: frame.size)
             }
+            // 拖动结束后窗口位置已变，按当前鼠标位置重新校正点击穿透
+            resyncHitTest()
         }
         isDragging = false
     }
@@ -499,6 +607,11 @@ for w in NSApp.windows where w is HTMLAlertWindow && w.isVisible {
             feedOverlayWindows.append(overlay)
         }
 
+        // 投喂期间猫条全屏拦截层只在小猫窗口之下，若猫窗口保持穿透会漏点给拦截层：
+        // 此期间强制整窗接点击，并重启命测定时器兜底退出后恢复
+        windowRef?.ignoresMouseEvents = false
+        startHitTestTimer()
+
         // 投喂期间隐藏系统光标（猫条即光标）
         transparentCursor.set()
         windowRef?.invalidateCursorRects(for: self)
@@ -544,6 +657,8 @@ isFeeding = false
         feedOverlayWindows = []
         // 恢复系统箭头光标
         NSCursor.arrow.set()
+        // 恢复透明区点击穿透（光标在窗内时由命测定时器即时校正）
+        setIgnoresMouseEventsIfNotDragging(true)
         treatFollowTimer?.invalidate()
         treatFollowTimer = nil
         treatWindow?.orderOut(nil)

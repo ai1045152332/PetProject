@@ -103,7 +103,7 @@ func New(
 	mux.HandleFunc("/api/pet-images/", petImages.Handle)
 	mux.HandleFunc("/api/heartbeat", heartbeatCtrl.Report)
 	mux.HandleFunc("/api/devices", devicesCtrl.List)
-	// 好友与宠物消息（register/add/list/remove/send）
+	// 好友与宠物消息（register/add/requests/accept/reject/list/remove/send/read）
 	mux.HandleFunc("/api/social/", socialCtrl.Handle)
 	mux.HandleFunc("/api/access/verify", accessCtrl.Verify)
 	mux.HandleFunc("/api/ping", pingCtrl.Ping)

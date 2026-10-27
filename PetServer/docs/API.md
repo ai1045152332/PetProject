@@ -176,6 +176,17 @@ curl -X POST http://101.96.248.75/api/heartbeat \
 | --- | --- | --- |
 | data.serverTime | string | 服务器当前时间（RFC3339） |
 | data.lastSeenAt | string | 本次心跳登记时间（RFC3339） |
+| data.petNo | int | 本设备的宠物号（仅请求带 `deviceId` 时回传，首次心跳自动分配） |
+| data.messages | array | 待展示的好友消息（仅在有消息时出现，见下） |
+| data.requests | array | 待处理的好友申请（仅在有申请时出现，见下） |
+
+带 `deviceId` 的心跳同时充当好友/消息的下发通道：
+
+- `messages[]`：`{id, fromPetNo, fromName, text, sentAt}`。服务端不再“取后即清”，而是先记下
+  本次下发时间；客户端看完消息点 ✕ 时需调 `POST /api/social/read` 确认已读，收件箱才真正清除。
+  未确认时每隔 10 分钟重下发一次，最多 3 次，超过 24 小时不再打扰。
+- `requests[]`：`{id, fromDevice, fromPetNo, fromName, toPetNo, createdAt}`。只读不消，直到本设备
+  调 `accept`（同意，双方互为好友）或 `reject`（拒绝）后才会消失，因此客户端需按 `id` 去重避免重复弹卡。
 
 ### 失败响应
 
@@ -622,8 +633,8 @@ curl http://101.96.248.75/api/admin/metrics \
 GET /api/admin/social/conversations
 ```
 
-需登录（鉴权方式同其他管理接口）。返回发送消息时在服务端持久保留的对话留痕（旧 → 新，
-全局最多 1000 条，超出丢弃最旧）；宠物端收件箱仍按原逻辑「取后即清」，两者互不影响。
+需登录（鉴权方式同其他管理接口）。返回发消息/发好友申请时在服务端持久保留的留痕（旧 → 新，
+全局最多 1000 条，超出丢弃最旧）。
 
 ```json
 {
@@ -631,20 +642,36 @@ GET /api/admin/social/conversations
   "msg": "ok",
   "data": {
     "conversations": [
-      {"fromPetNo": 100001, "fromName": "毛豆", "fromHost": "Mac-A",
+      {"kind": "request", "fromPetNo": 100001, "fromName": "毛豆", "fromHost": "Mac-A",
        "toPetNo": 100002, "toName": "汤圆", "toHost": "Mac-B",
-       "text": "在吗", "sentAt": "2026-10-27T14:15:01+08:00"}
+       "text": "毛豆(#100001) 申请加你为好友", "sentAt": "2026-10-27T14:14:01+08:00",
+       "toDeviceId": "BBBB-...", "ids": ["8f1c..."], "status": "accepted",
+       "handledAt": "2026-10-27T14:16:30+08:00"},
+      {"kind": "message", "fromPetNo": 100001, "fromName": "毛豆", "fromHost": "Mac-A",
+       "toPetNo": 100002, "toName": "汤圆", "toHost": "Mac-B",
+       "text": "在吗", "sentAt": "2026-10-27T14:15:01+08:00",
+       "toDeviceId": "BBBB-...", "ids": ["71ad..."],
+       "deliveredAt": "2026-10-27T14:16:00+08:00", "readAt": "2026-10-27T14:20:11+08:00"}
     ]
   }
 }
 ```
+
+| 字段 | 说明 |
+| --- | --- |
+| kind | `message` 好友留言（旧记录无此字段，等同 `message`）/ `request` 好友申请 |
+| ids | 关联的消息 ID 或申请 ID（已读/同意回写时按它定位） |
+| deliveredAt | 服务端将消息下发给宠物端的时间（无此字段表示尚未送达） |
+| readAt | 宠物端确认已读的时间（无此字段 = 未读） |
+| status / handledAt | 仅申请：`pending` / `accepted` / `rejected` 与处理时间 |
 
 ```
 POST /api/admin/social/conversations/clear
 ```
 
 清空全部对话留痕（不可恢复，不影响宠物端已收/待收消息）。后台「宠物对话」页
-（`/admin/social`）提供可视化列表：按对话双方分组筛选、气泡展示收发方向、支持刷新与清空。
+（`/admin/social`）提供可视化列表：按对话双方分组筛选、气泡展示收发方向、
+消息带「已读/未读」与申请带「待处理/已同意/已拒绝」状态徽章，支持刷新与清空。
 
 ## 4. App 更新接口
 
@@ -742,6 +769,26 @@ GET /api/wordbank/get?name=cet4
 | `GET /admin/files` | 菜单四：文件管理（浏览/预览/删除服务器文件，默认锚定 `data/` 目录） |
 | `GET /admin/status` | 菜单五：服务器状态（CPU/内存/网络流量 + 接口调用统计） |
 | `GET /` | 官网落地页（产品介绍与 App 下载） |
+
+## 好友与宠物消息（宠物端）
+
+全部使用 `POST /api/social/<action>`，请求体走加密信封（含 `deviceId` 等敏感字段，curl 调试可发明文），
+响应一律 HTTP 200，业务失败用信封 `code≠0` + `msg` 文案回传。每只宠物（按设备）有一个稳定自增的
+「宠物号」，作为加好友与发消息的寻址凭证。
+
+| action | 请求字段 | 返回 |
+| --- | --- | --- |
+| `register` | deviceId, hostname, petName | `{petNo}`：注册/刷新展示信息 |
+| `add` | deviceId, petNo, petName | `{friends, status}`：发起好友申请。`status=pending` 等对方同意，`mutual` 已互为好友（双方各申请过一次时自动互加） |
+| `requests` | deviceId | `{requests:[…]}`：发给本设备的待处理申请（同意/拒绝前一直保留） |
+| `accept` | deviceId, petNo | `{friends}`：同意 `petNo` 的申请，**双方互为好友** |
+| `reject` | deviceId, petNo | `{friends}`：拒绝对方申请，不建立好友关系 |
+| `list` | deviceId | `{friends:[{petNo,petName,addedAt}]}` |
+| `remove` | deviceId, petNo | `{friends}`：删好友为双向解除，并清掉双方间的待处理申请 |
+| `send` | deviceId, petNo, text | `ok`：消息落入对方收件箱；**要求双方已互加好友**，否则报「请先添加对方为好友」 |
+| `read` | deviceId, ids[] | `{marked}`：接收端看完消息关卡时确认已读，服务端清除收件箱并给留痕盖已读时间 |
+
+好友关系必须经对方同意：`add` 只发申请，只有对方 `accept`（或双方相互 `add`）后两边好友列表才会同时出现彼此。
 
 ## 自定义宠物图片
 

@@ -766,10 +766,10 @@ class HTMLAlertWindow: NSWindow {
                     if (pickHour === h) o.selected = true; hh.appendChild(o);
                 }
                 var mm = document.getElementById('dpMin'); mm.innerHTML = '';
-                [0,15,30,45].forEach(function(mn){
+                for (var mn = 0; mn < 60; mn++) {
                     var o = document.createElement('option'); o.value = mn; o.textContent = pad(mn) + '分';
                     if (pickMin === mn) o.selected = true; mm.appendChild(o);
-                });
+                }
                 updatePreview();
             }
             function updatePreview(){

@@ -1,5 +1,7 @@
 // social_controller.go 好友与宠物消息接口控制器
-// 统一 POST /api/social/<action>，action ∈ register / add / list / remove / send。
+// 统一 POST /api/social/<action>，action ∈ register / add / requests / accept / reject /
+// list / remove / send / read。加好友需对方同意（add 只发申请，accept 后才双向互为好友）；
+// read 由接收端看完消息关卡时上报，服务端据此标记已读。
 // 请求体走加密信封（含 deviceId 等敏感字段），与 access / pet-images 一致；curl 调试可发明文。
 // 响应一律 HTTP 200，业务失败用信封 code≠0 + msg 文案回传（客户端据此提示）。
 package controller
@@ -27,11 +29,12 @@ func NewSocialController(svc *service.SocialService, keyPair *crypto.KeyPair) *S
 
 // socialRequest 各 action 公用的请求载荷（按 action 取用其中字段）
 type socialRequest struct {
-	DeviceID string `json:"deviceId"`
-	PetName  string `json:"petName"`
-	Hostname string `json:"hostname"`
-	PetNo    int64  `json:"petNo"`
-	Text     string `json:"text"`
+	DeviceID string   `json:"deviceId"`
+	PetName  string   `json:"petName"`
+	Hostname string   `json:"hostname"`
+	PetNo    int64    `json:"petNo"`
+	Text     string   `json:"text"`
+	IDs      []string `json:"ids"` // read：本次确认已读的消息 ID
 }
 
 // Handle 处理 /api/social/<action>
@@ -63,8 +66,32 @@ func (c *SocialController) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{"petNo": petNo}})
 	case "add":
-		friends, err := c.svc.AddFriend(req.DeviceID, req.PetNo)
+		friends, status, err := c.svc.RequestFriend(req.DeviceID, req.PetNo)
+		if err != nil {
+			writeJSON(w, http.StatusOK, Response{Code: 1, Msg: err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{
+			"friends": friends,
+			"status":  status, // pending：等对方同意；mutual：已互为好友
+		}})
+	case "requests":
+		writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{
+			"requests": c.pendingRequestsOf(req.DeviceID),
+		}})
+	case "accept":
+		friends, err := c.svc.AcceptFriendRequest(req.DeviceID, req.PetNo)
 		c.writeFriends(w, friends, err)
+	case "reject":
+		friends, err := c.svc.RejectFriendRequest(req.DeviceID, req.PetNo)
+		c.writeFriends(w, friends, err)
+	case "read":
+		hit, err := c.svc.MarkMessagesRead(req.DeviceID, req.IDs)
+		if err != nil {
+			writeJSON(w, http.StatusOK, Response{Code: 1, Msg: err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, Response{Code: 0, Msg: "ok", Data: map[string]any{"marked": hit}})
 	case "remove":
 		friends, err := c.svc.RemoveFriend(req.DeviceID, req.PetNo)
 		c.writeFriends(w, friends, err)
@@ -80,6 +107,15 @@ func (c *SocialController) Handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// pendingRequestsOf 返回发给该设备的待处理好友申请（旧 → 新），nil 归一为空切片便于 JSON 输出
+func (c *SocialController) pendingRequestsOf(deviceID string) []model.FriendRequest {
+	reqs := c.svc.PendingRequests(deviceID)
+	if reqs == nil {
+		return []model.FriendRequest{}
+	}
+	return reqs
 }
 
 // writeFriends 统一好友列表响应：err 非空回业务失败，否则回 friends

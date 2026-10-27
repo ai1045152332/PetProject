@@ -1,6 +1,8 @@
 // FriendService.swift
 // DesktopPetForMacApp — 好友与宠物消息客户端
-// 与后端 /api/social/<action> 交互：注册取宠物号、加好友、列好友、删好友、发消息。
+// 与后端 /api/social/<action> 交互：注册取宠物号、发好友申请、同意/拒绝、列好友、删好友、发消息、确认已读。
+// 加好友需对方同意：add 只发申请，对方 accept 后双方才互为好友；
+// 消息卡关闭时调 read 上报，服务端据此标记已读（未确认前会重投几次）。
 // 请求体统一用服务端公钥加密（含 deviceId 等敏感字段），与激活码/云端图片一致；
 // 后端一律 HTTP 200，业务失败用信封 code≠0 + msg 回传，这里据此抛出本地化错误。
 
@@ -16,12 +18,43 @@ struct PetFriend: Equatable {
     }
 }
 
+/// 收到的好友申请（等待本机同意/拒绝）
+struct PetFriendRequest: Equatable {
+    let id: String
+    let fromPetNo: Int
+    let fromName: String
+    /// 展示用文案：无名时回退「宠物 #号」
+    var display: String {
+        fromName.isEmpty ? "宠物 #\(fromPetNo)" : "\(fromName) #\(fromPetNo)"
+    }
+}
+
+/// 发好友申请的结果
+enum FriendRequestOutcome {
+    /// 已发出，等对方同意
+    case pending
+    /// 已互为好友（双方都申请过，或本就已是好友）
+    case mutual
+
+    /// 给用户的提示文案
+    var notice: String {
+        switch self {
+        case .pending: return "申请已发出，对方同意后你们就是好友了"
+        case .mutual: return "你们已互为好友"
+        }
+    }
+}
+
 @MainActor
 enum FriendService {
     /// 本机宠物号缓存键（由心跳响应或 register 接口写入）
     static let petNoKey = "settings.myPetNo"
+    /// 已弹过卡的好友申请 ID（避免心跳每分钟重复下发时反复弹卡）
+    static let shownRequestIDsKey = "settings.shownFriendRequestIDs"
     /// 宠物号变化通知（供设置面板刷新展示）
     static let petNoChanged = Notification.Name("FriendService.petNoChanged")
+    /// 好友关系变化通知（同意后卡片与设置面板列表都要刷新）
+    static let friendsChanged = Notification.Name("FriendService.friendsChanged")
 
     /// 当前已知宠物号（0 表示尚未分配/同步）
     static var myPetNo: Int {
@@ -55,10 +88,55 @@ enum FriendService {
         return decodeFriends(data?["friends"])
     }
 
-    /// 加好友，返回添加后的完整好友列表
-    static func addFriend(petNo: Int) async throws -> [PetFriend] {
+    /// 发起好友申请（需对方同意）；返回自己的好友列表与申请结果
+    static func requestFriend(petNo: Int) async throws -> (friends: [PetFriend], outcome: FriendRequestOutcome) {
         let data = try await post("add", payload: ["petNo": petNo])
-        return decodeFriends(data?["friends"])
+        let status = data?["status"] as? String ?? ""
+        return (decodeFriends(data?["friends"]), status == "mutual" ? .mutual : .pending)
+    }
+
+    /// 拉取发给本机、待处理的好友申请
+    static func pendingRequests() async throws -> [PetFriendRequest] {
+        let data = try await post("requests")
+        return decodeRequests(data?["requests"])
+    }
+
+    /// 同意某宠物号的好友申请：成功后双方互为好友
+    static func acceptRequest(fromPetNo: Int) async throws -> [PetFriend] {
+        let friends = try await decideRequest("accept", fromPetNo: fromPetNo)
+        NotificationCenter.default.post(name: friendsChanged, object: nil)
+        return friends
+    }
+
+    /// 拒绝对方的好友申请（不建立好友关系）
+    static func rejectRequest(fromPetNo: Int) async throws -> [PetFriend] {
+        let friends = try await decideRequest("reject", fromPetNo: fromPetNo)
+        NotificationCenter.default.post(name: friendsChanged, object: nil)
+        return friends
+    }
+
+    /// 看完消息关卡时确认已读（尽力而为：失败不影响本地，服务端稍后会重投）
+    static func confirmRead(ids: [String]) async {
+        guard !ids.isEmpty else { return }
+        _ = try? await post("read", payload: ["ids": ids])
+    }
+
+    /// 记录已弹过卡的申请 ID，返回其中尚未弹过的（首次见到的才需要弹卡）
+    static func markRequestsShown(_ requests: [PetFriendRequest]) -> [PetFriendRequest] {
+        let defaults = UserDefaults.standard
+        var shown = (defaults.stringArray(forKey: shownRequestIDsKey) ?? [])
+        var shownSet = Set(shown)
+        var fresh: [PetFriendRequest] = []
+        for req in requests where !shownSet.contains(req.id) {
+            fresh.append(req)
+            shownSet.insert(req.id)
+            shown.append(req.id)
+        }
+        if !fresh.isEmpty {
+            // 只保留最近 200 个 ID，避免无限增长
+            defaults.set(Array(shown.suffix(200)), forKey: shownRequestIDsKey)
+        }
+        return fresh
     }
 
     /// 删除好友，返回删除后的完整好友列表
@@ -108,6 +186,22 @@ enum FriendService {
             throw failure(json["msg"] as? String ?? "操作失败")
         }
         return json["data"] as? [String: Any]
+    }
+
+    /// 同意/拒绝的共用调用：服务端回传处理后的好友列表
+    private static func decideRequest(_ action: String, fromPetNo: Int) async throws -> [PetFriend] {
+        let data = try await post(action, payload: ["petNo": fromPetNo])
+        return decodeFriends(data?["friends"])
+    }
+
+    private static func decodeRequests(_ raw: Any?) -> [PetFriendRequest] {
+        guard let arr = raw as? [[String: Any]] else { return [] }
+        return arr.compactMap { dict in
+            let petNo = intVal(dict["fromPetNo"])
+            let id = dict["id"] as? String ?? ""
+            guard petNo > 0, !id.isEmpty else { return nil }
+            return PetFriendRequest(id: id, fromPetNo: petNo, fromName: dict["fromName"] as? String ?? "")
+        }
     }
 
     private static func decodeFriends(_ raw: Any?) -> [PetFriend] {

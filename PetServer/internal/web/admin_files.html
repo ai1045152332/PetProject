@@ -24,25 +24,12 @@
     #previewImage { max-width: 100%; max-height: 50vh; border-radius: 6px; }
     .file-name-link { cursor: pointer; text-decoration: none; }
   </style>
-  <script>
-    if (!localStorage.getItem('petAdminSession')) location.replace('/admin/login');
-  </script>
+  <script src="/static/admin-nav.js?v=1"></script>
 </head>
 <body class="antialiased">
   <div class="page">
-    <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
-      <div class="container-xl">
-        <span class="navbar-brand">🐾 cute pet 后台管理</span>
-        <div class="navbar-nav flex-row ms-auto align-items-center">
-          <a class="nav-link" href="/admin">在线宠物</a>
-          <a class="nav-link" href="/admin/codes">激活码管理</a>
-          <a class="nav-link" href="/admin/social">宠物对话</a>
-          <a class="nav-link active fw-bold" href="/admin/files">文件管理</a>
-          <a class="nav-link" href="/admin/status">服务器状态</a>
-          <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
-        </div>
-      </div>
-    </header>
+    <!-- 导航栏由 /static/admin-nav.js 统一渲染（菜单顺序单一来源） -->
+    <div id="petAdminNav"></div>
 
     <div class="page-wrapper">
       <div class="page-header d-print-none">
@@ -121,17 +108,7 @@
       ));
     }
 
-    function session() { return localStorage.getItem('petAdminSession') || ''; }
-
-    async function logout() {
-      const token = session();
-      localStorage.removeItem('petAdminSession');
-      localStorage.removeItem('petAdminSessionExp');
-      try {
-        await fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Session-Token': token } });
-      } catch (e) { /* 忽略网络异常 */ }
-      location.href = '/admin/login';
-    }
+    // session() / logout() 与导航栏、登录守卫统一由 /static/admin-nav.js 提供
 
     async function api(path, options) {
       const resp = await fetch(path, Object.assign({

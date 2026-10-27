@@ -20,26 +20,27 @@
     .chat-meta { font-size: .75rem; color: var(--tblr-secondary); margin-bottom: .2rem; }
     .chat-text { word-break: break-all; white-space: pre-wrap; }
     .pair-select .btn { margin-right: .5rem; margin-bottom: .5rem; }
+    /* 状态徽章：区分好友申请与消息的已读/未读态 */
+    .chat-badge {
+      display: inline-block;
+      font-size: .72rem;
+      line-height: 1.4;
+      padding: 0 .4rem;
+      border-radius: .35rem;
+      margin-left: .35rem;
+      background: rgba(32, 147, 250, .12);
+      color: #2093fa;
+    }
+    .chat-badge.read { background: rgba(47, 179, 110, .14); color: #2fb36e; }
+    .chat-badge.wait { background: rgba(244, 104, 91, .14); color: #f4685b; }
+    .chat-badge.req { background: rgba(134, 142, 150, .16); color: #6c7380; }
   </style>
-  <script>
-    if (!localStorage.getItem('petAdminSession')) location.replace('/admin/login');
-  </script>
+  <script src="/static/admin-nav.js?v=1"></script>
 </head>
 <body class="antialiased">
   <div class="page">
-    <header class="navbar navbar-expand-md navbar-dark bg-dark d-print-none">
-      <div class="container-xl">
-        <span class="navbar-brand">🐾 cute pet 后台管理</span>
-        <div class="navbar-nav flex-row ms-auto align-items-center">
-          <a class="nav-link" href="/admin">在线宠物</a>
-          <a class="nav-link" href="/admin/codes">激活码管理</a>
-          <a class="nav-link active fw-bold" href="/admin/social">宠物对话</a>
-          <a class="nav-link" href="/admin/status">服务器状态</a>
-          <a class="nav-link" href="/admin/files">文件管理</a>
-          <a class="nav-link ms-3 text-warning" href="javascript:logout()">退出登录</a>
-        </div>
-      </div>
-    </header>
+    <!-- 导航栏由 /static/admin-nav.js 统一渲染（菜单顺序单一来源） -->
+    <div id="petAdminNav"></div>
 
     <div class="page-wrapper">
       <div class="page-header d-print-none">
@@ -76,11 +77,12 @@
                 <div class="card-body">
                   <div class="chat-list" id="chat"></div>
                   <div class="text-secondary text-center py-4" id="empty" style="display:none">
-                    还没有宠物之间的对话哦～ 加好友后发消息，这里就能看到留痕
+                    还没有宠物之间的往来哦～ 发好友申请或发消息后，这里就能看到留痕
                   </div>
                 </div>
                 <div class="card-body text-secondary" style="font-size:.8rem">
-                  仅保留最近 1000 条对话留痕（旧消息超出后自动丢弃）；宠物端消息仍按原逻辑取后即清，不受本页影响。
+                  仅保留最近 1000 条留痕（旧记录超出后自动丢弃）。好友申请需对方同意才互为好友；
+                  消息由宠物端确认已读后回写已读时间，未确认前宠物端会重复提醒几次。
                 </div>
               </div>
             </div>
@@ -105,17 +107,7 @@
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
       ));
     }
-    function session() { return localStorage.getItem('petAdminSession') || ''; }
-
-    async function logout() {
-      const token = session();
-      localStorage.removeItem('petAdminSession');
-      localStorage.removeItem('petAdminSessionExp');
-      try {
-        await fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Session-Token': token } });
-      } catch (e) { /* 忽略网络异常 */ }
-      location.href = '/admin/login';
-    }
+    // session() / logout() 与导航栏、登录守卫统一由 /static/admin-nav.js 提供
 
     // pairKey 按宠物号大小归一化：A↔B 与 B↔A 视为同一对
     function pairKey(rec) {
@@ -124,6 +116,28 @@
 
     function petLabel(petNo, name, host) {
       return (name || '宠物') + ' #' + petNo + (host ? '（' + host + '）' : '');
+    }
+
+    function fmtTime(iso) {
+      return iso ? new Date(iso).toLocaleString('zh-CN') : '';
+    }
+
+    // 返回留痕的状态徽章 HTML：申请看同意/拒绝，消息看宠物端是否已读
+    function statusBadge(rec) {
+      if (rec.kind === 'request') {
+        const map = { accepted: ['已同意', 'read'], rejected: ['已拒绝', 'wait'], pending: ['待处理', 'req'] };
+        const [text, cls] = map[rec.status] || ['好友申请', 'req'];
+        const at = fmtTime(rec.handledAt);
+        return '<span class="chat-badge req">申请</span><span class="chat-badge ' + cls + '">' +
+          esc(text) + (at ? ' · ' + esc(at) : '') + '</span>';
+      }
+      if (rec.readAt) {
+        return '<span class="chat-badge read">已读 · ' + esc(fmtTime(rec.readAt)) + '</span>';
+      }
+      if (rec.deliveredAt) {
+        return '<span class="chat-badge wait">已送达·未读</span>';
+      }
+      return '<span class="chat-badge wait">未读</span>';
     }
 
     function render() {
@@ -175,7 +189,8 @@
         return '<div class="chat-row' + (currentPair === '' || !out ? '' : ' out') + '">' +
           '<div class="chat-bubble">' +
             '<div class="chat-meta">' + esc(petLabel(rec.fromPetNo, rec.fromName, rec.fromHost)) +
-            ' → ' + esc(petLabel(rec.toPetNo, rec.toName, rec.toHost)) + ' · ' + time + '</div>' +
+            ' → ' + esc(petLabel(rec.toPetNo, rec.toName, rec.toHost)) + ' · ' + time +
+            statusBadge(rec) + '</div>' +
             '<div class="chat-text">' + esc(rec.text) + '</div>' +
           '</div></div>';
       }).join('');

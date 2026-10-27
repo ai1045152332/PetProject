@@ -53,6 +53,12 @@ func (s *SocialStore) Load() (model.SocialState, error) {
 	if state.Inbox == nil {
 		state.Inbox = map[string][]model.PetMessage{}
 	}
+	if state.Delivered == nil {
+		state.Delivered = map[string]map[string]model.DeliveredMessage{}
+	}
+	if state.Requests == nil {
+		state.Requests = map[string]*model.FriendRequest{}
+	}
 	if state.History == nil {
 		state.History = []model.PetConversationRecord{}
 	}
@@ -73,6 +79,12 @@ func (s *SocialStore) Save(state model.SocialState) error {
 	if state.Inbox == nil {
 		state.Inbox = map[string][]model.PetMessage{}
 	}
+	if state.Delivered == nil {
+		state.Delivered = map[string]map[string]model.DeliveredMessage{}
+	}
+	if state.Requests == nil {
+		state.Requests = map[string]*model.FriendRequest{}
+	}
 	if state.History == nil {
 		state.History = []model.PetConversationRecord{}
 	}
@@ -90,9 +102,11 @@ func (s *SocialStore) Save(state model.SocialState) error {
 // newEmptySocialState 返回各 map 均已初始化的空状态
 func newEmptySocialState() model.SocialState {
 	return model.SocialState{
-		Registry: map[string]*model.PetRegistration{},
-		Friends:  map[string][]model.FriendEntry{},
-		Inbox:    map[string][]model.PetMessage{},
-		History:  []model.PetConversationRecord{},
+		Registry:  map[string]*model.PetRegistration{},
+		Friends:   map[string][]model.FriendEntry{},
+		Inbox:     map[string][]model.PetMessage{},
+		Delivered: map[string]map[string]model.DeliveredMessage{},
+		Requests:  map[string]*model.FriendRequest{},
+		History:   []model.PetConversationRecord{},
 	}
 }

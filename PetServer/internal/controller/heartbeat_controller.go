@@ -52,11 +52,16 @@ func (c *HeartbeatController) Report(w http.ResponseWriter, r *http.Request) {
 		"serverTime": time.Now().Format(time.RFC3339),
 		"lastSeenAt": device.LastSeenAt.Format(time.RFC3339),
 	}
-	// 好友/消息：带 deviceId 的心跳顺带注册宠物号并拉取待展示消息（取后即清）
+	// 好友/消息：带 deviceId 的心跳顺带注册宠物号、下发待展示消息与待处理好友申请
+	// 消息先“探看不取走”（只记下发时间），等客户端看完关卡调 /api/social/read 确认后才真清
 	if c.social != nil && heartbeat.DeviceID != "" {
 		data["petNo"] = c.social.EnsureRegistered(heartbeat.DeviceID, heartbeat.Hostname, heartbeat.PetName)
-		if msgs := c.social.TakePendingMessages(heartbeat.DeviceID); len(msgs) > 0 {
+		if msgs := c.social.PeekPendingMessages(heartbeat.DeviceID); len(msgs) > 0 {
 			data["messages"] = msgs
+			c.social.DeliverMessages(heartbeat.DeviceID, msgs) // 登记下发，等接收端确认已读后才从收件箱清除
+		}
+		if reqs := c.social.PendingRequests(heartbeat.DeviceID); len(reqs) > 0 {
+			data["requests"] = reqs
 		}
 	}
 

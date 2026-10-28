@@ -7,17 +7,18 @@ import (
 	"net/http"
 	"os"
 	"petserver/internal/crypto"
+	"petserver/internal/petimage"
 	"petserver/internal/service"
 	"strings"
 )
 
 type PetImageController struct {
-	svc    *service.PetImageService
+	svc    *petimage.PetImageService
 	access *service.AccessService
 	key    *crypto.KeyPair
 }
 
-func NewPetImageController(svc *service.PetImageService, access *service.AccessService, key *crypto.KeyPair) *PetImageController {
+func NewPetImageController(svc *petimage.PetImageService, access *service.AccessService, key *crypto.KeyPair) *PetImageController {
 	return &PetImageController{svc: svc, access: access, key: key}
 }
 
@@ -31,7 +32,7 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 	action := r.URL.Path[len("/api/pet-images/"):]
 	var body []byte
 	var err error
-	r.Body = http.MaxBytesReader(w, r.Body, service.MaxPetImageBytes+(64<<10))
+	r.Body = http.MaxBytesReader(w, r.Body, petimage.MaxPetImageBytes+(64<<10))
 	if action == "upload" {
 		err = r.ParseMultipartForm(1 << 20)
 		if r.MultipartForm != nil {
@@ -75,7 +76,7 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer file.Close()
-		data, e := io.ReadAll(io.LimitReader(file, service.MaxPetImageBytes+1))
+		data, e := io.ReadAll(io.LimitReader(file, petimage.MaxPetImageBytes+1))
 		if e != nil {
 			err = e
 			break
@@ -97,13 +98,13 @@ func (c *PetImageController) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		status := 400
-		if errors.Is(err, service.ErrPetGenerationDisabled) {
+		if errors.Is(err, petimage.ErrPetGenerationDisabled) {
 			status = 503
 		}
-		if errors.Is(err, service.ErrPetGenerationBusy) {
+		if errors.Is(err, petimage.ErrPetGenerationBusy) {
 			status = 429
 		}
-		if errors.Is(err, service.ErrPetQuotaExhausted) {
+		if errors.Is(err, petimage.ErrPetQuotaExhausted) {
 			status = 429
 		}
 		if os.IsNotExist(err) {

@@ -1,4 +1,4 @@
-package service
+package petimage
 
 // 本地抠图预览工具：PET_CHROMA_LOCAL=图片路径 go test ./internal/service -run TestChromaLocalPreview
 // 走与 prepareSeedreamImage 完全相同的管线（keyChromaGreen + 纯色背景兜底），

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"petserver/internal/model"
+	"petserver/internal/petimage"
 	"petserver/internal/service"
 	"petserver/internal/storage"
 )
@@ -42,7 +43,7 @@ func TestPetImageAuthorizationAndUpload(t *testing.T) {
 	}
 	access := service.NewAccessService(codes)
 	objects, _ := storage.NewLocalPetImageObjects(filepath.Join(dir, "objects"))
-	svc, _ := service.NewPetImageService(filepath.Join(dir, "libraries"), objects)
+	svc, _ := petimage.NewPetImageService(filepath.Join(dir, "libraries"), objects)
 	svc.SetGenerator(controllerPetGenerator{})
 	// Codes are ungranted by default; wire a resolver as production does so the auth/upload
 	// plumbing under test is not blocked by the lifetime quota.
@@ -77,7 +78,7 @@ func TestPetImageAuthorizationAndUpload(t *testing.T) {
 		t.Fatalf("upload: %d %s", w.Code, w.Body.String())
 	}
 	var response struct {
-		Data service.PetImageLibrary `json:"data"`
+		Data petimage.PetImageLibrary `json:"data"`
 	}
 	if err = json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -107,7 +108,7 @@ func TestPetImageEncryptedMultipart(t *testing.T) {
 		t.Fatal(err)
 	}
 	objects, _ := storage.NewLocalPetImageObjects(filepath.Join(dir, "objects"))
-	svc, _ := service.NewPetImageService(filepath.Join(dir, "libraries"), objects)
+	svc, _ := petimage.NewPetImageService(filepath.Join(dir, "libraries"), objects)
 	svc.SetGenerator(controllerPetGenerator{})
 	svc.SetImageQuotaResolver(func(string) int { return 10 })
 	t.Cleanup(svc.Close)

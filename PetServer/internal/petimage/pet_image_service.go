@@ -1,4 +1,4 @@
-package service
+package petimage
 
 import (
 	"bytes"
@@ -221,6 +221,24 @@ func (s *PetImageService) limitForCode(code string) int {
 	}
 	return s.codeQuota
 }
+
+// normalizeCode 归一化激活码：大写、去除非字母数字字符，12 位自动按 XXXX-XXXX-XXXX 分组。
+// 与 service.normalizeCode 保持同一规则：配额账本按码归一，同一激活码的不同书写形式（空格/连字符/
+// 大小写）必须映射到同一份配额文件。两包各自私有实现，改动其一时另一方需同步。
+func normalizeCode(code string) string {
+	upper := strings.ToUpper(strings.TrimSpace(code))
+	var sb strings.Builder
+	for _, r := range upper {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		}
+	}
+	flat := sb.String()
+	if len(flat) == 12 {
+		return flat[0:4] + "-" + flat[4:8] + "-" + flat[8:12]
+	}
+	return upper
+}
 func codeQuotaKey(code string) string {
 	sum := sha256.Sum256([]byte(normalizeCode(code)))
 	return "quota-" + hex.EncodeToString(sum[:])
@@ -380,7 +398,7 @@ func (s *PetImageService) Upload(device, code, name string, data []byte, states 
 	return s.withQuota(lib, code), nil
 }
 
-var ErrPetGenerationDisabled = errors.New("服务端尚未配置 OPENROUTER_API_KEY，无法生成宠物动画")
+var ErrPetGenerationDisabled = errors.New("服务端尚未配置生图接口，无法生成宠物动画")
 var ErrPetGenerationBusy = errors.New("生成任务繁忙，请稍后重试")
 var ErrPetQuotaExhausted = errors.New("该激活码的 AI 生成次数已用完")
 

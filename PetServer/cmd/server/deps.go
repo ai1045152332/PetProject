@@ -10,6 +10,7 @@ import (
 
 	"petserver/internal/controller"
 	"petserver/internal/crypto"
+	"petserver/internal/petimage"
 	"petserver/internal/router"
 	"petserver/internal/service"
 	"petserver/internal/storage"
@@ -126,16 +127,32 @@ func buildDeps() (*deps, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("初始化宠物图片对象存储失败: %w", err)
 	}
-	imageSvc, err := service.NewPetImageService("data/pet-images/libraries", imageObjects)
+	imageSvc, err := petimage.NewPetImageService("data/pet-images/libraries", imageObjects)
 	if err != nil {
 		return nil, nil, fmt.Errorf("初始化宠物图片服务失败: %w", err)
 	}
 	// AI 生图总次数按激活码配置：每个码各用各的 imageQuota，未开通即为 0（不再用全局默认）。
 	imageSvc.SetImageQuotaResolver(accessSvc.ImageQuota)
-	if generator := service.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); generator != nil {
+	// 生图默认走 Seedream 官方（火山方舟 ARK）；未配置官方 Key 时回退 OpenRouter 中转。
+	// 可用 PETSERVER_IMAGE_PROVIDER=openrouter 强制只用中转，=ark 之外的其它值同样回退到 OpenRouter。
+	var generator petimage.PetImageGenerator
+	if envOrDefault("PETSERVER_IMAGE_PROVIDER", "ark") == "ark" {
+		if ark := petimage.NewArkPetImageGenerator(os.Getenv("PETSERVER_ARK_API_KEY"), os.Getenv("PETSERVER_ARK_IMAGE_MODEL")); ark != nil {
+			generator = ark
+			log.Printf("[pet-images] 生图走 Seedream 官方（ARK），模型: %s", ark.Model())
+		} else {
+			log.Printf("[pet-images] 未配置 PETSERVER_ARK_API_KEY，回退 OpenRouter 生图")
+		}
+	}
+	if generator == nil {
+		if openRouter := petimage.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); openRouter != nil {
+			generator = openRouter
+		}
+	}
+	if generator != nil {
 		imageSvc.SetGenerator(generator)
 	} else {
-		log.Printf("[pet-images] 未配置 OPENROUTER_API_KEY，上传/重试将返回 503，历史读取不受影响")
+		log.Printf("[pet-images] 未配置生图接口（PETSERVER_ARK_API_KEY / OPENROUTER_API_KEY），上传/重试将返回 503，历史读取不受影响")
 	}
 	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
 

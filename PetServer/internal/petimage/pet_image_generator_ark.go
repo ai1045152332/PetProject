@@ -13,9 +13,12 @@ import (
 	"time"
 )
 
-// DefaultArkPetImageModel 火山方舟（ARK）官方 Seedream 4.5 的 Model ID。
-// 可用 PETSERVER_ARK_IMAGE_MODEL 覆盖（切换到 5.0-lite 等其它模型或专用推理接入点）。
-const DefaultArkPetImageModel = "doubao-seedream-4-5-251128"
+// DefaultArkPetImageModel 火山方舟（ARK）官方 Seedream 5.0 pro 的 Model ID。
+// 可用 PETSERVER_ARK_IMAGE_MODEL 覆盖（如 5.0 flash：doubao-seedream-5-0-flash-260915，或专用推理接入点 ep-…）。
+const DefaultArkPetImageModel = "doubao-seedream-5-0-pro-260628"
+
+// arkImageSize 官方请求的固定正方形边长（像素模式，宽高均为 16 的倍数）。
+const arkImageSize = "2048x2048"
 
 // ArkPetImageGenerator 直连火山方舟官方图片生成接口，是宠物 AI 生图的默认管线。
 // 与 OpenRouter 中转仅在请求/响应封装上不同：色键抠图、尺寸归一、同任务重试完全复用。
@@ -95,21 +98,28 @@ func (g *ArkPetImageGenerator) editChroma(ctx context.Context, input []byte, pro
 	}
 }
 
-// edit 发送一次官方图片生成请求。4.5 输出固定为 JPEG，交给色键管线归一；
-// 显式关闭组图，确保 data 只有一张。
+// edit 发送一次官方图片生成请求。官方模型输出为不透明图，交给色键管线归一。
+// 注意：
+//   - Seedream 5.0 pro/flash 不支持 sequential_image_generation（4.5 专有），故不下发；
+//     解析时只取 data[0]，即便个别模型返回多张也只取第一张。
+//   - size 必须用像素模式而非 "2K" 档位模式：档位模式下宽高比由模型自行判断，会随参考图
+//     吐出长方形，而抠图管线（含 4×4 网格切帧）要求正方形；2048x2048 是官方推荐的 2K 1:1 值，
+//     且正好落在 pro 的总像素上限 4194304 上。
+//   - output_format 显式要 png：默认 jpeg 的压缩噪声会在绿幕边缘产生色带，干扰色键判定。
 func (g *ArkPetImageGenerator) edit(ctx context.Context, input []byte, prompt string) ([]byte, error) {
 	mime := http.DetectContentType(input)
 	if mime != "image/png" && mime != "image/jpeg" {
 		return nil, fmt.Errorf("参考图必须为 PNG/JPEG")
 	}
 	payload := map[string]any{
-		"model":                       g.model,
-		"prompt":                      prompt,
-		"image":                       "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(input),
-		"size":                        "2K",
-		"response_format":             "b64_json",
-		"sequential_image_generation": "disabled",
-		"watermark":                   false,
+		"model":           g.model,
+		"prompt":          prompt,
+		"image":           "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(input),
+		"response_format": "url",
+		"size":            arkImageSize,
+		"output_format":   "png",
+		"stream":          false,
+		"watermark":       false,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

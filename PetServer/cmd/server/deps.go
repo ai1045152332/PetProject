@@ -133,26 +133,18 @@ func buildDeps() (*deps, func(), error) {
 	}
 	// AI 生图总次数按激活码配置：每个码各用各的 imageQuota，未开通即为 0（不再用全局默认）。
 	imageSvc.SetImageQuotaResolver(accessSvc.ImageQuota)
-	// 生图默认走 Seedream 官方（火山方舟 ARK）；未配置官方 Key 时回退 OpenRouter 中转。
-	// 可用 PETSERVER_IMAGE_PROVIDER=openrouter 强制只用中转，=ark 之外的其它值同样回退到 OpenRouter。
-	var generator petimage.PetImageGenerator
-	if envOrDefault("PETSERVER_IMAGE_PROVIDER", "ark") == "ark" {
-		if ark := petimage.NewArkPetImageGenerator(os.Getenv("PETSERVER_ARK_API_KEY"), os.Getenv("PETSERVER_ARK_IMAGE_MODEL")); ark != nil {
-			generator = ark
-			log.Printf("[pet-images] 生图走 Seedream 官方（ARK），模型: %s", ark.Model())
-		} else {
-			log.Printf("[pet-images] 未配置 PETSERVER_ARK_API_KEY，回退 OpenRouter 生图")
-		}
-	}
-	if generator == nil {
-		if openRouter := petimage.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); openRouter != nil {
-			generator = openRouter
-		}
-	}
-	if generator != nil {
-		imageSvc.SetGenerator(generator)
+	// 生图管线写死为 Seedream，密钥只从服务器配置文件（/opt/petserver/petserver.env）读，不进源码：
+	// 配了 PETSERVER_ARK_API_KEY 就直连火山方舟官方 Seedream 5.0；否则回退 OpenRouter 中转的
+	// bytedance-seed/seedream-4.5（复用已有的 OPENROUTER_API_KEY）。两个 Key 都没配才关掉生图入口。
+	// 模型名可用 PETSERVER_ARK_IMAGE_MODEL / PETSERVER_OPENROUTER_IMAGE_MODEL 覆盖，留空即用各自默认。
+	if ark := petimage.NewArkPetImageGenerator(os.Getenv("PETSERVER_ARK_API_KEY"), os.Getenv("PETSERVER_ARK_IMAGE_MODEL")); ark != nil {
+		imageSvc.SetGenerator(ark)
+		log.Printf("[pet-images] 生图走 Seedream 官方（ARK），模型: %s", ark.Model())
+	} else if openRouter := petimage.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); openRouter != nil {
+		imageSvc.SetGenerator(openRouter)
+		log.Printf("[pet-images] 未配置 PETSERVER_ARK_API_KEY，生图回退 OpenRouter 上的 Seedream，模型: %s", openRouter.Model())
 	} else {
-		log.Printf("[pet-images] 未配置生图接口（PETSERVER_ARK_API_KEY / OPENROUTER_API_KEY），上传/重试将返回 503，历史读取不受影响")
+		log.Printf("[pet-images] 未配置 PETSERVER_ARK_API_KEY 与 OPENROUTER_API_KEY，生图接口未启用，上传/重试将返回 503（历史读取不受影响）")
 	}
 	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
 

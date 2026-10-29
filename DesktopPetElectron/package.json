@@ -5,6 +5,7 @@
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
+    "test": "node tests/update-heartbeat.test.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"

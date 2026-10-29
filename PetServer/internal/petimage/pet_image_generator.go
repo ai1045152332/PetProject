@@ -18,7 +18,10 @@ import (
 	"time"
 )
 
-const PetPromptVersion = "pet-seedream-state-v3"
+// PetPromptVersion 记录成品是由哪一版提示词契约生成的（仅落档供排查，客户端不读）。
+// v4：动画模板从“各帧完全固定 + 动作小幅”改为“身份/镜头固定 + 16 帧半周期单调递进”，
+// 旧版会让模型输出 16 张几乎重合的静态图，动起来接近静止。
+const PetPromptVersion = "pet-seedream-state-v4"
 const DefaultPetImageModel = "bytedance-seed/seedream-4.5"
 
 // petFrameModeAnimated 保留两套生成能力：false=单帧（当前写死，每个状态一次美化请求出透明 PNG）；
@@ -49,6 +52,10 @@ func NewOpenRouterPetImageGenerator(key, model string) *OpenRouterPetImageGenera
 	}
 	return &OpenRouterPetImageGenerator{key: strings.TrimSpace(key), model: model, endpoint: "https://openrouter.ai/api/v1/images", client: &http.Client{Timeout: 4 * time.Minute}}
 }
+
+// Model 返回当前使用的模型 ID，供启动日志确认接入的生成管线。
+func (g *OpenRouterPetImageGenerator) Model() string { return g.model }
+
 func (g *OpenRouterPetImageGenerator) Generate(ctx context.Context, original []byte, state string, progress func(string)) ([]byte, error) {
 	portraitPrompt, animationPrompt, err := petPromptsForState(state)
 	if err != nil {

@@ -103,6 +103,12 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     private var friendsListWidth: CGFloat = 0
     private var friendsViewportHeight: CGFloat = 0
     private var socialLoading = false
+    /// 「好友消息」分区下标（导航第 5 项）
+    private let socialSectionIndex = 4
+    /// 停在好友区且面板可见时的静默同步计时器（面板是复用实例，不跟着刷就停在旧数据上）
+    private var socialAutoRefreshTimer: Timer?
+    /// 静默同步间隔：与心跳同节奏，对方刚同意时最迟一分钟内出现在列表里
+    private let socialAutoRefreshInterval: TimeInterval = 60
 
     private let panelSize = NSSize(width: 720, height: 500)
     private let navWidth: CGFloat = 160
@@ -161,6 +167,7 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     }
 
     deinit {
+        socialAutoRefreshTimer?.invalidate()
         if let accessObserver {
             NotificationCenter.default.removeObserver(accessObserver)
         }
@@ -175,6 +182,12 @@ final class SettingsPanel: NSPanel, NSTextFieldDelegate {
     /// 覆写为可成为 key window，让「宠物名称」输入框能获得焦点并正常编辑。
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// 面板隐藏（关闭也算）时停掉好友区静默同步，不必在看不见的时候继续拉数据
+    override func orderOut(_ sender: Any?) {
+        stopSocialAutoRefresh()
+        super.orderOut(sender)
+    }
 
     private func setupUI() {
         let contentView = self.contentView!
@@ -1890,29 +1903,90 @@ return row
         socialStatusLabel?.stringValue = "已复制你的宠物号 #\(petNo)，把它告诉朋友，对方发申请、你同意后就是好友"
     }
 
-    /// 向服务端注册取宠物号 + 拉好友列表与待处理申请（打开分区与「刷新」按钮触发）
+    /// 向服务端注册取宠物号 + 拉好友列表与待处理申请（打开分区与「刷新」按钮触发，带加载态提示）
     @objc private func refreshSocialFromServer(_ sender: Any?) {
+        loadSocial(silent: false)
+    }
+
+    /// 拉好友与申请。silent=true 为后台静默同步（面板可见期间的定时触发）：
+    /// 不抢「刷新中…」与「正在加载…」这些可见反馈，只在数据确实变了时重排列表。
+    private func loadSocial(silent: Bool) {
         guard !socialLoading else { return }
         socialLoading = true
-        refreshSocialBtn?.title = "刷新中…"
-        socialStatusLabel?.stringValue = "正在加载…"
+        if !silent {
+            refreshSocialBtn?.title = "刷新中…"
+            socialStatusLabel?.stringValue = "正在加载…"
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.socialLoading = false; self.refreshSocialBtn?.title = "刷新" }
+            defer {
+                self.socialLoading = false
+                if !silent { self.refreshSocialBtn?.title = "刷新" }
+            }
             do {
                 _ = try await FriendService.refreshMyPetNo()
                 self.refreshMyPetNoUI()
-                self.socialFriends = try await FriendService.listFriends()
+                let friends = try await FriendService.listFriends()
                 // 申请列表失败不阻断好友列表（旧服务端可能还没这个接口）
-                self.socialRequests = (try? await FriendService.pendingRequests()) ?? []
-                self.rebuildSocialList(emptyHint: "还没有好友，输入对方宠物号点「发申请」，对方同意后你们就互为好友了")
-                self.socialStatusLabel?.stringValue = self.socialRequests.isEmpty
-                    ? ""
-                    : "有 \(self.socialRequests.count) 条好友申请等你处理"
+                let requests = (try? await FriendService.pendingRequests()) ?? []
+                let changed = friends != self.socialFriends || requests != self.socialRequests
+                self.socialFriends = friends
+                self.socialRequests = requests
+                if changed || !silent {
+                    self.rebuildSocialList(emptyHint: "还没有好友，输入对方宠物号点「发申请」，对方同意后你们就互为好友了")
+                }
+                self.applySocialStatus(pending: !requests.isEmpty, changed: changed, silent: silent)
             } catch {
-                self.socialStatusLabel?.stringValue = "加载失败：\(error.localizedDescription)"
+                // 静默同步失败不打扰用户（网络瞬断下个周期会重来），手动刷新才回错误文案
+                if !silent {
+                    self.socialStatusLabel?.stringValue = "加载失败：\(error.localizedDescription)"
+                }
             }
         }
+    }
+
+    /// 列表底部状态文案。手动刷新走完要给个明确收尾（否则停在「正在加载…」）；
+    /// 静默同步只在确实要提醒时才动状态栏，不抢用户刚看到的发送/删除等操作反馈
+    private func applySocialStatus(pending: Bool, changed: Bool, silent: Bool) {
+        let pendingText = "有 \(socialRequests.count) 条好友申请等你处理"
+        if !silent {
+            socialStatusLabel?.stringValue = pending ? pendingText : ""
+            return
+        }
+        // 原本就在提示待处理申请时，静默同步才能接着改这一行
+        let wasPendingHint = socialStatusLabel?.stringValue.hasSuffix("条好友申请等你处理") == true
+        if pending {
+            socialStatusLabel?.stringValue = pendingText
+        } else if wasPendingHint {
+            socialStatusLabel?.stringValue = changed ? "好友与申请已同步到最新" : ""
+        }
+    }
+
+    /// 根据「当前分区是好友区 + 面板可见」开/关静默同步计时（多个入口共用）
+    private func syncSocialAutoRefresh() {
+        if currentSection == socialSectionIndex && isVisible {
+            startSocialAutoRefresh()
+        } else {
+            stopSocialAutoRefresh()
+        }
+    }
+
+    private func startSocialAutoRefresh() {
+        guard socialAutoRefreshTimer == nil else { return }
+        let timer = Timer(timeInterval: socialAutoRefreshInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isVisible, self.currentSection == self.socialSectionIndex else { return }
+                self.loadSocial(silent: true)
+            }
+        }
+        // 面板开着时容易在鼠标事件里吃掉计时器，用 .common 保证继续跑
+        RunLoop.main.add(timer, forMode: .common)
+        socialAutoRefreshTimer = timer
+    }
+
+    private func stopSocialAutoRefresh() {
+        socialAutoRefreshTimer?.invalidate()
+        socialAutoRefreshTimer = nil
     }
 
     @objc private func addFriendClicked(_ sender: Any?) {
@@ -2035,9 +2109,15 @@ return row
             v.isHidden = (i != currentSection)
         }
         applyNavStyle()
+        // 每次点进「好友消息」都重拉一次：面板是复用实例，不重建就不会知道对方刚同意了申请
+        if sender.tag == socialSectionIndex {
+            refreshSocialFromServer(nil)
+        }
     }
 
     private func applyNavStyle() {
+        // 所有改分区的入口最后都会到这里，静默同步的开/关就挂在这里
+        syncSocialAutoRefresh()
         for (i, btn) in navButtons.enumerated() {
             let selected = (i == currentSection)
             btn.layer?.backgroundColor = selected
@@ -2141,6 +2221,11 @@ return row
         // 需要成为 key window，否则「宠物名称」输入框无法获得焦点编辑
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // 停在「好友消息」区时重新打开面板也要拉一次最新数据（复用实例不会重建）
+        if currentSection == socialSectionIndex {
+            refreshSocialFromServer(nil)
+        }
+        syncSocialAutoRefresh()
     }
     
 }

@@ -85,6 +85,43 @@ func TestRequestFriendWaitsForConsent(t *testing.T) {
 	}
 }
 
+// 同一发起方连续加多个好友时，每个接收方都要能收到自己的申请。
+// 旧版待处理申请以发起方为唯一键，后一条会顶掉前一条，先被加的一方永远收不到。
+func TestOneSenderCanRequestMultipleTargets(t *testing.T) {
+	svc := newTestSocialService(t)
+	sender := svc.EnsureRegistered("device-sender", "hS", "发起者")
+	first := svc.EnsureRegistered("device-first", "h1", "第一位")
+	second := svc.EnsureRegistered("device-second", "h2", "第二位")
+	if sender == 0 || first == 0 || second == 0 {
+		t.Fatalf("三台设备都应拿到宠物号")
+	}
+
+	if _, _, err := svc.RequestFriend("device-sender", first); err != nil {
+		t.Fatalf("申请加第一位失败: %v", err)
+	}
+	if _, _, err := svc.RequestFriend("device-sender", second); err != nil {
+		t.Fatalf("申请加第二位失败: %v", err)
+	}
+
+	if reqs := svc.PendingRequests("device-first"); len(reqs) != 1 || reqs[0].FromPetNo != sender {
+		t.Errorf("先被加的一方应仍收到自己的申请，得到 %+v", reqs)
+	}
+	if reqs := svc.PendingRequests("device-second"); len(reqs) != 1 || reqs[0].FromPetNo != sender {
+		t.Errorf("后被加的一方也要收到申请，得到 %+v", reqs)
+	}
+
+	// 同意其中一方不影响另一方的待处理申请
+	if _, err := svc.AcceptFriendRequest("device-first", sender); err != nil {
+		t.Fatalf("同意第一位的申请失败: %v", err)
+	}
+	if reqs := svc.PendingRequests("device-second"); len(reqs) != 1 {
+		t.Errorf("第二位不该被连带处理掉，得到 %+v", reqs)
+	}
+	if mine, err := svc.ListFriends("device-sender"); err != nil || len(mine) != 1 || mine[0].PetNo != first {
+		t.Errorf("发起方好友列表应只含已同意的一方，得到 %+v err=%v", mine, err)
+	}
+}
+
 func TestAcceptFriendRequestMakesBothSidesFriends(t *testing.T) {
 	svc := newTestSocialService(t)
 	owner := svc.EnsureRegistered("device-owner", "hA", "主人")

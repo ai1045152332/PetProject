@@ -44,19 +44,21 @@ func TestArkGeneratorContractAndSingleFrameChroma(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		var model, size, respFmt, sequential, imageField string
+		var model, size, respFmt, sequential, imageField, outputFormat string
 		var prompt string
 		_ = json.Unmarshal(payload["model"], &model)
 		_ = json.Unmarshal(payload["size"], &size)
 		_ = json.Unmarshal(payload["response_format"], &respFmt)
+		_ = json.Unmarshal(payload["output_format"], &outputFormat)
 		_ = json.Unmarshal(payload["sequential_image_generation"], &sequential)
 		_ = json.Unmarshal(payload["image"], &imageField)
 		_ = json.Unmarshal(payload["prompt"], &prompt)
 		if model != DefaultArkPetImageModel {
 			t.Errorf("model=%q", model)
 		}
-		if size != "2K" || respFmt != "b64_json" || sequential != "disabled" {
-			t.Errorf("size=%q response_format=%q sequential=%q", size, respFmt, sequential)
+		// size 必须是像素模式的正方形档位模式会让模型自定宽高比、吐出长方形。
+		if size != arkImageSize || respFmt != "url" || outputFormat != "png" || sequential != "" {
+			t.Errorf("size=%q response_format=%q output_format=%q sequential=%q", size, respFmt, outputFormat, sequential)
 		}
 		var watermark bool
 		_ = json.Unmarshal(payload["watermark"], &watermark)

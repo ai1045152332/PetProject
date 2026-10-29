@@ -41,6 +41,9 @@ func (e petBackgroundError) Error() string { return e.reason }
 func prepareSeedreamImage(data []byte, sheet bool) ([]byte, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "png" && format != "jpeg") || cfg.Width < 16 || cfg.Height < 16 || cfg.Width > 4096 || cfg.Height > 4096 || cfg.Width != cfg.Height {
+		// 正方形是抠图与 4×4 切帧的前提，请求侧已用像素模式 size 固定；真收到长方形说明模型没遵守，
+		// 记下实际尺寸便于排查（长方形不能硬裁成方形，会切掉主体）。
+		log.Printf("[pet-images] 上游图片不合规：format=%s %dx%d sheet=%v", format, cfg.Width, cfg.Height, sheet)
 		return nil, fmt.Errorf("Seedream 返回图片尺寸或格式不正确，请重试")
 	}
 	source, _, err := image.Decode(bytes.NewReader(data))
@@ -208,29 +211,84 @@ func keyChromaGreen(im *image.NRGBA, sheet bool) (*image.NRGBA, int) {
 		}
 	}
 	transparent := len(queue)
+	// 背景主色：adaptive 路径已给出；固定阈值路径（鲜艳绿幕）下补一份，
+	// 否则下面那步孤岛清理整段被跳过，腿缝、尾根这类被主体围住的纯绿块就没人管。
+	if backdrop.A == 0 {
+		if key, share := edgeGreenKey(im); share >= 0.5 && greenDominant(key) {
+			backdrop = key
+		}
+	}
 	// 前腿之间、道具下方这类被主体整个围住的同色背景与画面边界不连通，漫水永远够不到，
 	// 按面积阈值单独清掉，否则最终素材上会留下几块绿色碎片。
 	if backdrop.A != 0 {
 		transparent += sweepBackdropRemnants(out, backdrop)
 	}
-	// Despill：仍贴着抠除区的毛发像素保留了 JPEG 振铃与柔边的绿偏，
-	// 把绿色压回红/蓝水平，避免桌面上一圈绿边。
-	for y := 0; y < petCanvas; y++ {
-		for x := 0; x < petCanvas; x++ {
-			c := out.NRGBAAt(x, y)
-			if c.A >= 128 && int(c.G) > int(c.R) && int(c.G) > int(c.B) && touchesKeyed(out, x, y) {
-				base := int(c.R)
-				if int(c.B) > base {
-					base = int(c.B)
-				}
-				limit := min(base+12, 255)
-				if int(c.G) > limit {
-					out.SetNRGBA(x, y, color.NRGBA{R: c.R, G: uint8(limit), B: c.B, A: c.A})
-				}
-			}
-		}
+	// 动画 sheet 每格只有 256px（主体的相对尺寸约为单帧基准图的 1/4），
+	// 沿用单帧的像素带会相对吃深 4 倍，按格缩一档。
+	if sheet {
+		despillGreenEdge(out, max(despillBand/4, 2))
+	} else {
+		despillGreenEdge(out, despillBand)
 	}
 	return out, transparent
+}
+
+// despillBand 色键溢色向内清理的像素层数（1024 画布尺度）。
+// 绿幕不只从背后遮住轮廓：耳尖、趾缝这类细毛发整条被染绿，大片绿毛还会吃到绿幕反光，
+// 旧逻辑只处理紧贴抠除区的 1px 圈，于是留下一圈肉眼可见的绿边。
+// 实测 4→20 把真实成品的残余绿像素从 4.9% 降到 2.4%，再往上（32）已无可见收益。
+const despillBand = 20
+
+// despillGreenEdge 从抠除区向内逐层把绿通道压回红/蓝的较高者，越靠内压得越轻。
+// 只动 G 明显高出另两个通道的像素，暖色毛发本色不受影响；
+// 不连通画面边界的绿色（眼睛、斑纹）离抠除区远，落在层数外，原样保留。
+func despillGreenEdge(out *image.NRGBA, band int) {
+	const size = petCanvas * petCanvas
+	layer := make([]int16, size)
+	for i := range layer {
+		layer[i] = -1
+	}
+	queue := make([]int, 0, size/8)
+	for i := 0; i < size; i++ {
+		if out.NRGBAAt(i%petCanvas, i/petCanvas).A == 0 {
+			layer[i] = 0
+			queue = append(queue, i)
+		}
+	}
+	for head := 0; head < len(queue); head++ {
+		i := queue[head]
+		if layer[i] >= int16(band) {
+			continue
+		}
+		x, y := i%petCanvas, i/petCanvas
+		for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+			nx, ny := x+d[0], y+d[1]
+			if nx < 0 || ny < 0 || nx > petCanvas-1 || ny > petCanvas-1 {
+				continue
+			}
+			j := ny*petCanvas + nx
+			// 半透明像素已按 alpha 淡出，不再向内传播，也不动 featherSolidEdge 的结果。
+			if layer[j] != -1 || out.NRGBAAt(nx, ny).A < 128 {
+				continue
+			}
+			layer[j] = layer[i] + 1
+			queue = append(queue, j)
+		}
+	}
+	for _, i := range queue {
+		d := layer[i]
+		if d <= 0 {
+			continue
+		}
+		x, y := i%petCanvas, i/petCanvas
+		c := out.NRGBAAt(x, y)
+		base := max(int(c.R), int(c.B))
+		if int(c.G) <= base {
+			continue
+		}
+		strength := float64(band-int(d)+1) / float64(band)
+		out.SetNRGBA(x, y, color.NRGBA{R: c.R, G: uint8(float64(c.G) - float64(int(c.G)-base)*strength + 0.5), B: c.B, A: c.A})
+	}
 }
 
 // sweepBackdropRemnants 清掉被主体包围、不与画面边界连通的同色背景孤岛。

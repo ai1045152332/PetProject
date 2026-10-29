@@ -142,12 +142,12 @@ func (s *SocialService) RequestFriend(ownerDeviceID string, petNo int64) ([]mode
 	}
 
 	// 对向申请待处理（对方也加过我方）：本次视为互相同意，直接双向互加
-	_, opposed, err := s.repo.FindRequest(owner.PetNo, target.DeviceID, 0)
+	opposed, err := s.repo.FindRequest(owner.PetNo, target.DeviceID, 0)
 	if err != nil {
 		return nil, "", err
 	}
 	if opposed != nil {
-		if err := s.repo.DropRequest(opposed.FromDevice); err != nil {
+		if err := s.repo.DropRequest(opposed.ID); err != nil {
 			return nil, "", err
 		}
 		if err := s.repo.MarkRequestHandled(opposed.ID, requestStatusAccepted, now); err != nil {
@@ -162,7 +162,7 @@ func (s *SocialService) RequestFriend(ownerDeviceID string, petNo int64) ([]mode
 	}
 
 	// 已有相同方向的待处理申请：幂等，不重复发
-	_, pending, err := s.repo.FindRequest(target.PetNo, ownerDeviceID, 0)
+	pending, err := s.repo.FindRequest(target.PetNo, ownerDeviceID, 0)
 	if err != nil {
 		return nil, "", err
 	}
@@ -256,7 +256,7 @@ func (s *SocialService) handleFriendRequest(handlerDeviceID string, fromPetNo in
 	if handler == nil {
 		return nil, ErrSocialInvalidDevice
 	}
-	_, req, err := s.repo.FindRequest(handler.PetNo, "", fromPetNo)
+	req, err := s.repo.FindRequest(handler.PetNo, "", fromPetNo)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func (s *SocialService) handleFriendRequest(handlerDeviceID string, fromPetNo in
 	if err := s.repo.MarkRequestHandled(req.ID, status, now); err != nil {
 		return nil, err
 	}
-	if err := s.repo.DropRequest(req.FromDevice); err != nil { // 处理完的申请不再占位（结果已落留痕）
+	if err := s.repo.DropRequest(req.ID); err != nil { // 处理完的申请不再占位（结果已落留痕）
 		return nil, err
 	}
 

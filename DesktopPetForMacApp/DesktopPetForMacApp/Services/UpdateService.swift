@@ -1,6 +1,8 @@
 // UpdateService.swift
 // DesktopPetForMacApp — 客户端自动更新
-// 流程：检查版本 → 提示 → 下载安装包 → 校验 sha256 + Ed25519 验签 → 换包重启
+// 流程：检查版本 → 提示 → 下载安装包 → 校验 sha256 + Ed25519 验签 → 解包换包重启
+// 安装包优先用 dmg（与官网手动下载同源），老服务端没有 dmg 字段时退回 zip
+// 残留治理：安装前扫掉历史更新包，装完由换包脚本连工作目录一起删除
 // 安全模型：App 只持有公钥，私钥离线保存在发布者本机（~/.cute-pet-release）
 
 import Foundation
@@ -26,6 +28,8 @@ final class UpdateService {
     /// 启动自动检查（启动 30 秒后首次检查，之后每 24 小时一次）
     func start() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            // 开机顺手清掉历史版本遗留的更新包，即使这次没有新版本也能把残留收掉
+            self?.cleanupStaleUpdateArtifacts()
             self?.checkForUpdate(userInitiated: false)
         }
         let t = Timer(timeInterval: checkInterval, repeats: true) { [weak self] _ in
@@ -114,13 +118,14 @@ final class UpdateService {
     }
 
     private func download(info: [String: Any], version: String) {
-        guard let file = info["file"] as? String,
-              let expectedSHA = info["sha256"] as? String,
-              let signature = info["signature"] as? String,
-              let url = URL(string: ServerConfig.baseURL + "/download/\(file)") else {
+        guard let package = Self.selectPackage(from: info),
+              let url = URL(string: ServerConfig.baseURL + "/download/\(package.file)") else {
             showAlert(title: "更新失败", text: "更新信息不完整，请稍后再试")
             return
         }
+        let file = package.file
+        let expectedSHA = package.sha256
+        let signature = package.signature
 
         downloading = true
         FileLogger.log("[Update] 开始下载 \(file)")
@@ -161,41 +166,40 @@ final class UpdateService {
         }.resume()
     }
 
+    /// 选包：dmg 优先，三件套字段缺失时回落 zip，保证对老 manifest 也可用
+    private static func selectPackage(from info: [String: Any]) -> (file: String, sha256: String, signature: String)? {
+        if let dmg = info["dmgFile"] as? String, !dmg.isEmpty,
+           let sha = info["dmgSHA256"] as? String, !sha.isEmpty,
+           let sig = info["dmgSignature"] as? String, !sig.isEmpty {
+            return (dmg, sha, sig)
+        }
+        if let zip = info["file"] as? String, !zip.isEmpty,
+           let sha = info["sha256"] as? String, !sha.isEmpty,
+           let sig = info["signature"] as? String, !sig.isEmpty {
+            return (zip, sha, sig)
+        }
+        return nil
+    }
+
     // MARK: - 安装（换包重启）
 
     private func install(data: Data, file: String) {
         let fm = FileManager.default
-        let workDir = fm.temporaryDirectory.appendingPathComponent("cutePetUpdate-\(UUID().uuidString)")
-        let zipURL = workDir.appendingPathComponent(file)
+        // 开工前先清掉上一版遗留的更新包，否则每次更新都会多一份旧包堆在临时目录
+        cleanupStaleUpdateArtifacts()
 
+        let workDir = fm.temporaryDirectory.appendingPathComponent("cutePetUpdate-\(UUID().uuidString)")
         do {
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
-            try data.write(to: zipURL)
         } catch {
-            FileLogger.log("[Update] 写入临时文件失败: \(error.localizedDescription)")
+            FileLogger.log("[Update] 创建临时目录失败: \(error.localizedDescription)")
             showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
             return
         }
 
-        let unzip = Process()
-        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        unzip.arguments = ["-x", "-k", zipURL.path, workDir.path]
-        do {
-            try unzip.run()
-            unzip.waitUntilExit()
-        } catch {
-            FileLogger.log("[Update] 解压失败: \(error.localizedDescription)")
-            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
-            return
-        }
-        guard unzip.terminationStatus == 0 else {
-            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
-            return
-        }
-
-        let contents = (try? fm.contentsOfDirectory(at: workDir, includingPropertiesForKeys: nil)) ?? []
-        guard let newApp = contents.first(where: { $0.pathExtension == "app" }) else {
-            showAlert(title: "更新失败", text: "安装包异常，请稍后重试")
+        // 两种格式都收敛成 workDir 内的一个 .app（与安装目标同盘），换包脚本只跑本地 mv
+        guard let newApp = unpack(data: data, file: file, workDir: workDir) else {
+            try? fm.removeItem(at: workDir)
             return
         }
 
@@ -238,6 +242,8 @@ final class UpdateService {
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else {
             FileLogger.log("[Update] 用户选择稍后更新")
+            // 不重启就不留残留：连已下载的更新包一起删掉，下次检查会重新下
+            try? fm.removeItem(at: workDir)
             return
         }
 
@@ -246,11 +252,130 @@ final class UpdateService {
         } catch {
             FileLogger.log("[Update] 启动更新脚本失败: \(error.localizedDescription)")
             showAlert(title: "更新失败", text: "安装启动失败，请稍后重试")
+            // 换包脚本没跑起来，不会有 rm 收尾，这里自己把更新包清掉
+            try? fm.removeItem(at: workDir)
             return
         }
 
         FileLogger.log("[Update] 即将退出以完成更新")
         NSApp.terminate(nil)
+    }
+
+    // MARK: - 解包（zip / dmg 两条通路）
+
+    /// 按扩展名分发到对应解包通路，失败已在内部弹提示
+    private func unpack(data: Data, file: String, workDir: URL) -> URL? {
+        if file.lowercased().hasSuffix(".dmg") {
+            return unpackDMG(data: data, file: file, workDir: workDir)
+        }
+        return unpackZIP(data: data, file: file, workDir: workDir)
+    }
+
+    /// zip 通路：ditto 直接解到 workDir，产物与安装目标同盘，可近乎瞬时 mv 换包
+    private func unpackZIP(data: Data, file: String, workDir: URL) -> URL? {
+        let fm = FileManager.default
+        let packageURL = workDir.appendingPathComponent(file)
+        do {
+            try data.write(to: packageURL)
+        } catch {
+            FileLogger.log("[Update] 写入临时文件失败: \(error.localizedDescription)")
+            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
+            return nil
+        }
+        guard run("/usr/bin/ditto", ["-x", "-k", packageURL.path, workDir.path]) else {
+            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
+            return nil
+        }
+        let contents = (try? fm.contentsOfDirectory(at: workDir, includingPropertiesForKeys: nil)) ?? []
+        guard let app = contents.first(where: { $0.pathExtension == "app" }) else {
+            showAlert(title: "更新失败", text: "安装包异常，请稍后重试")
+            return nil
+        }
+        return app
+    }
+
+    /// dmg 通路：挂载是只读卷，不能直接 mv 换包，先 ditto 拷成 workDir 内的本地副本再交给换包脚本
+    private func unpackDMG(data: Data, file: String, workDir: URL) -> URL? {
+        let fm = FileManager.default
+        let packageURL = workDir.appendingPathComponent(file)
+        do {
+            try data.write(to: packageURL)
+        } catch {
+            FileLogger.log("[Update] 写入临时文件失败: \(error.localizedDescription)")
+            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
+            return nil
+        }
+
+        // 挂载点固定指到 workDir 下：卷名带空格，且 /Volumes 下同名卷会被追加序号，写死路径会偶发找不到源
+        let mountDir = workDir.appendingPathComponent("mnt")
+        do {
+            try fm.createDirectory(at: mountDir, withIntermediateDirectories: true)
+        } catch {
+            FileLogger.log("[Update] 创建挂载目录失败: \(error.localizedDescription)")
+            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
+            return nil
+        }
+
+        // -nobrowse 避免挂载卷自己弹一个 Finder 窗口；摘要已经在本机校验过，-noverify 跳过 dmg 内置校验再省一轮
+        guard run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-noverify", "-mountpoint", mountDir.path, packageURL.path]) else {
+            showAlert(title: "更新失败", text: "安装包挂载失败，请稍后重试")
+            return nil
+        }
+        // 无论后续成败都必须卸载，否则挂载卷残留会让下一次删除和更新全部踩坑
+        defer { _ = run("/usr/bin/hdiutil", ["detach", "-force", mountDir.path]) }
+
+        let contents = (try? fm.contentsOfDirectory(at: mountDir, includingPropertiesForKeys: nil)) ?? []
+        guard let mountedApp = contents.first(where: { $0.pathExtension == "app" }) else {
+            showAlert(title: "更新失败", text: "安装包异常，请稍后重试")
+            return nil
+        }
+
+        // ditto 保留权限与符号链接，拷出来的 app 与解压 zip 得到的结果一致
+        let stagedApp = workDir.appendingPathComponent(mountedApp.lastPathComponent)
+        guard run("/usr/bin/ditto", [mountedApp.path, stagedApp.path]) else {
+            showAlert(title: "更新失败", text: "安装过程中出错了，请稍后重试")
+            return nil
+        }
+        return stagedApp
+    }
+
+    /// 同步跑一个外部命令（沿用原有主线程 waitUntilExit 的写法），失败只记日志
+    @discardableResult
+    private func run(_ launchPath: String, _ args: [String]) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: launchPath)
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+            p.waitUntilExit()
+        } catch {
+            FileLogger.log("[Update] 命令执行失败 \(launchPath): \(error.localizedDescription)")
+            return false
+        }
+        guard p.terminationStatus == 0 else {
+            FileLogger.log("[Update] 命令非 0 退出 \(launchPath): \(p.terminationStatus)")
+            return false
+        }
+        return true
+    }
+
+    /// 扫掉临时目录里历史遗留的更新包（旧版本 dmg/zip 与解压产物），避免一次更新堆一份
+    private func cleanupStaleUpdateArtifacts() {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: fm.temporaryDirectory,
+                                                     includingPropertiesForKeys: nil) else { return }
+        for item in items where item.lastPathComponent.hasPrefix("cutePetUpdate-") {
+            // 老版本遗留目录里可能有还挂着的只读卷，不先卸载 removeItem 会失败
+            _ = run("/usr/bin/hdiutil", ["detach", "-force", item.appendingPathComponent("mnt").path])
+            do {
+                try fm.removeItem(at: item)
+                FileLogger.log("[Update] 已清理历史更新残留: \(item.lastPathComponent)")
+            } catch {
+                FileLogger.log("[Update] 清理历史更新残留失败: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - 工具

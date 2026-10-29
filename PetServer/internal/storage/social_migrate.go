@@ -79,12 +79,15 @@ func (s *SocialSQLite) ImportSocialState(state model.SocialState) (SocialImportS
 		}
 	}
 
-	for _, req := range state.Requests {
+	for reqID, req := range state.Requests {
 		if req == nil || req.FromDevice == "" {
 			continue
 		}
-		res, err := tx.Exec(`INSERT OR IGNORE INTO requests(from_device, id, from_no, from_name, to_no, created_ms) VALUES(?,?,?,?,?,?)`,
-			req.FromDevice, req.ID, req.FromPetNo, req.FromName, req.ToPetNo, req.CreatedAt.UnixMilli())
+		if req.ID == "" {
+			req.ID = reqID // 兼容早期以发起设备为键的旧 JSON
+		}
+		res, err := tx.Exec(`INSERT OR IGNORE INTO requests(from_device, to_no, id, from_no, from_name, created_ms) VALUES(?,?,?,?,?,?)`,
+			req.FromDevice, req.ToPetNo, req.ID, req.FromPetNo, req.FromName, req.CreatedAt.UnixMilli())
 		if err != nil {
 			return stats, fmt.Errorf("导入好友申请失败: %w", err)
 		}
@@ -245,7 +248,7 @@ func (s *SocialSQLite) ExportSocialState() (model.SocialState, error) {
 		return state, err
 	}
 
-	reqs, err := s.db.Query(`SELECT from_device, id, from_no, from_name, to_no, created_ms FROM requests ORDER BY created_ms`)
+	reqs, err := s.db.Query(`SELECT from_device, to_no, id, from_no, from_name, created_ms FROM requests ORDER BY created_ms`)
 	if err != nil {
 		return state, err
 	}
@@ -255,12 +258,12 @@ func (s *SocialSQLite) ExportSocialState() (model.SocialState, error) {
 			req     model.FriendRequest
 			created int64
 		)
-		if err := reqs.Scan(&req.FromDevice, &req.ID, &req.FromPetNo, &req.FromName, &req.ToPetNo, &created); err != nil {
+		if err := reqs.Scan(&req.FromDevice, &req.ToPetNo, &req.ID, &req.FromPetNo, &req.FromName, &created); err != nil {
 			return state, err
 		}
 		req.CreatedAt = millis(created)
 		entry := req
-		state.Requests[req.FromDevice] = &entry
+		state.Requests[req.ID] = &entry // 旧结构以申请 ID 为键（同一发起方可同时有多条待处理申请）
 	}
 	if err := reqs.Err(); err != nil {
 		return state, err

@@ -112,10 +112,10 @@ DesktopPetForMacApp/
         ├── MenuBarIcon.png                # 菜单栏图标
         ├── WordBank/                      # 单词词库（cet4 / cet6 / ielts / travel）
         └── Sprites/                       # 动画帧资源（按状态分目录）
-            ├── focus/                     # 专注（15 帧）
-            ├── idel/                      # 休闲（1 帧，预留）
-            ├── sleep/                     # 睡觉（无资源，回退占位图）
-            └── pet/                       # 抚摸（23 帧）
+            ├── focus/                     # 专注（8 帧）
+            ├── idel/                      # 休闲（24 帧，摇尾巴）
+            ├── sleep/                     # 睡觉（8 帧）
+            └── pet/                       # 抚摸（24 帧，轻微蹭头）
 ```
 
 ---
@@ -152,10 +152,10 @@ DesktopPetForMacApp/
 
 | 状态 | 目录 | 帧数 | 触发方式 | 播放类型 |
 |------|------|------|----------|----------|
-| 专注 focus | `Sprites/focus/` | 15 | 默认状态；从 pet / sleep 返回，提醒触发时也播放专注动画 | 循环 |
-| 休闲 idel | `Sprites/idel/` | 1 | 设置面板切换（预留动画位） | 循环 |
-| 睡觉 sleep | `Sprites/sleep/`（缺） | 1（占位图） | 设置面板切换 | 保持直到手动切回 |
-| 抚摸 pet | `Sprites/pet/` | 23 | 右键菜单 → 抚摸 | 播完自动回 focus |
+| 专注 focus | `Sprites/focus/` | 8（单图重复，动作为渲染层呼吸） | 默认状态；从 pet / sleep 返回，提醒触发时也播放专注动画 | 循环 |
+| 休闲 idel | `Sprites/idel/` | 24（真动画：摇尾巴） | 设置面板切换 | 循环 2.0s |
+| 睡觉 sleep | `Sprites/sleep/` | 8（单图重复，动作为渲染层呼吸） | 设置面板切换 | 保持直到手动切回 |
+| 抚摸 pet | `Sprites/pet/` | 24（真动画：轻微左右蹭头） | 右键菜单 → 抚摸 / 点击 | 一次性播完（2.0s）自动回 focus |
 
 > 原「提醒 warn」状态已合并进专注：提醒触发时播放一段专注动画 + 气泡文案，不再生成/上传 warn 图片。
 
@@ -194,10 +194,13 @@ Resources/Sprites/
 ├── focus/    专注动画帧（focus_0.png ~ focus_N.png，或任意命名的 PNG）
 ├── idel/     休闲动画帧
 ├── sleep/    睡觉动画帧
-└── pet/      抚摸动画帧
+├── pet/      抚摸动画帧
+└── hide/     躲藏单帧
 ```
 
 加载时优先扫描状态目录下所有 PNG（按文件名排序）；目录缺失时回退到扁平模式（`Resources/Sprites/focus_*.png`）；两者都无则使用橙色占位图（128×128）并记日志。
+
+动画帧的再生流程与踩坑记录见 `tools/sprite_animate.py` 头注释与 `Sprites/README.txt`。
 
 ### 格式要求
 

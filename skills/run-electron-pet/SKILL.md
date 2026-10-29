@@ -64,6 +64,26 @@ PET_TEST_REMINDER=1 npm start
 - 点「知道啦」或右上角 × → 收起提醒卡（专注动画自身持续循环，无需切换）
 - 提醒卡未关闭时，下一次到点不重复弹（`isShowing` 防叠加）
 
+## 验证心跳与自动更新
+
+心跳默认启动即报一次、之后每 60s 一次，日志为 `[heartbeat] 已启动，间隔 60s → http://…/api/heartbeat`；首次上报成功会打 `[heartbeat] 宠物号已分配: #N`。断网时同一条失败原因只记一次。
+
+检查更新正常是「启动 30s 后首检 + 每 24h 一次」，测试用：
+
+```bash
+PET_TEST_UPDATE=1 npm start      # 启动 3 秒后立即走一遍检查更新（跳过 30s 等待）
+```
+
+也可点菜单栏托盘 →「检查更新（当前 electron0.0.1）」手动触发（无更新/失败都会弹提示，自动检查则静默）。
+
+判定要点：
+- 服务端 `latest.json` 里没有 `winVersion/winFile/winSHA256/winSignature`（Windows）或 `macVersion/...`（macOS）时，提示「服务端还没有发布 XX 版安装包」——**这是预期行为**，说明平台字段没配或服务端不是新版。
+- 客户端只认平台前缀字段，**不会**拿 mac 原生版的 `version/file` 更新自己；版本比较用本机 `package.json` 的 `version`。
+- 客户端自身版本形如 `electron0.0.1`（`electron` 前缀专用于区分 mac 原生版的 `v1.0.031`）；`winVersion`/`macVersion` 必须写成同样的 `electron` 形式，比较时会自动剥前缀。
+- 下载走 `GET /download/<文件名>`，落盘在 `userData/updates/`，先比 sha256 再验 Ed25519 签名，任一不过就删包并提示失败。
+
+快速回归（不启 GUI）：`npm test`（32 项断言，mock 掉 electron）。
+
 ## 打包桌面 App（electron-builder）
 
 已配 `electron-builder`，`package.json` 的 `build` 段声明了 appId / productName / mac+win target。产物输出到 `dist/`，图标资源在 `packaging/`（`icon.icns` + 1024² `icon.png`，Windows 的 `icon.ico` 由 electron-builder 据 png 自动生成）。
@@ -88,8 +108,11 @@ npm run dist         # 按当前系统自动打对应包
 ## 配置
 
 - 提醒间隔：`drinkWaterInterval`（分钟，默认 30，范围 1~120）
+- 服务端地址：`serverBaseURL`（默认 `http://101.96.248.75`，心跳与更新共用）
+- 心跳相关：`petName`（默认「毛豆」）、`deviceId`（首次启动自动解析，mac 取 `IOPlatformUUID`、Windows 取注册表 `MachineGuid`）、`petNo`（服务端回填）、`lastUpdateCheckAt`
 - 持久化位置：Electron `userData/pet-config.json`
   - macOS：`~/Library/Application Support/desktop-pet-electron/pet-config.json`
+  - 测试可用 `--user-data-dir=/tmp/xxx` 换隔离配置，不污染本机配置
   - 直接改该文件后重启生效（暂无设置 UI，待 P3 右键菜单补上）
 
 ## 项目结构（速查）
@@ -104,7 +127,10 @@ DesktopPetElectron/
 │   ├── pet-window.js           # 透明置顶悬浮窗（200×200）
 │   ├── reminder-window.js      # 喝水提醒独立弹窗（380×300 居中）
 │   ├── reminder-scheduler.js   # 提醒调度：对齐触发点 + 间隔重复 + 防叠加
-│   ├── tray.js                 # 菜单栏托盘：显示/隐藏 + 退出（悬浮窗 skipTaskbar 无 Dock 图标）
+│   ├── tray.js                 # 菜单栏托盘：显示/隐藏 + 检查更新 + 退出
+│   ├── heartbeat.js            # 心跳上报（1 分钟一次，移植 mac 版 HeartbeatService）
+│   ├── update-service.js       # 自动更新：检查/下载/sha256+Ed25519 校验/按平台安装
+│   ├── app-info.js             # 版本号、设备 ID（IOPlatformUUID / MachineGuid）、宠物名
 │   └── config-store.js         # 极简 JSON 配置持久化（对标 UserDefaults）
 ├── src/renderer/
 │   ├── index.html / pet.css / pet.js         # 宠物窗：focus 帧循环（提醒触发时从头播放）
@@ -125,14 +151,17 @@ DesktopPetElectron/
 | 快捷键触发不了 | `globalShortcut` 可能与系统快捷键冲突，改用 `PET_TEST_REMINDER=1` 启动验证 |
 | 看不到小猫但进程在跑 / 无法退出 | 悬浮窗 `skipTaskbar` 无 Dock 图标，看顶部菜单栏托盘图标→退出；无托盘则 `ps` 查 PID 后精确 `kill`（别 `pkill` 按名杀，易漏外层 npm 包装进程） |
 | 首次安装卡在下载 | 设 `ELECTRON_MIRROR` 镜像后重跑 `npm install` |
+| 托盘「检查更新」提示「服务端还没有发布 Windows 版安装包」 | 服务端 `dist/latest.json` 缺 `win*` 字段（或 PetServer 未部署支持平台字段的新版），属预期提示 |
+| 更新一直反复提示同一版本 | `winVersion`/`macVersion` 与包内 `package.json` 的 `version` 不一致（注意带 `electron` 前缀），改到一致再发 |
+| 想确认心跳是否真的上报成功 | 本地起 PetServer 后看 `data/heartbeats.jsonl` 最后一条的 `version`/`deviceId`/`petState` |
 
 ## 与其他 skill / 工程的关系
 
 - 素材来源与抠图规范 → `meijing-pet-prompts`
 - macOS 原生版发版（与本 Electron 工程无关）→ `deploy-cute-pet`
-- 服务端 `PetServer`（Go，跨平台无需改动）：Electron 版后续 P4 直接对接其接口
+- 服务端 `PetServer`（Go，跨平台）：心跳 `/api/heartbeat`、版本 `/api/app/latest` 与 mac 版共用；Electron 发布用 `win*` / `mac*` 平台字段（需部署支持这些字段的新版服务端，见该工程 README）
 
 ## 当前进度
 
-已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
+已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + 心跳上报 + 自动更新/检查更新 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
 P1 完整动画状态机 → P2 拖拽/点击/托盘（托盘✅）→ P3 右键菜单 → P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。

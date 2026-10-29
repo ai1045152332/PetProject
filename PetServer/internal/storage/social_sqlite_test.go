@@ -128,7 +128,7 @@ func TestExportSocialStateRoundTrip(t *testing.T) {
 	if back.Counter != source.Counter {
 		t.Errorf("宠物号水位应还原，期望 %d 得到 %d", source.Counter, back.Counter)
 	}
-	if len(back.Registry) != 2 || len(back.Friends["dev-a"]) != 1 || back.Requests["dev-b"] == nil {
+	if len(back.Registry) != 2 || len(back.Friends["dev-a"]) != 1 || back.Requests["req-1"] == nil {
 		t.Errorf("设备/好友/申请未还原: %+v", back)
 	}
 	if len(back.Inbox["dev-b"]) != 1 || back.Delivered["dev-b"]["msg-1"].Times != 2 {
@@ -151,5 +151,104 @@ func TestExportSocialStateRoundTrip(t *testing.T) {
 	}
 	if again.Counter != source.Counter || again.Inbox["dev-b"][0].ID != "msg-1" {
 		t.Errorf("JSON 往返后数据不符: %+v", again)
+	}
+}
+
+// 同一发起方给多人发好友申请时必须各自留存：旧版以发起方为主键会让后一条顶掉前一条，
+// 先被加的那方永远收不到申请。
+func TestRequestsFromSameSenderToDifferentTargetsCoexist(t *testing.T) {
+	now := time.Now()
+	repo := openTempSQLite(t)
+	for _, d := range []struct{ id, name string }{{"dev-a", "A"}, {"dev-b", "B"}, {"dev-c", "C"}} {
+		if _, err := repo.Register(d.id, "host", d.name, now); err != nil {
+			t.Fatalf("注册 %s 失败: %v", d.id, err)
+		}
+	}
+
+	put := func(id, from string, to int64) {
+		if err := repo.PutRequest(&model.FriendRequest{
+			ID: id, FromDevice: from, FromPetNo: 100001, FromName: "A", ToPetNo: to, CreatedAt: now,
+		}); err != nil {
+			t.Fatalf("写入申请 %s 失败: %v", id, err)
+		}
+	}
+	put("req-1", "dev-a", 100002) // A → B
+	put("req-2", "dev-a", 100003) // A → C：不得顶掉上一条
+
+	if toB, err := repo.RequestsTo(100002); err != nil || len(toB) != 1 || toB[0].ID != "req-1" {
+		t.Errorf("B 应拿到自己的待处理申请，得到 %+v err=%v", toB, err)
+	}
+	if toC, err := repo.RequestsTo(100003); err != nil || len(toC) != 1 || toC[0].ID != "req-2" {
+		t.Errorf("C 应拿到自己的待处理申请，得到 %+v err=%v", toC, err)
+	}
+
+	// 同一方向重复申请仍是就地覆盖（换新 ID），不叠加第二条
+	put("req-3", "dev-a", 100002)
+	if toB, err := repo.RequestsTo(100002); err != nil || len(toB) != 1 || toB[0].ID != "req-3" {
+		t.Errorf("重复申请应覆盖为最新一条，得到 %+v err=%v", toB, err)
+	}
+
+	// 按申请 ID 删除只影响自己那一条
+	if err := repo.DropRequest("req-3"); err != nil {
+		t.Fatalf("删除申请失败: %v", err)
+	}
+	if toB, err := repo.RequestsTo(100002); err != nil || len(toB) != 0 {
+		t.Errorf("已处理申请不该残留，得到 %+v err=%v", toB, err)
+	}
+	if toC, err := repo.RequestsTo(100003); err != nil || len(toC) != 1 {
+		t.Errorf("删一条不该连带影响另一方向，得到 %+v err=%v", toC, err)
+	}
+}
+
+// 旧版库（requests 以发起方为主键）重新打开时要整表升级成新主键，且存量申请不丢
+func TestRebuildLegacyRequestsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "petserver.db")
+	repo, err := NewSocialSQLite(path, DefaultFirstPetNo)
+	if err != nil {
+		t.Fatalf("建库失败: %v", err)
+	}
+	if _, err := repo.db.Exec(`DROP TABLE requests`); err != nil {
+		t.Fatalf("拆除新表失败: %v", err)
+	}
+	if _, err := repo.db.Exec(`CREATE TABLE requests (
+		from_device TEXT PRIMARY KEY,
+		id          TEXT NOT NULL,
+		from_no     INTEGER NOT NULL,
+		from_name   TEXT NOT NULL DEFAULT '',
+		to_no       INTEGER NOT NULL,
+		created_ms  INTEGER NOT NULL
+	)`); err != nil {
+		t.Fatalf("造旧表失败: %v", err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if _, err := repo.db.Exec(`INSERT INTO requests(from_device, id, from_no, from_name, to_no, created_ms) VALUES(?,?,?,?,?,?)`,
+		"dev-a", "req-old", 100001, "A", 100002, old.UnixMilli()); err != nil {
+		t.Fatalf("写入旧申请失败: %v", err)
+	}
+	if err := repo.Close(); err != nil {
+		t.Fatalf("关闭失败: %v", err)
+	}
+
+	upgraded, err := NewSocialSQLite(path, DefaultFirstPetNo)
+	if err != nil {
+		t.Fatalf("重新打开（升级）失败: %v", err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+
+	reqs, err := upgraded.RequestsTo(100002)
+	if err != nil || len(reqs) != 1 || reqs[0].ID != "req-old" {
+		t.Fatalf("升级后存量申请不该丢，得到 %+v err=%v", reqs, err)
+	}
+	// 升级后的表能容纳同一发起方的第二条申请
+	if err := upgraded.PutRequest(&model.FriendRequest{
+		ID: "req-new", FromDevice: "dev-a", FromPetNo: 100001, FromName: "A", ToPetNo: 100003, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("升级后写入新申请失败: %v", err)
+	}
+	if got, err := upgraded.RequestsTo(100003); err != nil || len(got) != 1 {
+		t.Errorf("升级后新申请应可写入，得到 %+v err=%v", got, err)
+	}
+	if got, err := upgraded.RequestsTo(100002); err != nil || len(got) != 1 {
+		t.Errorf("原存量申请不该被顶掉，得到 %+v err=%v", got, err)
 	}
 }

@@ -52,14 +52,16 @@ CREATE TABLE IF NOT EXISTS friends (
 	added_ms    INTEGER NOT NULL,
 	PRIMARY KEY (device_id, friend_no)
 );
--- 待处理好友申请：一台设备同时只会有一条（重复申请就地覆盖，与旧 map 语义一致）
+-- 待处理好友申请：主键为「发起方→接收方」一对一条，同一发起方给多人发申请互不覆盖；
+-- 同一方向重复申请就地覆盖（换新申请 ID，接收端按新 ID 重新弹卡）
 CREATE TABLE IF NOT EXISTS requests (
-	from_device TEXT PRIMARY KEY,
-	id          TEXT NOT NULL,
+	from_device TEXT NOT NULL,
+	to_no       INTEGER NOT NULL,
+	id          TEXT NOT NULL UNIQUE,
 	from_no     INTEGER NOT NULL,
 	from_name   TEXT NOT NULL DEFAULT '',
-	to_no       INTEGER NOT NULL,
-	created_ms  INTEGER NOT NULL
+	created_ms  INTEGER NOT NULL,
+	PRIMARY KEY (from_device, to_no)
 );
 CREATE INDEX IF NOT EXISTS idx_requests_to ON requests(to_no, created_ms);
 -- 收件箱与「已下发待确认」合并为一张表：未读且未下发时 delivered_ms 为 NULL，
@@ -125,6 +127,10 @@ func NewSocialSQLite(path string, firstPetNo int64) (*SocialSQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("初始化好友消息表失败: %w", err)
 	}
+	if err := s.rebuildRequestsTableIfLegacy(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("升级好友申请表失败: %w", err)
+	}
 	// 首次使用时播种宠物号水位
 	var seed int64
 	err = db.QueryRow(`SELECT value FROM meta WHERE key='next_pet_no'`).Scan(&seed)
@@ -138,6 +144,53 @@ func NewSocialSQLite(path string, firstPetNo int64) (*SocialSQLite, error) {
 		return nil, fmt.Errorf("读取宠物号水位失败: %w", err)
 	}
 	return s, nil
+}
+
+// rebuildRequestsTableIfLegacy 把旧版「发起方为主键」的申请表重建成「发起方→接收方」复合主键。
+// 旧主键下同一发起方给多人发申请会互相覆盖（后来者顶掉前一条，先被加的一方永远收不到），
+// 检测到旧表结构就整表替换；旧表每发起方至多一条，重建后天然满足新主键，不会冲突。
+func (s *SocialSQLite) rebuildRequestsTableIfLegacy() error {
+	var oldSQL string
+	err := s.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='requests'`).Scan(&oldSQL)
+	if err == sql.ErrNoRows {
+		return nil // 建表语句会新建，无需处理
+	}
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(oldSQL, "from_device TEXT PRIMARY KEY") {
+		return nil // 已是新结构
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`CREATE TABLE requests_new (
+		from_device TEXT NOT NULL,
+		to_no       INTEGER NOT NULL,
+		id          TEXT NOT NULL UNIQUE,
+		from_no     INTEGER NOT NULL,
+		from_name   TEXT NOT NULL DEFAULT '',
+		created_ms  INTEGER NOT NULL,
+		PRIMARY KEY (from_device, to_no)
+	)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO requests_new(from_device, to_no, id, from_no, from_name, created_ms)
+		SELECT from_device, to_no, id, from_no, from_name, created_ms FROM requests`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE requests`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE requests_new RENAME TO requests`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_requests_to ON requests(to_no, created_ms)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DB 暴露底层句柄，仅供迁移脚本与运维查询使用（业务代码不要直接动表）
@@ -271,16 +324,16 @@ func (s *SocialSQLite) DropFriendship(ownerDeviceID string, otherPetNo int64, ot
 // ── 好友申请 ──────────────────────────────────────────────
 
 func (s *SocialSQLite) PutRequest(req *model.FriendRequest) error {
-	_, err := s.db.Exec(`INSERT INTO requests(from_device, id, from_no, from_name, to_no, created_ms) VALUES(?,?,?,?,?,?)
-		ON CONFLICT(from_device) DO UPDATE SET id=excluded.id, from_no=excluded.from_no,
-			from_name=excluded.from_name, to_no=excluded.to_no, created_ms=excluded.created_ms`,
-		req.FromDevice, req.ID, req.FromPetNo, req.FromName, req.ToPetNo, req.CreatedAt.UnixMilli())
+	_, err := s.db.Exec(`INSERT INTO requests(from_device, to_no, id, from_no, from_name, created_ms) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(from_device, to_no) DO UPDATE SET id=excluded.id, from_no=excluded.from_no,
+			from_name=excluded.from_name, created_ms=excluded.created_ms`,
+		req.FromDevice, req.ToPetNo, req.ID, req.FromPetNo, req.FromName, req.CreatedAt.UnixMilli())
 	return err
 }
 
-// FindRequest 定位待处理申请（取最早一条），返回其主键（发起设备）
-func (s *SocialSQLite) FindRequest(toPetNo int64, fromDevice string, fromPetNo int64) (string, *model.FriendRequest, error) {
-	q := `SELECT from_device, id, from_no, from_name, to_no, created_ms FROM requests WHERE to_no=?`
+// FindRequest 定位待处理申请（取最早一条）
+func (s *SocialSQLite) FindRequest(toPetNo int64, fromDevice string, fromPetNo int64) (*model.FriendRequest, error) {
+	q := `SELECT from_device, to_no, id, from_no, from_name, created_ms FROM requests WHERE to_no=?`
 	args := []any{toPetNo}
 	if fromDevice != "" {
 		q += ` AND from_device=?`
@@ -294,19 +347,19 @@ func (s *SocialSQLite) FindRequest(toPetNo int64, fromDevice string, fromPetNo i
 
 	var req model.FriendRequest
 	var created int64
-	err := s.db.QueryRow(q, args...).Scan(&req.FromDevice, &req.ID, &req.FromPetNo, &req.FromName, &req.ToPetNo, &created)
+	err := s.db.QueryRow(q, args...).Scan(&req.FromDevice, &req.ToPetNo, &req.ID, &req.FromPetNo, &req.FromName, &created)
 	if err == sql.ErrNoRows {
-		return "", nil, nil
+		return nil, nil
 	}
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	req.CreatedAt = millis(created)
-	return req.FromDevice, &req, nil
+	return &req, nil
 }
 
 func (s *SocialSQLite) RequestsTo(toPetNo int64) ([]model.FriendRequest, error) {
-	rows, err := s.db.Query(`SELECT from_device, id, from_no, from_name, to_no, created_ms FROM requests
+	rows, err := s.db.Query(`SELECT from_device, to_no, id, from_no, from_name, created_ms FROM requests
 		WHERE to_no=? ORDER BY created_ms`, toPetNo)
 	if err != nil {
 		return nil, err
@@ -319,7 +372,7 @@ func (s *SocialSQLite) RequestsTo(toPetNo int64) ([]model.FriendRequest, error) 
 			req     model.FriendRequest
 			created int64
 		)
-		if err := rows.Scan(&req.FromDevice, &req.ID, &req.FromPetNo, &req.FromName, &req.ToPetNo, &created); err != nil {
+		if err := rows.Scan(&req.FromDevice, &req.ToPetNo, &req.ID, &req.FromPetNo, &req.FromName, &created); err != nil {
 			return nil, err
 		}
 		req.CreatedAt = millis(created)
@@ -328,8 +381,9 @@ func (s *SocialSQLite) RequestsTo(toPetNo int64) ([]model.FriendRequest, error) 
 	return out, rows.Err()
 }
 
-func (s *SocialSQLite) DropRequest(fromDevice string) error {
-	_, err := s.db.Exec(`DELETE FROM requests WHERE from_device=?`, fromDevice)
+// DropRequest 按申请 ID 删除一条待处理申请（处理后不再占位，结果已落留痕）
+func (s *SocialSQLite) DropRequest(requestID string) error {
+	_, err := s.db.Exec(`DELETE FROM requests WHERE id=?`, requestID)
 	return err
 }
 
@@ -340,8 +394,8 @@ func (s *SocialSQLite) DropRequestsBetween(devA string, petNoA int64, devB strin
 }
 
 func (s *SocialSQLite) TrimRequests(keep int) error {
-	_, err := s.db.Exec(`DELETE FROM requests WHERE from_device NOT IN (
-		SELECT from_device FROM requests ORDER BY created_ms DESC LIMIT ?)`, keep)
+	_, err := s.db.Exec(`DELETE FROM requests WHERE id NOT IN (
+		SELECT id FROM requests ORDER BY created_ms DESC LIMIT ?)`, keep)
 	return err
 }
 

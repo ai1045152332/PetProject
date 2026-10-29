@@ -34,12 +34,14 @@ type SocialRepo interface {
 	DropFriendship(ownerDeviceID string, otherPetNo int64, otherDeviceID string, ownerPetNo int64) error
 
 	// ── 好友申请 ──
+	// PutRequest 写入一条待处理申请：同一「发起方→接收方」重复申请就地覆盖（换新申请 ID）
 	PutRequest(req *model.FriendRequest) error
-	// FindRequest 定位一条待处理申请，返回其主键（发起设备）。找不到时 req 为 nil、err 为 nil。
+	// FindRequest 定位一条待处理申请。找不到时 req 为 nil、err 为 nil。
 	// fromDevice / fromPetNo 传空或 0 表示不作限定。
-	FindRequest(toPetNo int64, fromDevice string, fromPetNo int64) (string, *model.FriendRequest, error)
+	FindRequest(toPetNo int64, fromDevice string, fromPetNo int64) (*model.FriendRequest, error)
 	RequestsTo(toPetNo int64) ([]model.FriendRequest, error)
-	DropRequest(fromDevice string) error
+	// DropRequest 按申请 ID 删除一条待处理申请
+	DropRequest(requestID string) error
 	// DropRequestsBetween 清掉两台设备之间双向的待处理申请（删好友时一并失效）
 	DropRequestsBetween(devA string, petNoA int64, devB string, petNoB int64) error
 	// TrimRequests 待处理申请全局限流：只保留最新 keep 条

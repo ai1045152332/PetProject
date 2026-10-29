@@ -84,6 +84,6 @@ type SocialState struct {
 	Friends   map[string][]FriendEntry               `json:"friends"`   // deviceId → 好友列表
 	Inbox     map[string][]PetMessage                `json:"inbox"`     // deviceId → 待拉取消息
 	Delivered map[string]map[string]DeliveredMessage `json:"delivered"` // deviceId → 消息 ID → 已下发待确认已读
-	Requests  map[string]*FriendRequest              `json:"requests"`  // 发起方 deviceId → 待处理的加好友申请
+	Requests  map[string]*FriendRequest              `json:"requests"`  // 申请 ID → 待处理的加好友申请（同一发起方可对多人各有一条）
 	History   []PetConversationRecord                `json:"history"`   // 对话留痕（旧 → 新，有界）
 }

@@ -143,14 +143,16 @@ final class HeartbeatService {
             }
         }
 
-        // 待展示消息：合并为一条气泡（多条时前缀条数，展示最新一条正文）
+        // 待展示消息：全部渲染进同一条气泡（服务端已按发送时间升序返回，多条时前缀条数，每条一行）
         guard let messages = payload["messages"] as? [[String: Any]], !messages.isEmpty else { return }
-        let latest = messages.last ?? [:]
-        let fromName = latest["fromName"] as? String ?? ""
-        let fromPetNo = intValue(latest["fromPetNo"]) ?? 0
-        let text = latest["text"] as? String ?? ""
-        var bubble = "\(fromName.isEmpty ? "好友" : fromName)(#\(fromPetNo))：\(text)"
-        if messages.count > 1 { bubble = "收到 \(messages.count) 条好友消息｜" + bubble }
+        let lines = messages.map { msg in
+            let fromName = (msg["fromName"] as? String) ?? ""
+            let fromPetNo = intValue(msg["fromPetNo"]) ?? 0
+            let text = (msg["text"] as? String) ?? ""
+            return "\(fromName.isEmpty ? "好友" : fromName)(#\(fromPetNo))：\(text)"
+        }
+        var bubble = lines.joined(separator: "\n")
+        if messages.count > 1 { bubble = "收到 \(messages.count) 条好友消息\n" + bubble }
         // 消息 ID 随卡片一起传出：用户看完点 ✕ 时回服务端确认已读（未确认前服务端会重投几次）
         let ids = messages.map { ($0["id"] as? String) ?? "" }.filter { !$0.isEmpty }
         FileLogger.log("[Heartbeat] 收到好友消息 \(messages.count) 条")

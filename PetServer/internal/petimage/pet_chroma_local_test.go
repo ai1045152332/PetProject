@@ -1,13 +1,17 @@
 package petimage
 
-// 本地抠图预览工具：PET_CHROMA_LOCAL=图片路径 go test ./internal/service -run TestChromaLocalPreview
-// 走与 prepareSeedreamImage 完全相同的管线（keyChromaGreen + 纯色背景兜底），
-// 结果写到 <原图>-keyed.png，用于人工确认当前绿幕处理对本地图片的效果。
+// 本地人工校验工具集（都不走网络、不计费，不给环境变量就跳过）：
+//   - TestChromaLocalPreview：PET_CHROMA_LOCAL=图片路径，走与 prepareSeedreamImage 完全相同的
+//     管线（keyChromaGreen + 纯色背景兜底），结果写到 <原图>-keyed.png，用于确认绿幕处理效果。
+//   - TestSheetMotionLocal：PET_SHEET_LOCAL=16格sheet路径，量化帧动画到底动了没有。
+//     不能拿成品 GIF 的帧差当依据：GIF 每帧重新量化到 256 色，内容完全相同也会算出非零差值。
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	_ "image/jpeg"
 	"image/png"
 	"os"
@@ -113,4 +117,83 @@ func countGreenishOpaque(im *image.NRGBA) int {
 		}
 	}
 	return n
+}
+
+// TestSheetMotionLocal 把 1024×1024 的 4×4 sprite sheet 拆成 16 格，逐格报主体包围盒、
+// 不透明像素数与与上一格的平均像素差，用于定性判断模型到底画了“一段动作”还是“16 张静态图”。
+// 关键看包围盒逐格漂移：只在 ±2px 内抖动就是没动（抗锯齿噪声）。
+//
+//	PET_SHEET_LOCAL=/path/to/sheet.png go test ./internal/petimage/ -run TestSheetMotionLocal -v
+func TestSheetMotionLocal(t *testing.T) {
+	src := os.Getenv("PET_SHEET_LOCAL")
+	if src == "" {
+		t.Skip("需要 PET_SHEET_LOCAL 指定 16 格 sheet 图片")
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	im, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas := squareCanvas(im)
+	const cell = petCanvas / 4
+	type box struct{ x0, y0, x1, y1, n int }
+	measure := func(c *image.NRGBA, ox, oy int) box {
+		b := box{x0: cell, y0: cell, x1: -1, y1: -1}
+		for y := 0; y < cell; y++ {
+			for x := 0; x < cell; x++ {
+				if c.NRGBAAt(ox+x, oy+y).A < 128 {
+					continue
+				}
+				b.n++
+				b.x0, b.y0 = min(b.x0, x), min(b.y0, y)
+				b.x1, b.y1 = max(b.x1, x), max(b.y1, y)
+			}
+		}
+		return b
+	}
+	cells := make([]box, 0, 16)
+	var prev *image.NRGBA
+	t.Logf("格  包围盒(x0,y0,x1,y1)   不透明px  与上一格平均差")
+	for i := 0; i < 16; i++ {
+		cx, cy := (i%4)*cell, (i/4)*cell
+		crop := image.NewNRGBA(image.Rect(0, 0, cell, cell))
+		draw.Draw(crop, crop.Bounds(), canvas, image.Pt(cx, cy), draw.Src)
+		b := measure(canvas, cx, cy)
+		delta := "-"
+		if prev != nil {
+			var sum float64
+			for y := 0; y < cell; y++ {
+				for x := 0; x < cell; x++ {
+					a, c := prev.NRGBAAt(x, y), crop.NRGBAAt(x, y)
+					sum += float64(abs(int(a.R)-int(c.R)) + abs(int(a.G)-int(c.G)) + abs(int(a.B)-int(c.B)) + abs(int(a.A)-int(c.A)))
+				}
+			}
+			delta = fmt.Sprintf("%.2f", sum/float64(cell*cell))
+		}
+		prev = crop
+		cells = append(cells, b)
+		t.Logf("%2d  (%3d,%3d,%3d,%3d) %7d  %s", i, b.x0, b.y0, b.x1, b.y1, b.n, delta)
+	}
+	// 包围盒四边的逐格漂移量就是“主体真的在动”的硬指标：
+	// 模型只改纹理不改轮廓时，漂移会落在 ±2px 的抗锯齿噪声里。
+	span := func(get func(box) int) int {
+		lo, hi := get(cells[0]), get(cells[0])
+		for _, b := range cells {
+			lo, hi = min(lo, get(b)), max(hi, get(b))
+		}
+		return hi - lo
+	}
+	t.Logf("包围盒漂移：左=%d 上=%d 右=%d 下=%d px（≤2 即基本静止，≥8 才有可见动作）",
+		span(func(b box) int { return b.x0 }), span(func(b box) int { return b.y0 }),
+		span(func(b box) int { return b.x1 }), span(func(b box) int { return b.y1 }))
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

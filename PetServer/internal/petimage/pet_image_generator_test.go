@@ -356,6 +356,44 @@ func TestSeedreamRemovesSoftFringeAndDespillsEdge(t *testing.T) {
 	}
 }
 
+func TestSeedreamDespillsWideFringeAndClearsGreenPockets(t *testing.T) {
+	// 真实照片上的绿幕残留分两类：①耳尖/趾缝那种几像素宽、整条被染绿的细毛发；
+	// ②前腿之间被主体整个围住、漫水够不到的纯绿孤岛。鲜艳绿幕下旧逻辑只处理 1px 圈，
+	// 且 backdrop 恒为零、孤岛清理整段不跑，两类都会留在成品上。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	// 3px 宽的柔边：G-R 只有 30，落在 soft 阈值外，抠不掉，只能靠 despill 压。
+	draw.Draw(im, image.Rect(297, 297, 704, 704), image.NewUniform(color.NRGBA{R: 170, G: 200, B: 150, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(300, 300, 700, 700), image.NewUniform(color.NRGBA{R: 150, G: 90, B: 50, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(450, 450, 550, 550), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, a := decoded.At(500, 500).RGBA(); a != 0 {
+		t.Fatal("enclosed vivid green pocket left opaque")
+	}
+	outer := color.NRGBAModel.Convert(decoded.At(297, 620)).(color.NRGBA)
+	if outer.A < 128 || int(outer.G) > int(outer.R)+2 {
+		t.Fatalf("outer fringe not despilled: %v", outer)
+	}
+	for x := 297; x <= 299; x++ {
+		c := color.NRGBAModel.Convert(decoded.At(x, 620)).(color.NRGBA)
+		if int(c.G)-max(int(c.R), int(c.B)) > 30 {
+			t.Fatalf("fringe column x=%d still green: %v", x, c)
+		}
+	}
+	if fur := color.NRGBAModel.Convert(decoded.At(300, 620)).(color.NRGBA); fur != (color.NRGBA{R: 150, G: 90, B: 50, A: 255}) {
+		t.Fatalf("warm fur at the band edge altered: %v", fur)
+	}
+}
+
 func TestSeedreamFallsBackToSolidEdgeColor(t *testing.T) {
 	// 模型没画绿幕、改画米色纯色背景时，按边缘主色兜底抠除。
 	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))

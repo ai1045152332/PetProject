@@ -142,9 +142,11 @@ func buildDeps() (*deps, func(), error) {
 		log.Printf("[pet-images] 生图走 Seedream 官方（ARK），模型: %s", ark.Model())
 	} else if openRouter := petimage.NewOpenRouterPetImageGenerator(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("PETSERVER_OPENROUTER_IMAGE_MODEL")); openRouter != nil {
 		imageSvc.SetGenerator(openRouter)
-		log.Printf("[pet-images] 未配置 PETSERVER_ARK_API_KEY，生图回退 OpenRouter 上的 Seedream，模型: %s", openRouter.Model())
+		// 明确告警：回退管线依赖 OpenRouter Key 仍然有效，一旦过期所有生图都会以 401 失败。
+		// 这类失败只体现在客户端气泡里，以前线上从不记日志，导致漏配 ARK 几周无人察觉。
+		log.Printf("[pet-images][WARN] 未配置 PETSERVER_ARK_API_KEY，生图回退 OpenRouter 上的 Seedream，模型: %s；请确认 %s 里的 OPENROUTER_API_KEY 仍在有效期内", openRouter.Model(), "/opt/petserver/petserver.env")
 	} else {
-		log.Printf("[pet-images] 未配置 PETSERVER_ARK_API_KEY 与 OPENROUTER_API_KEY，生图接口未启用，上传/重试将返回 503（历史读取不受影响）")
+		log.Printf("[pet-images][WARN] 未配置 PETSERVER_ARK_API_KEY 与 OPENROUTER_API_KEY，生图接口未启用，上传/重试将返回 503（历史读取不受影响）")
 	}
 	imageCtrl := controller.NewPetImageController(imageSvc, accessSvc, keyPair)
 

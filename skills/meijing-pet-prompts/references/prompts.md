@@ -58,7 +58,8 @@
 
 - 帧数口径：App 内置 12fps 固定帧率（`PetViewModel.frameRate`），**帧数就是时长**——24 帧 = 2.0s。idel 取 24 帧循环、pet 取 24 帧一次性。
 - 合成脚本：`DesktopPetForMacApp/tools/sprite_animate.py`（连通域抠图 → 主体高统一 164px、底边压第 181 行、水平居中 → rig 变形出序列帧）。
-- rig 原理：给定骨根坐标 `pivot`、旋转幅度 `amp_deg`、软权重门 `gates`（`[axis,start,ramp,dir]`），对每个像素按固定点迭代反查源坐标做旋转采样，权重从骨根到末端平滑衰减，因此接缝不断、不会出现「第二个尾巴」。
+- rig 原理：给定骨根 `pivot`、旋转幅度 `amp_deg`、形变范围 `mask_poly` 多边形 + 羽化 `mask_feather`，对每个像素按固定点迭代反查源坐标做旋转采样，权重从骨根到末端平滑衰减，因此接缝不断、不会出现「第二个尾巴」。
+- **必须用 `mask_poly` 圈肢体，不能只用 `gates` 轴对齐软边界**：尾巴根贴着右后腿、脖子根贴着后背，矩形门一宽就会「尾巴动后腿也动」「头动后背也动」（用户实测反馈）。
 - 帧序列由正弦驱动、一轮 `cycles` 个周期，**首尾天然无缝**；帧间差可以调到 1/255 量级，目视就是丝滑。
 
 ### 实测弃用的两条路（别再走）
@@ -68,21 +69,25 @@
 
 ### idel 摇尾巴（当前落地）
 ```bash
-python3 tools/sprite_animate.py --src .sprite-build/keys_idel2 --path 0 --frames 24 --mode rig \
-  --rig '{"pivot":[151,126],"amp_deg":20,"gates":[["x",140,18,1],["y",100,16,1]],"cycles":1}' \
-  --out .sprite-build/out_idel
+python3 tools/sprite_animate.py --src DesktopPetForMacApp/Resources/Sprites/idel --path 0 \
+  --frames 24 --mode rig --out .sprite-build/out_idel \
+  --rig '{"pivot":[151,126],"amp_deg":22,"gates":[["x",153,6,1]],"cycles":1,"mask_feather":4,
+          "mask_poly":[[151,124],[167,128],[181,141],[188,155],[186,171],[176,178],[166,173],[159,160],[155,148],[152,138],[148,130]]}'
 ```
-- `pivot [151,126]` = 尾巴根部（200×200 画布坐标系）；两条 gate 把右下侧尾部区域圈出来，躯干和头几乎不动。
-- `amp_deg 20`（±20°，峰-峰 40°）、`cycles 1`（2s 摇一个来回），循环播放不卡顿。
-- 调幅度只改 `amp_deg`（>28° 尾巴与后腰接缝开始显硬），调快慢改 `cycles`。
+- `pivot [151,126]` = 尾巴根部；`mask_poly` 沿尾巴轮廓圈紧，左界在下半段收到 x≥155 以避开右后腿。
+- `amp_deg 22`（±22°，峰-峰 44°）、`cycles 1`（2s 摇一个来回）；>28° 尾巴与后腰接缝开始显硬。
+- 验收：后腿 x118-152/y140-182、躯干 x55-148/y85-140、头部 x28-100/y14-85 的帧间像素差必须为 **0**。
 
 ### pet 轻微蹭头（当前落地）
 ```bash
-python3 tools/sprite_animate.py --src .sprite-build/keys_pet_base --path 0 --frames 24 --mode rig \
-  --rig '{"pivot":[85,112],"amp_deg":8,"gates":[["y",112,16,-1]],"cycles":2,"bob":2}' \
-  --out .sprite-build/out_pet
+python3 tools/sprite_animate.py --src DesktopPetForMacApp/Resources/Sprites/pet --path 0 \
+  --frames 24 --mode rig --out .sprite-build/out_pet \
+  --rig '{"pivot":[85,112],"amp_deg":8,"gates":[],"cycles":2,"bob":2,"mask_feather":3,
+          "mask_poly":[[66,20],[82,26],[98,37],[112,43],[130,49],[130,67],[116,79],[106,85],[98,91],[94,99],[88,104],[74,105],[62,102],[52,94],[45,80],[46,62],[52,44],[58,28]]}'
 ```
-- `pivot [85,112]` = 脖子根部；单条 `y` 门（越往上权重越高）只带动头和耳，身体坐姿完全不动。
-- 用户反馈原版「歪头动作幅度极大」，现收敛到 **±8°** + `bob 2`（脑袋上下 2px）+ `cycles 2`（2s 蹭两下）；再大就假。
-- 基准图就取现有的 pet `frame_00.png`（坐姿眯眼笑），不需要再调 AI 生成带姿态的图。
+- `pivot [85,112]` = 脖子根部；`mask_poly` 包住头 + 双耳，右界在 y>90 时收到 x≤98，避开背部隆起。
+- 用户反馈原版「歪头动作幅度极大」，现收敛到 **±8°** + `bob 2` + `cycles 2`（2s 蹭两下）。
+- 验收：后背 x108-162/y95-178、前腿 x58-108/y118-181、尾巴卷 x112-168/y146-180 的帧间像素差必须为 **0**。
+- 基准图就取现有的 pet `frame_00.png`（坐姿眯眼笑），不需重新调 AI。
+- 配遮罩时先在 200×200 图上画网格、把多边形叠在图中看红色覆盖区，确认后再出帧；`mask_feather` 3~4 比默认 5 干净。
 

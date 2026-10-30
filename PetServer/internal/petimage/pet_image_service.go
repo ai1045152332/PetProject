@@ -14,6 +14,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"petserver/internal/storage"
@@ -391,9 +392,9 @@ func (s *PetImageService) Upload(device, code, name string, data []byte, states 
 		return PetImageLibrary{}, err
 	}
 	if all {
-		s.launchBatch(key, batch)
+		s.launchBatch(key, batch, code)
 	} else {
-		s.launch(key, batch[0])
+		s.launch(key, batch[0], code)
 	}
 	return s.withQuota(lib, code), nil
 }
@@ -401,6 +402,30 @@ func (s *PetImageService) Upload(device, code, name string, data []byte, states 
 var ErrPetGenerationDisabled = errors.New("服务端尚未配置生图接口，无法生成宠物动画")
 var ErrPetGenerationBusy = errors.New("生成任务繁忙，请稍后重试")
 var ErrPetQuotaExhausted = errors.New("该激活码的 AI 生成次数已用完")
+
+// ErrPetProviderUnavailable 标记「服务端配置或上游授权/容量」导致的失败：用户没拿到图，而且
+// 原因与用户的照片、激活码无关（Key 过期、模型未开通、欠费、上游拒连/限流）。这类失败会把
+// 提交时扣掉的那一次配额退还：否则一次线上配置事故会成倍吃掉用户的终身总量。
+// 内容/参数被拒（HTTP 400）与模型画不出可抠背景不在此列 —— 上游确实已计费出过一张图。
+var ErrPetProviderUnavailable = errors.New("生图服务不可用")
+
+// petProviderFault 既携带给用户看的中文文案，又能被 errors.Is 认出 ErrPetProviderUnavailable：
+// 客户端看到的字句不变，服务端却能按错误种类判定是否退配额。
+type petProviderFault struct{ msg string }
+
+func (e petProviderFault) Error() string { return e.msg }
+func (e petProviderFault) Unwrap() error { return ErrPetProviderUnavailable }
+
+// petRefundableStatus 判定上游状态码是否属于「用户没拿到图且与我们无关」：鉴权失败（401/403）、
+// 欠费（402）、模型/接入点不存在（404）、限流（429）与 5xx。400 不在此列 —— 它可能是参数或
+// 内容问题，无法与我们的配置问题区分，保守不退，以免变成无上限重试。
+func petRefundableStatus(status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests:
+		return true
+	}
+	return status >= http.StatusInternalServerError
+}
 
 func petGenerating(status string) bool {
 	return status == "beautifying" || status == "animating" || status == "encoding"
@@ -426,6 +451,7 @@ func (s *PetImageService) admit(lib *PetImageLibrary, code string) error {
 	}
 	// Lifetime quota is charged at submit time; a later generation failure is not refunded, so a
 	// code can never spend more than its configured total even with retries.
+	// 例外：上游配置/授权类失败（ErrPetProviderUnavailable）会在任务结束后退回这一次，见 refundQuota。
 	quota, err := s.loadQuota(code)
 	if err != nil {
 		return err
@@ -446,10 +472,19 @@ func (s *PetImageService) admit(lib *PetImageLibrary, code string) error {
 		return ErrPetGenerationBusy
 	}
 }
+
+// Retry 重新提交生成失败的任务。state="all" 与 Upload 的 all 语义对齐：把同一次上传（同一
+// SourceID）里所有失败状态打成一批，只扣一次配额、只占一个 worker。
+// 逐状态各扣一次是错的：一次 all 上传扇出的 5 个状态若整体失败（多为服务端配置或上游故障，
+// 与用户无关），用户要把它们全部重试回来就得付出 5 倍配额。
 func (s *PetImageService) Retry(device, code, id string, states ...string) (PetImageLibrary, error) {
-	state, stateErr := petTargetState(states)
-	if stateErr != nil {
-		return PetImageLibrary{}, stateErr
+	all := len(states) > 0 && states[0] == "all"
+	state := ""
+	if !all {
+		var err error
+		if state, err = petTargetState(states); err != nil {
+			return PetImageLibrary{}, err
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -457,6 +492,7 @@ func (s *PetImageService) Retry(device, code, id string, states ...string) (PetI
 	if err != nil {
 		return lib, err
 	}
+	targets := make([]*PetImage, 0, len(petAllStates))
 	for i := range lib.Images {
 		item := &lib.Images[i]
 		if item.ID != id {
@@ -471,28 +507,81 @@ func (s *PetImageService) Retry(device, code, id string, states ...string) (PetI
 		if item.Status != "failed" || item.SourceID == "" {
 			return lib, errors.New("仅可重试生成失败的图片")
 		}
-		if err = s.admit(&lib, code); err != nil {
-			return lib, err
+		targets = append(targets, item)
+		break
+	}
+	if len(targets) == 0 {
+		return lib, os.ErrNotExist
+	}
+	if all {
+		sourceID := targets[0].SourceID
+		targets = targets[:0]
+		for i := range lib.Images {
+			if item := &lib.Images[i]; item.SourceID == sourceID && item.Status == "failed" {
+				targets = append(targets, item)
+			}
 		}
-		item.State = state
+		if len(targets) == 0 {
+			return lib, errors.New("仅可重试生成失败的图片")
+		}
+	}
+	if err = s.admit(&lib, code); err != nil {
+		return lib, err
+	}
+	batch := make([]PetImage, 0, len(targets))
+	for _, item := range targets {
+		if item.State == "" {
+			item.State = state
+		}
 		item.Status = "beautifying"
 		item.PromptVersion = PetPromptVersion
 		item.Error = ""
 		item.SelectionVersion = lib.selectionVersion(item.State)
-		if err = s.save(device, lib); err != nil {
-			<-s.slots
-			return lib, err
-		}
-		s.launch(deviceImageKey(device), *item)
-		return s.withQuota(lib, code), nil
+		batch = append(batch, *item)
 	}
-	return lib, os.ErrNotExist
+	if err = s.save(device, lib); err != nil {
+		<-s.slots
+		return lib, err
+	}
+	key := deviceImageKey(device)
+	if len(batch) == 1 {
+		s.launch(key, batch[0], code)
+	} else {
+		s.launchBatch(key, batch, code)
+	}
+	return s.withQuota(lib, code), nil
+}
+
+// refundQuota 退回一次提交扣掉的配额。只在确定用户没拿到图且原因在服务端/上游时调用；
+// Used 地板为 0，绝不用负值抬高上限。
+func (s *PetImageService) refundQuota(code string) {
+	if code == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	quota, err := s.loadQuota(code)
+	if err != nil {
+		log.Printf("[pet-images][WARN] 退回生成次数失败，本次失败仍计入配额: %v", err)
+		return
+	}
+	if quota.Used == 0 {
+		return
+	}
+	quota.Used--
+	if err = s.saveQuota(code, quota); err != nil {
+		log.Printf("[pet-images][WARN] 退回生成次数落盘失败: %v", err)
+		return
+	}
+	log.Printf("[pet-images] 上游不可用，已退回激活码 %s 本次的 1 次生成配额", code)
 }
 
 // runOne generates a single image and persists its result. Slot acquisition/release and worker
 // accounting are the caller's responsibility. Validation follows the active frame mode: a
 // multi-frame GIF when animation is enabled, otherwise any decodable single-frame image.
-func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGenerator) {
+// The returned error is the generation outcome (nil on success) so the caller can tell whether
+// the charged quota unit should be refunded.
+func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGenerator) error {
 	ctx, cancel := context.WithTimeout(s.ctx, 9*time.Minute)
 	defer cancel()
 	progress := func(stage string) {
@@ -532,7 +621,7 @@ func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGe
 	lib, loadErr := s.loadKey(key)
 	if loadErr != nil {
 		log.Printf("[pet-images] result persistence failed: %v", loadErr)
-		return
+		return err
 	}
 	for i := range lib.Images {
 		if lib.Images[i].ID != item.ID {
@@ -555,30 +644,43 @@ func (s *PetImageService) runOne(key string, item PetImage, generator PetImageGe
 		if saveErr := s.saveKey(key, lib); saveErr != nil {
 			log.Printf("[pet-images] result persistence failed: %v", saveErr)
 		}
-		return
+		return err
 	}
+	return err
 }
-func (s *PetImageService) launch(key string, item PetImage) {
+
+// launch 跑单个任务。code 为本次提交扣配额的激活码：上游不可用导致的失败会把它退回。
+func (s *PetImageService) launch(key string, item PetImage, code string) {
 	generator := s.generator
 	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
 		defer func() { <-s.slots }()
-		s.runOne(key, item, generator)
+		if err := s.runOne(key, item, generator); errors.Is(err, ErrPetProviderUnavailable) {
+			s.refundQuota(code)
+		}
 	}()
 }
 
 // launchBatch generates every queued item sequentially inside a single worker, so one "all" upload
 // holds exactly one slot and charges one quota unit. A per-state failure is recorded on that item
 // and never aborts the remaining states.
-func (s *PetImageService) launchBatch(key string, batch []PetImage) {
+// 配额按「一次提交」退还：整批里只要有一张成了图就保留这一次（上游确实已计费），
+// 只有全部因上游不可用失败才退，避免一次 all 上传被退成多次。
+func (s *PetImageService) launchBatch(key string, batch []PetImage, code string) {
 	generator := s.generator
 	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
 		defer func() { <-s.slots }()
+		providerFaults := 0
 		for _, item := range batch {
-			s.runOne(key, item, generator)
+			if err := s.runOne(key, item, generator); errors.Is(err, ErrPetProviderUnavailable) {
+				providerFaults++
+			}
+		}
+		if providerFaults == len(batch) {
+			s.refundQuota(code)
 		}
 	}()
 }

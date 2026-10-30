@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -133,7 +134,8 @@ func (g *ArkPetImageGenerator) edit(ctx context.Context, input []byte, prompt st
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Seedream 官方接口请求失败或超时，请稍后重试")
+		// 根本没发出/没接住响应，上游不会计费：可退。
+		return nil, petProviderFault{msg: "Seedream 官方接口请求失败或超时，请稍后重试"}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, (32<<20)+1))
@@ -142,6 +144,11 @@ func (g *ArkPetImageGenerator) edit(ctx context.Context, input []byte, prompt st
 	}
 	if resp.StatusCode != http.StatusOK {
 		// 绝不把上游响应体、请求头或密钥透传给客户端/日志。
+		// 鉴权/模型访问/容量类失败几乎都是配置问题（Key 失效、Model ID 写错、模型未开通、欠费），
+		// 与用户照片无关，必须在服务端日志留痕，不能只以气泡文案回到客户端。
+		if petRefundableStatus(resp.StatusCode) {
+			log.Printf("[pet-images][WARN] Seedream 官方不可用（HTTP %d），模型: %s；本次不扣用户生成次数，请检查 PETSERVER_ARK_API_KEY 与 Model ID/接入点开通状态", resp.StatusCode, g.model)
+		}
 		var upstream struct {
 			Error struct {
 				Code    string `json:"code"`
@@ -154,14 +161,17 @@ func (g *ArkPetImageGenerator) edit(ctx context.Context, input []byte, prompt st
 		case resp.StatusCode == 400 && (strings.Contains(msg, "at least") || strings.Contains(msg, "pixel") || strings.Contains(code, "InvalidParameter")):
 			return nil, fmt.Errorf("Seedream 官方拒绝生成参数（HTTP 400）：请检查分辨率是否达到模型下限（建议 2K）及输入格式；这不一定是照片内容问题")
 		case resp.StatusCode == 401 || resp.StatusCode == 403:
-			return nil, fmt.Errorf("Seedream 官方鉴权或模型访问失败，请联系管理员检查 ARK API Key 与模型开通")
+			return nil, petProviderFault{msg: "Seedream 官方鉴权或模型访问失败，请联系管理员检查 ARK API Key 与模型开通"}
 		case resp.StatusCode == 404:
-			return nil, fmt.Errorf("Seedream 官方找不到指定模型或推理接入点，请联系管理员核对 Model ID")
+			return nil, petProviderFault{msg: "Seedream 官方找不到指定模型或推理接入点，请联系管理员核对 Model ID"}
 		case resp.StatusCode == 429:
-			return nil, fmt.Errorf("Seedream 官方限流或余额不足，请稍后重试")
+			return nil, petProviderFault{msg: "Seedream 官方限流或余额不足，请稍后重试"}
 		case strings.Contains(code, "Sensitive") || strings.Contains(code, "Audit"):
 			return nil, fmt.Errorf("Seedream 官方判定输入或输出内容不合规，请更换参考图或提示词")
 		default:
+			if petRefundableStatus(resp.StatusCode) {
+				return nil, petProviderFault{msg: fmt.Sprintf("Seedream 官方图片生成失败（HTTP %d），请稍后重试或联系管理员检查接口配置", resp.StatusCode)}
+			}
 			return nil, fmt.Errorf("Seedream 官方图片生成失败（HTTP %d），请稍后重试或联系管理员检查接口配置", resp.StatusCode)
 		}
 	}

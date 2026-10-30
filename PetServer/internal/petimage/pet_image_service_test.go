@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -576,6 +577,182 @@ func TestPetImageUploadAllFansOutOnePerState(t *testing.T) {
 			t.Fatalf("state %s not auto-selected", item.State)
 		}
 	}
+}
+
+// 整批重试与 all 上传对称：同一次上传扇出的多个失败状态一次只扣 1 次配额、共用 1 个 worker。
+// 逐状态各扣一次会让服务端配置故障（Key 过期等）成倍吃掉用户的终身配额。
+func TestPetImageRetryAllChargesSingleQuotaForWholeBatch(t *testing.T) {
+	svc := newImageTestService(t, t.TempDir())
+	svc.codeQuota = 3
+	var calls int
+	fail := testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) {
+		return nil, fmt.Errorf("上游鉴权失败")
+	})
+	svc.SetGenerator(fail)
+	lib, err := svc.Upload("device-A", petTestCode, "cat.png", testImage(t, "png"), "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, 0, len(lib.Images))
+	for _, item := range lib.Images {
+		ids = append(ids, item.ID)
+	}
+	finished := awaitAllPet(t, svc, "device-A", ids)
+	if len(finished.Images) != len(petAllStates) {
+		t.Fatalf("all upload created %d records, want %d", len(finished.Images), len(petAllStates))
+	}
+	if finished.GenerationRemaining != 2 {
+		t.Fatalf("failed batch should charge exactly 1 unit, remaining = %d", finished.GenerationRemaining)
+	}
+	for _, item := range finished.Images {
+		if item.Status != "failed" {
+			t.Fatalf("state %s ended in status %q, want failed", item.State, item.Status)
+		}
+	}
+
+	var mu sync.Mutex
+	svc.SetGenerator(testPetGenerator(func(_ context.Context, _ []byte, _ string, _ func(string)) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		return testPetGIF(t), nil
+	}))
+	retried, err := svc.Retry("device-A", petTestCode, ids[0], "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.GenerationRemaining != 1 {
+		t.Fatalf("whole-batch retry charged %d units, want 1 (remaining %d of 3)", 2-retried.GenerationRemaining, retried.GenerationRemaining)
+	}
+	finished = awaitAllPet(t, svc, "device-A", ids)
+	for _, item := range finished.Images {
+		if item.Status != "ready" {
+			t.Fatalf("state %s still in status %q after batch retry", item.State, item.Status)
+		}
+		if finished.CurrentIDs[item.State] != item.ID {
+			t.Fatalf("state %s not auto-selected after batch retry", item.State)
+		}
+	}
+	mu.Lock()
+	gotCalls := calls
+	mu.Unlock()
+	if gotCalls != len(petAllStates) {
+		t.Fatalf("batch retry generated %d states, want %d", gotCalls, len(petAllStates))
+	}
+	// 整批重试后记录已 ready，再点一次必须被拒（不能重复扣费）。
+	if _, err = svc.Retry("device-A", petTestCode, ids[0], "all"); err == nil || err.Error() != "仅可重试生成失败的图片" {
+		t.Fatalf("retry on a ready batch should be rejected, got %v", err)
+	}
+	if lib, err := svc.List("device-A", petTestCode); err != nil || lib.GenerationRemaining != 1 {
+		t.Fatalf("rejected retry still moved the quota: %+v %v", lib, err)
+	}
+	// 未知 ID 仍然报 ErrNotExist，与旧单状态语义保持一致。
+	if _, err = svc.Retry("device-A", petTestCode, strings.Repeat("f", 32), "all"); !os.IsNotExist(err) {
+		t.Fatalf("unknown id retry err = %v", err)
+	}
+}
+
+// awaitAllPet 等到给定的一批记录全部离开生成中状态（ready 或 failed）。
+func awaitAllPet(t *testing.T, svc *PetImageService, device string, ids []string) PetImageLibrary {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var lib PetImageLibrary
+	for time.Now().Before(deadline) {
+		var err error
+		if lib, err = svc.List(device, petTestCode); err != nil {
+			t.Fatal(err)
+		}
+		generating := false
+		for _, item := range lib.Images {
+			if containsPetID(ids, item.ID) && petGenerating(item.Status) {
+				generating = true
+			}
+		}
+		if !generating {
+			return lib
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("batch generation did not finish")
+	return lib
+}
+func containsPetID(ids []string, id string) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+// 上游不可用（Key 过期、欠费、限流、5xx）让一个用户都没拿到图，配额必须退回；
+// 内容/模型质量类失败（上游已出过图、已计费）不能退，否则配额上限形同虚设。
+func TestPetImageQuotaRefundedOnlyForProviderFailure(t *testing.T) {
+	svc := newImageTestService(t, t.TempDir())
+	svc.codeQuota = 2
+
+	// 1) 单状态任务因上游鉴权失败 → 退回这一次。
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) {
+		return nil, petProviderFault{msg: "Seedream 官方鉴权或模型访问失败，请联系管理员检查 ARK API Key 与模型开通"}
+	}))
+	first, err := svc.Upload("device-A", petTestCode, "a.png", testImage(t, "png"), "idel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := awaitRemaining(t, svc, 2); got != 2 {
+		t.Fatalf("provider-failed single job remaining = %d, want 2 (refunded)", got)
+	}
+	if lib := awaitPet(t, svc, "device-A", first.Images[0].ID); lib.Images[0].Status != "failed" {
+		t.Fatalf("provider failure should stay recorded as failed, got %q", lib.Images[0].Status)
+	}
+
+	// 2) all 上传整批因上游不可用失败 → 只退一次（不会按状态退多次）。
+	all, err := svc.Upload("device-A", petTestCode, "b.png", testImage(t, "png"), "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, 0, len(all.Images))
+	for _, item := range all.Images {
+		ids = append(ids, item.ID)
+	}
+	awaitAllPet(t, svc, "device-A", ids)
+	if got := awaitRemaining(t, svc, 2); got != 2 {
+		t.Fatalf("provider-failed whole batch remaining = %d, want 2 (refunded exactly once)", got)
+	}
+
+	// 3) 内容不合规/背景提不出这类失败（上游已出图）仍照旧扣费。
+	svc.SetGenerator(testPetGenerator(func(context.Context, []byte, string, func(string)) ([]byte, error) {
+		return nil, fmt.Errorf("Seedream 背景提取失败，请重试")
+	}))
+	if _, err = svc.Upload("device-A", petTestCode, "c.png", testImage(t, "png"), "idel"); err != nil {
+		t.Fatal(err)
+	}
+	if got := awaitRemaining(t, svc, 1); got != 1 {
+		t.Fatalf("content failure remaining = %d, want 1 (must not refund)", got)
+	}
+	// 配额退还不把上限抬高：连续上游失败不会永远免费重试。
+	svc.codeQuota = 0
+	if _, err = svc.Upload("device-A", petTestCode, "d.png", testImage(t, "png"), "idel"); !errors.Is(err, ErrPetQuotaExhausted) {
+		t.Fatalf("exhausted code after refunds should block, got %v", err)
+	}
+}
+
+// awaitRemaining 轮询等到配额余量变成 want（退款是异步的，落在任务结束后）。
+func awaitRemaining(t *testing.T, svc *PetImageService, want int) int {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	got := -1
+	for time.Now().Before(deadline) {
+		lib, err := svc.List("device-A", petTestCode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got = lib.GenerationRemaining; got == want {
+			return got
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return got
 }
 
 // 单帧成品落盘前缩到 512；缩小只是优化，非 PNG、已经够小的图必须原样返回。

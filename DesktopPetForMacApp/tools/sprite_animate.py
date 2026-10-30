@@ -5,10 +5,16 @@
 
 A. rig 模式（推荐，当前 idel/pet 就是这么出的）：一张带动作的基准图 → 骨架式局部变形
    python3 tools/sprite_animate.py --src <基准图目录> --path 0 --frames 24 --mode rig \
-       --rig '{"pivot":[151,126],"amp_deg":20,"gates":[["x",140,18,1],["y",100,16,1]],"cycles":1}' \
+       --rig '{"pivot":[151,126],"amp_deg":22,"cycles":1,"mask_feather":4,
+               "mask_poly":[[151,124],[167,128],[181,141],[188,155],[186,171],[176,178],
+                            [166,173],[159,160],[155,148],[152,138],[148,130]],
+               "gates":[["x",153,6,1]]}' \
        --out <输出目录>
-   绕 pivot 做旋转，权重由 gates 软边界从骨根到末端衰减，正弦驱动 cycles 个周期（首尾无缝）。
+   绕 pivot 做旋转，权重由 mask_poly 多边形 + 羽化给出（可再乘 gates 软边界），
+   正弦驱动 cycles 个周期（首尾无缝）。
    好处：画风/比例 100% 不变、动作绝对平滑、幅度与节奏都能参数化。
+   注意：**只用 gates 是不够的**。尾巴根贴着右后腿、脖子根贴着后背，轴对齐的软边界
+   必然连带邻肢（实测「尾巴动后腿也动」「头动后背也动」），必须用 mask_poly 把范围圈死。
 
 B. 多关键帧模式（flow / dissolve / hold）：AI 出多张关键姿态时用，实测质量不如 rig
    flow     = 块匹配位移场插值（姿态差大时会撕裂细尾巴、把歪头拉变形）
@@ -29,7 +35,7 @@ import os
 from collections import deque
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 CANVAS = 200
 SUBJECT_H = 164          # 与 idel/focus/sleep 现有素材一致
@@ -131,12 +137,15 @@ def normalize(subject: Image.Image) -> Image.Image:
     w, h = subject.size
     scale = SUBJECT_H / h
     nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
-    body = subject.resize((nw, nh), Image.LANCZOS)
+    # 已经对齐过的图（尺寸不变）不要重采样，否则反复迭代会累积模糊
+    body = subject if (nw, nh) == (w, h) else subject.resize((nw, nh), Image.LANCZOS)
     if nw > CANVAS:                                  # 特宽姿态按宽度回收，防裁切
         body = body.resize((CANVAS, max(1, round(nh * CANVAS / nw))), Image.LANCZOS)
         nw, nh = body.size
     canvas = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
-    canvas.paste(body, ((CANVAS - nw) // 2, BOTTOM_Y + 1 - nh), body)
+    # 画布是全新全透明的，直接拷贝即可；带 mask 贴图会把半透明边缘再做一次 alpha
+    # 合成（a²/255），导致边缘变暗、bbox 逐次收缩，所以这里不能传 mask
+    canvas.paste(body, ((CANVAS - nw) // 2, BOTTOM_Y + 1 - nh))
     return canvas
 
 
@@ -227,47 +236,68 @@ def _smoothstep(t: np.ndarray) -> np.ndarray:
     return t * t * (3 - 2 * t)
 
 
-def _weight_map(shape: tuple[int, int], gates: list) -> np.ndarray:
+def _poly_weight(shape: tuple[int, int], poly: list, feather: float) -> np.ndarray:
+    """多边形遮罩（0~1）。用来把形变锁死在某一块肢体上，避免相邻部位被带着动"""
+    h, w = shape
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).polygon([(float(p[0]), float(p[1])) for p in poly], fill=255)
+    if feather > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(feather))
+    return np.asarray(mask, dtype=np.float32) / 255.0
+
+
+def _weight_map(shape: tuple[int, int], gates: list, poly_w: np.ndarray | None = None) -> np.ndarray:
     """按若干「软边界」生成 0~1 权重图。每个 gate = [axis, start, ramp, dir]：
-    axis 取 'x'/'y'；dir=+1 表示坐标越大权重越高，-1 相反"""
+    axis 取 'x'/'y'；dir=+1 表示坐标越大权重越高，-1 相反。给了 poly_w 时二者相乘"""
     h, w = shape
     yy, xx = np.meshgrid(np.arange(h, dtype=np.float32), np.arange(w, dtype=np.float32), indexing="ij")
     weight = np.ones((h, w), dtype=np.float32)
     for axis, start, ramp, direction in gates:
         coord = xx if axis == "x" else yy
         weight *= _smoothstep((coord - start) / ramp * (1 if direction >= 0 else -1))
+    if poly_w is not None:
+        weight *= poly_w
     return weight
 
 
-def _weight_at(xx: np.ndarray, yy: np.ndarray, gates: list) -> np.ndarray:
+def _weight_at(xx: np.ndarray, yy: np.ndarray, gates: list,
+               poly_w: np.ndarray | None = None) -> np.ndarray:
     """在任意浮点坐标上求权重（供定点迭代用）"""
     weight = np.ones_like(xx, dtype=np.float32)
     for axis, start, ramp, direction in gates:
         coord = xx if axis == "x" else yy
         weight *= _smoothstep((coord - start) / ramp * (1 if direction >= 0 else -1))
+    if poly_w is not None:
+        weight *= _bilinear(poly_w[..., None], yy, xx)[..., 0]
     return weight
 
 
 def rig_frame(img: Image.Image, pivot: tuple[float, float], angle_deg: float,
-              gates: list, bob: float = 0.0, scale: float = 0.0) -> Image.Image:
-    """绕 pivot 做软化旋转（权重由 gates 控制），可叠加竖直位移与轻微缩放。
+              gates: list, bob: float = 0.0, scale: float = 0.0,
+              poly_w: np.ndarray | None = None) -> Image.Image:
+    """绕 pivot 做软化旋转（权重由 poly_w / gates 控制），可叠加竖直位移与轻微缩放。
     权重在骨根处趋近 0、在末端趋近 1，所以接缝不会被扯断。"""
     f = _feature(img)
     h, w = f.shape[:2]
-    weight = _weight_map((h, w), gates)
     yy, xx = np.meshgrid(np.arange(h, dtype=np.float32), np.arange(w, dtype=np.float32), indexing="ij")
     dx = xx - pivot[0]
     dy = yy - pivot[1]
     # 反向映射要做定点迭代：权重随位置变化，直接用输出像素的权重反解会折叠出「第二个尾巴」
     sx, sy = xx.copy(), yy.copy()
     for _ in range(3):
-        w_iter = _weight_at(sx, sy, gates)
+        w_iter = _weight_at(sx, sy, gates, poly_w)
         theta = np.deg2rad(angle_deg) * w_iter
         cos, sin = np.cos(theta), np.sin(theta)
         k = 1.0 + scale * w_iter
         sx = pivot[0] + (cos * dx + sin * dy) * k
         sy = pivot[1] + (-sin * dx + cos * dy) * k - bob * w_iter
-    return Image.fromarray((np.clip(_bilinear(f, sy, sx), 0, 1) * 255).astype(np.uint8))
+    # _feature 是预乘 alpha 的，输出前必须还原成直通 alpha，否则半透明边缘会被压暗；
+    # 再走 round 而不是截断，保证 angle=0 时与原图逐像素一致（可无损自举）
+    out = _bilinear(f, sy, sx)
+    alpha = np.clip(out[..., 3:4], 0.0, 1.0)
+    rgb = np.where(alpha > 1e-4, out[..., :3] / np.maximum(alpha, 1e-4), 0.0)
+    rgba = np.concatenate([np.clip(rgb, 0, 1), alpha], axis=2)
+    return Image.fromarray((rgba * 255).round().astype(np.uint8))
 
 
 def build_rig_sequence(img: Image.Image, total: int, cfg: dict) -> list[Image.Image]:
@@ -280,10 +310,13 @@ def build_rig_sequence(img: Image.Image, total: int, cfg: dict) -> list[Image.Im
     scale = float(cfg.get("scale", 0.0))
     cycles = float(cfg.get("cycles", 1.0))
     phase = float(cfg.get("phase", 0.0))
+    poly_w = None
+    if cfg.get("mask_poly"):
+        poly_w = _poly_weight(img.size[::-1], cfg["mask_poly"], float(cfg.get("mask_feather", 5.0)))
     for i in range(total):
         t = i / total
         wave = math.sin(2 * math.pi * cycles * t + phase)
-        frames.append(rig_frame(img, pivot, amp * wave, gates, bob=bob * wave, scale=scale * wave))
+        frames.append(rig_frame(img, pivot, amp * wave, gates, bob=bob * wave, scale=scale * wave, poly_w=poly_w))
     return frames
 
 
@@ -365,7 +398,12 @@ def main() -> None:
     ap.add_argument("--keep-keys", action="store_true", help="另存归一化后的关键帧到 out/_keys")
     args = ap.parse_args()
 
-    files = sorted(f for f in os.listdir(args.src) if f.lower().endswith(".png"))
+    # 跳过本脚本自己输出的 _contact_sheet / _preview 等内部产物，否则会被当关键帧读进来
+    files = sorted(f for f in os.listdir(args.src)
+                   if f.lower().endswith(".png") and not f.startswith("_"))
+    if args.mode == "rig":                 # rig 只用第一张基准图，没必要把整目录都归一化
+        first = int(args.path.split(",")[0])
+        files = [files[first]]
     keys = [normalize(clean_subject(os.path.join(args.src, f))) for f in files]
     os.makedirs(args.out, exist_ok=True)
     if args.keep_keys:

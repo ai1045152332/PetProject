@@ -13,6 +13,7 @@ import (
 	"image/gif"
 	"image/png"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -151,7 +152,8 @@ func (g *OpenRouterPetImageGenerator) edit(ctx context.Context, input []byte, pr
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("OpenRouter 请求失败或超时，请稍后重试")
+		// 根本没发出/没接住响应，上游不会计费：可退。
+		return nil, petProviderFault{msg: "OpenRouter 请求失败或超时，请稍后重试"}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, (32<<20)+1))
@@ -160,6 +162,11 @@ func (g *OpenRouterPetImageGenerator) edit(ctx context.Context, input []byte, pr
 	}
 	if resp.StatusCode != http.StatusOK {
 		// Do not expose upstream bodies, request headers or API keys to clients/logs.
+		// 鉴权/模型访问/容量类失败几乎都是配置问题（Key 过期、漏配、欠费、上游拒绝），与用户照片无关，
+		// 必须在服务端日志留痕，不能只以气泡文案回到客户端。
+		if petRefundableStatus(resp.StatusCode) {
+			log.Printf("[pet-images][WARN] OpenRouter 不可用（HTTP %d），模型: %s；本次不扣用户生成次数，请检查 OPENROUTER_API_KEY 有效期与模型开通", resp.StatusCode, g.model)
+		}
 		switch resp.StatusCode {
 		case 400:
 			var upstream struct {
@@ -172,13 +179,17 @@ func (g *OpenRouterPetImageGenerator) edit(ctx context.Context, input []byte, pr
 			}
 			return nil, fmt.Errorf("OpenRouter 拒绝生成参数（HTTP 400），请检查模型分辨率、尺寸及输入格式；这不一定是照片内容问题")
 		case 401, 403:
-			return nil, fmt.Errorf("OpenRouter 授权或模型访问失败，请联系管理员检查配置")
+			return nil, petProviderFault{msg: "OpenRouter 授权或模型访问失败，请联系管理员检查配置"}
 		case 402:
-			return nil, fmt.Errorf("OpenRouter 余额不足，请联系管理员充值")
+			return nil, petProviderFault{msg: "OpenRouter 余额不足，请联系管理员充值"}
 		case 429:
-			return nil, fmt.Errorf("OpenRouter 配额不足或请求过多，请稍后重试")
+			return nil, petProviderFault{msg: "OpenRouter 配额不足或请求过多，请稍后重试"}
 		default:
-			return nil, fmt.Errorf("OpenRouter 图片生成失败（HTTP %d），请稍后重试或联系管理员检查接口配置", resp.StatusCode)
+			msg := fmt.Sprintf("OpenRouter 图片生成失败（HTTP %d），请稍后重试或联系管理员检查接口配置", resp.StatusCode)
+			if petRefundableStatus(resp.StatusCode) {
+				return nil, petProviderFault{msg: msg}
+			}
+			return nil, errors.New(msg)
 		}
 	}
 	var out struct {

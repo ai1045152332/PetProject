@@ -1,0 +1,6 @@
+Background override — this section takes precedence over every earlier mention of transparency, background or white space in this prompt.
+Render the entire background and the whole outer margin as one perfectly flat, uniform chroma key green: exactly RGB(0,255,0), hex #00FF00. Never draw an alpha checkerboard or fake transparency.
+It must be a single flat value everywhere: no gradient, no vignette, no texture, no floor, no shadow, no grid lines, no glow.
+The pet keeps its own natural colors exactly. Do not tint, rim, bounce or blend any green onto the subject: no green rim light on the silhouette, no green highlights in the fur, no green on the undersides of the body, chest, paws, muzzle or ear tips, and no green in the gaps between the legs or under the tail. Hair tips that end at the background keep their own hair color — never green.
+Keep a clean, crisp separation between the subject and the background: a narrow margin of pure green must run all the way around the silhouette, including between the legs, under the tail, between the ears and through any gap in the fur. Do not let green bleed into thin fur strands or fill the gaps between individual hairs with green.
+Every empty pixel must be exactly the same chroma green. A server removes this green afterwards and produces true transparency, so any green left on the subject becomes a visible defect.

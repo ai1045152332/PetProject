@@ -10,10 +10,10 @@ import (
 // Style and poses adapted from skills/meijing-pet-prompts/references/prompts.md.
 // The uploaded photo remains the identity anchor; never use the archive's sample cat/expired URL.
 //
-//go:embed prompts/pet_states_v3.json
+//go:embed prompts/pet_states_v4.json
 var petStatePromptJSON []byte
 
-// petStatePromptConfig 把全部提示词文案集中在 prompts/pet_states_v3.json 里：
+// petStatePromptConfig 把全部提示词文案集中在 prompts/pet_states_v4.json 里：
 // defaultComposition 是通用取景约束（全身完整、居中、四周留白不得裁切），
 // 个别状态（如 hide 躲藏）可在各自 JSON 中用 composition 覆盖，只画探出来的部分。
 type petStatePromptConfig struct {

@@ -11,7 +11,7 @@ import (
 	"math"
 )
 
-//go:embed prompts/pet_chroma_v2.txt
+//go:embed prompts/pet_chroma_v3.txt
 var petChromaPrompt string
 
 // petCanvas 是宠物素材的固定输出边长，抠图判定均基于这个正方形。
@@ -222,6 +222,15 @@ func keyChromaGreen(im *image.NRGBA, sheet bool) (*image.NRGBA, int) {
 	// 按面积阈值单独清掉，否则最终素材上会留下几块绿色碎片。
 	if backdrop.A != 0 {
 		transparent += sweepBackdropRemnants(out, backdrop)
+		// 漫水与孤岛清理都只认“与背景同一色度”的纯绿。模型把绿幕反光画到胸腹、腿间时，
+		// 那块绿已经被毛色拉偏（实测 #70D067 到背景的色度距离 0.62，远超 0.10 的判定阈），
+		// 于是既抠不掉也清不走，最终就是桌面上那块刺眼的绿斑。这类溢色不能挖成透明
+		// （会在身上打洞），改成取四周毛色填平，再把外圈的淡绿晕染逐层压掉。
+		if seeds := healSpillBlobs(out, backdrop); len(seeds) > 0 {
+			despillSpillHalo(out, seeds, spillBand)
+		}
+		// 面积不够填平阈值的零散强绿点，兜底把绿通道压回中性色，不留任何刺眼的绿。
+		clampStrongSpill(out, backdrop)
 	}
 	// 动画 sheet 每格只有 256px（主体的相对尺寸约为单帧基准图的 1/4），
 	// 沿用单帧的像素带会相对吃深 4 倍，按格缩一档。
@@ -230,6 +239,8 @@ func keyChromaGreen(im *image.NRGBA, sheet bool) (*image.NRGBA, int) {
 	} else {
 		despillGreenEdge(out, despillBand)
 	}
+	// 绿幕边缘的毛尖常被整条判成主体，留下 2~7px 的游离碎屑，成品在深色桌面上就是一圈脏边。
+	transparent += pruneSpeckles(out)
 	return out, transparent
 }
 
@@ -336,6 +347,277 @@ func sweepBackdropRemnants(out *image.NRGBA, key color.NRGBA) int {
 		removed += len(blob)
 	}
 	return removed
+}
+
+// spillBand 溢色核心外围的淡绿晕染清理层数（1024 画布尺度）。
+// despillBand 只从透明边界向内推 20px，包在毛发内部的溢色块根本够不到，
+// 必须从溢色核心自己向外推，才能把核心周围那圈淡绿一起压干净。
+const spillBand = 48
+
+// spillFloor 判定“明显绿溢色”的下限。真实毛色（米白、奶油、黄棕、黑）的相对绿度几乎不超过 0.15；
+// 绿幕反光普遍在 0.2 以上，实测残留的晕染带集中在 0.22~0.30，所以门槛取 0.20。
+const spillFloor = 0.20
+
+// greenExcess 返回亮度无关的绿溢色强度：(G - max(R,B)) / G。
+// 真实毛色（米白、奶油、黄棕、黑）几乎不超过 0.2；绿幕反光普遍在 0.4 以上。
+func greenExcess(c color.NRGBA) float64 {
+	if c.G < 40 {
+		return 0
+	}
+	return float64(int(c.G)-max(int(c.R), int(c.B))) / float64(c.G)
+}
+
+// healSpillBlobs 填平被毛发包住、且色度已被毛色拉偏的溢色块，返回被填平像素的下标。
+//
+// 与 sweepBackdropRemnants 的分工：色度仍与背景一致的纯绿是“没抠干净的背景”，挖成透明；
+// 色度已被毛色拉偏的绿是“画在身上的溢色”，挖掉会在身体上打洞，只能用四周毛色填平。
+// 四周是透明或整片绿时不动，避免把真正的绿色宠物吃掉。
+func healSpillBlobs(out *image.NRGBA, key color.NRGBA) []int {
+	const size = petCanvas * petCanvas
+	const minBlob = size / 4096
+	k := chromaVector(key)
+	spill := func(c color.NRGBA) bool {
+		return c.A >= 128 && greenExcess(c) >= spillFloor && chromaDistance(chromaVector(c), k) > 0.10
+	}
+	var healed []int
+	visited := make([]bool, size)
+	stamp := make([]int32, size)
+	generation := int32(0)
+	blob := make([]int, 0, 4096)
+	for start := 0; start < size; start++ {
+		if visited[start] {
+			continue
+		}
+		visited[start] = true
+		if !spill(out.NRGBAAt(start%petCanvas, start/petCanvas)) {
+			continue
+		}
+		blob = append(blob[:0], start)
+		for head := 0; head < len(blob); head++ {
+			i := blob[head]
+			x, y := i%petCanvas, i/petCanvas
+			for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+				nx, ny := x+d[0], y+d[1]
+				if nx < 0 || ny < 0 || nx > petCanvas-1 || ny > petCanvas-1 {
+					continue
+				}
+				j := ny*petCanvas + nx
+				if visited[j] || !spill(out.NRGBAAt(nx, ny)) {
+					continue
+				}
+				visited[j] = true
+				blob = append(blob, j)
+			}
+		}
+		if len(blob) < minBlob {
+			continue
+		}
+		fill, ok := spillRingColor(out, blob, stamp, &generation)
+		if !ok {
+			continue
+		}
+		for _, i := range blob {
+			out.SetNRGBA(i%petCanvas, i/petCanvas, fill)
+			healed = append(healed, i)
+		}
+	}
+	return healed
+}
+
+// spillRingColor 取溢色块外围一圈"没被绿污染"的不透明毛色，作为填平用的颜色。
+// 不能只取紧贴的 1px 环：那一圈往往正是淡绿晕染，填回去还是绿的。
+// 所以逐层向外扩到 spillRingRadius，跳过着色偏绿的过渡带，只收正常毛色。
+func spillRingColor(out *image.NRGBA, blob []int, stamp []int32, generation *int32) (color.NRGBA, bool) {
+	const ringRadius = 8
+	const ringSampleFloor = 0.08
+	(*generation)++
+	gen := *generation
+	for _, i := range blob {
+		stamp[i] = gen
+	}
+	frontier := append([]int(nil), blob...)
+	var sum [3]int
+	sample := 0
+	for layer := 0; layer < ringRadius && len(frontier) > 0; layer++ {
+		next := make([]int, 0, len(frontier)*4)
+		for _, i := range frontier {
+			x, y := i%petCanvas, i/petCanvas
+			for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+				nx, ny := x+d[0], y+d[1]
+				if nx < 0 || ny < 0 || nx > petCanvas-1 || ny > petCanvas-1 {
+					continue
+				}
+				j := ny*petCanvas + nx
+				if stamp[j] == gen {
+					continue
+				}
+				stamp[j] = gen
+				c := out.NRGBAAt(nx, ny)
+				if c.A < 128 {
+					continue
+				}
+				if greenExcess(c) < ringSampleFloor {
+					sum[0], sum[1], sum[2] = sum[0]+int(c.R), sum[1]+int(c.G), sum[2]+int(c.B)
+					sample++
+					continue
+				}
+				// 仍是偏绿的过渡带：不能当样本，但可以继续向外找真实毛色。
+				next = append(next, j)
+			}
+		}
+		frontier = next
+	}
+	if sample < 8 {
+		return color.NRGBA{}, false
+	}
+	fill := color.NRGBA{R: uint8(sum[0] / sample), G: uint8(sum[1] / sample), B: uint8(sum[2] / sample), A: 255}
+	// 取到的毛色样本本身也可能带着一层淡绿晕染，填回去就等于把绿块换成更大的淡绿块。
+	// 填色前先把绿通道压到红/蓝较高者，保证填完的区域绝不发绿。
+	fill.G = uint8(min(int(fill.G), max(int(fill.R), int(fill.B))))
+	return fill, true
+}
+
+// clampStrongSpill 兜底压掉所有残留的强绿像素，包括面积太小、够不到填平阈值的零散绿点。
+// 只动“相对绿度达到 spillFloor、绝对色差足够大、且色度已被毛色拉离背景”的像素：真实毛色到不了
+// 这个程度，近黑阴影（如 11,21,10 这种相对绿度虚高的暗部）因绝对差不足被跳过，
+// 主体内部与背景同色度的纯绿像素（如绿色眼睛）也原样保留。
+func clampStrongSpill(out *image.NRGBA, key color.NRGBA) int {
+	const spillClampDelta = 30
+	// 主体本身就大面积发绿（绿色宠物）时，这是本色不是溢色，一律不动。
+	// 实测漏掉的溢色只占主体百分之几，实测最严重的一张也就是 2.6%。
+	const greenSubjectShare = 12
+	k := chromaVector(key)
+	candidate := func(c color.NRGBA) bool {
+		if c.A < 128 {
+			return false
+		}
+		if int(c.G)-max(int(c.R), int(c.B)) < spillClampDelta || greenExcess(c) < spillFloor {
+			return false
+		}
+		return chromaDistance(chromaVector(c), k) > 0.10
+	}
+	opaque, hit := 0, 0
+	hits := make([]int, 0, 4096)
+	for i := 0; i < petCanvas*petCanvas; i++ {
+		c := out.NRGBAAt(i%petCanvas, i/petCanvas)
+		if c.A < 128 {
+			continue
+		}
+		opaque++
+		if candidate(c) {
+			hit++
+			hits = append(hits, i)
+		}
+	}
+	if opaque == 0 || hit*100 > opaque*greenSubjectShare {
+		return 0
+	}
+	for _, i := range hits {
+		c := out.NRGBAAt(i%petCanvas, i/petCanvas)
+		out.SetNRGBA(i%petCanvas, i/petCanvas, color.NRGBA{R: c.R, G: uint8(max(int(c.R), int(c.B))), B: c.B, A: c.A})
+	}
+	return hit
+}
+
+// despillSpillHalo 从溢色核心向外逐层把绿通道压回红/蓝的较高者。
+// 与 despillGreenEdge 的唯一区别是种子：这里从主体内部的不透明溢色起步，
+// 所以包在毛发里、离轮廓很远的淡绿晕染也有机会被压掉。核心本身已被填平，不再处理。
+func despillSpillHalo(out *image.NRGBA, seeds []int, band int) {
+	const size = petCanvas * petCanvas
+	layer := make([]int16, size)
+	for i := range layer {
+		layer[i] = -1
+	}
+	queue := make([]int, 0, len(seeds)+1024)
+	for _, i := range seeds {
+		if layer[i] == -1 {
+			layer[i] = 0
+			queue = append(queue, i)
+		}
+	}
+	for head := 0; head < len(queue); head++ {
+		i := queue[head]
+		if layer[i] >= int16(band) {
+			continue
+		}
+		x, y := i%petCanvas, i/petCanvas
+		for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+			nx, ny := x+d[0], y+d[1]
+			if nx < 0 || ny < 0 || nx > petCanvas-1 || ny > petCanvas-1 {
+				continue
+			}
+			j := ny*petCanvas + nx
+			if layer[j] != -1 || out.NRGBAAt(nx, ny).A < 128 {
+				continue
+			}
+			layer[j] = layer[i] + 1
+			queue = append(queue, j)
+		}
+	}
+	for _, i := range queue {
+		d := layer[i]
+		if d <= 0 {
+			continue
+		}
+		x, y := i%petCanvas, i/petCanvas
+		c := out.NRGBAAt(x, y)
+		base := max(int(c.R), int(c.B))
+		if int(c.G) <= base {
+			continue
+		}
+		strength := float64(band-int(d)+1) / float64(band)
+		out.SetNRGBA(x, y, color.NRGBA{R: c.R, G: uint8(float64(c.G) - float64(int(c.G)-base)*strength + 0.5), B: c.B, A: c.A})
+	}
+}
+
+// pruneSpeckles 清掉轮廓外游离的半透明碎屑，返回被清掉的像素数。
+// 绿幕边缘的毛尖会被整条判成主体，抠完留下一堆 2~7px、alpha 只有 64~191 的残留，
+// 缩到 512 后仍是肉眼可见的一圈脏边（实测 idel 21 个、focus 33 个）。
+//
+// 只清“小 + 半透明”的独立小岛：不透明的孤立像素属于主体本身（眼睛、斑纹、真正的毛尖），
+// 半透明则是抠图留下的抗锯齿残影，且清完不会动到主体内部的任何像素。
+func pruneSpeckles(out *image.NRGBA) int {
+	const size = petCanvas * petCanvas
+	const minIsland = size / 16384 // 1024 画布下 64px
+	visited := make([]bool, size)
+	island := make([]int, 0, 256)
+	pruned := 0
+	for start := 0; start < size; start++ {
+		if visited[start] {
+			continue
+		}
+		visited[start] = true
+		if c := out.NRGBAAt(start%petCanvas, start/petCanvas); c.A == 0 {
+			continue
+		}
+		island = append(island[:0], start)
+		maxA := out.NRGBAAt(start%petCanvas, start/petCanvas).A
+		for head := 0; head < len(island); head++ {
+			i := island[head]
+			x, y := i%petCanvas, i/petCanvas
+			for _, d := range [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+				nx, ny := x+d[0], y+d[1]
+				if nx < 0 || ny < 0 || nx > petCanvas-1 || ny > petCanvas-1 {
+					continue
+				}
+				j := ny*petCanvas + nx
+				if visited[j] || out.NRGBAAt(nx, ny).A == 0 {
+					continue
+				}
+				visited[j] = true
+				maxA = max(maxA, out.NRGBAAt(nx, ny).A)
+				island = append(island, j)
+			}
+		}
+		if len(island) >= minIsland || maxA == 255 {
+			continue
+		}
+		for _, i := range island {
+			out.SetNRGBA(i%petCanvas, i/petCanvas, color.NRGBA{})
+		}
+		pruned += len(island)
+	}
+	return pruned
 }
 
 // lightGreenMatcher 处理模型把色键绿画成浅绿/黄绿（如 #C0E080）的情况。

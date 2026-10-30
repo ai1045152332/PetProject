@@ -394,6 +394,62 @@ func TestSeedreamDespillsWideFringeAndClearsGreenPockets(t *testing.T) {
 	}
 }
 
+func TestSeedreamHealsSpillGreenOnBodyAndPrunesSpeckles(t *testing.T) {
+	// 真实成品上的两块硬伤（用户反馈“丑”的主因，实测自一遍线上产物）：
+	//   ① 抚摸态胸腹有一块亮绿，961 个饱和绿像素占主体 1.0%。它不是背景绿——被毛色拉偏后
+	//      色度距离 0.62，既过不了漫水也过不了孤岛清理的 0.10 阈值；挖成透明又会在身上打洞。
+	//   ② 轮廓外散着一堆 2~7px、alpha 64~191 的半透明碎屑，深色壁纸下就是一圈脏边。
+	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
+	draw.Draw(im, im.Bounds(), image.NewUniform(color.NRGBA{G: 255, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(300, 300, 700, 700), image.NewUniform(color.NRGBA{R: 180, G: 120, B: 60, A: 255}), image.Point{}, draw.Src)
+	// 溢色核心外面还裹着一圈淡绿晕染，填色时不能被这一圈污染。
+	draw.Draw(im, image.Rect(444, 444, 516, 516), image.NewUniform(color.NRGBA{R: 180, G: 222, B: 160, A: 255}), image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(450, 450, 510, 510), image.NewUniform(color.NRGBA{R: 112, G: 208, B: 103, A: 255}), image.Point{}, draw.Src)
+	// 轮廓外的半透明碎屑，模拟绿幕毛尖残留。
+	for _, p := range []image.Point{{200, 200}, {201, 200}, {202, 201}} {
+		im.SetNRGBA(p.X, p.Y, color.NRGBA{R: 202, G: 202, B: 186, A: 128})
+	}
+	var data bytes.Buffer
+	_ = png.Encode(&data, im)
+	output, err := prepareSeedreamImage(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	greens := func(p image.Point) (color.NRGBA, int) {
+		c := color.NRGBAModel.Convert(decoded.At(p.X, p.Y)).(color.NRGBA)
+		return c, int(c.G) - max(int(c.R), int(c.B))
+	}
+	// ① 溢色核心必须还在（不能挖洞），且绿已经被压掉、填成周围毛色。
+	core, delta := greens(image.Point{480, 480})
+	if core.A < 128 {
+		t.Fatalf("spill core punched into a hole: %v", core)
+	}
+	if delta > 12 {
+		t.Fatalf("spill core still green: %v", core)
+	}
+	if core.R < 150 || core.B > 100 {
+		t.Fatalf("spill core not filled with surrounding fur: %v", core)
+	}
+	// 核心外的淡绿晕染要被逐层压掉。
+	if halo, d := greens(image.Point{446, 480}); halo.A < 128 || d > 12 {
+		t.Fatalf("spill halo left green: %v", halo)
+	}
+	// 正常毛色一个像素都不能动。
+	if fur, _ := greens(image.Point{320, 320}); fur != (color.NRGBA{R: 180, G: 120, B: 60, A: 255}) {
+		t.Fatalf("clean fur altered: %v", fur)
+	}
+	// ② 轮廓外半透明碎屑必须清掉。
+	for _, p := range []image.Point{{200, 200}, {201, 200}, {202, 201}} {
+		if _, _, _, a := decoded.At(p.X, p.Y).RGBA(); a != 0 {
+			t.Fatalf("speck at %v left opaque", p)
+		}
+	}
+}
+
 func TestSeedreamFallsBackToSolidEdgeColor(t *testing.T) {
 	// 模型没画绿幕、改画米色纯色背景时，按边缘主色兜底抠除。
 	im := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))

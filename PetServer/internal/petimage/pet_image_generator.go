@@ -20,16 +20,16 @@ import (
 )
 
 // PetPromptVersion 记录成品是由哪一版提示词契约生成的（仅落档供排查，客户端不读）。
-// v4：动画模板从“各帧完全固定 + 动作小幅”改为“身份/镜头固定 + 16 帧半周期单调递进”，
-// 旧版会让模型输出 16 张几乎重合的静态图，动起来接近静止。
-const PetPromptVersion = "pet-seedream-state-v4"
+// v5：基准图改为写实比例 + 分层毛流的插画口径（去掉 v4 的“大头圆眼萌化”），
+// 状态文案整套重写；色键提示词同步收紧为禁止绿幕反光溢到主体上。
+const PetPromptVersion = "pet-seedream-state-v5"
 const DefaultPetImageModel = "bytedance-seed/seedream-4.5"
 
 // petFrameModeAnimated 保留两套生成能力：false=单帧（当前写死，每个状态一次美化请求出透明 PNG）；
 // true=两阶段动画（额外一次动画帧请求并合成 GIF）。要切回动画只改这一个常量并重新编译。
 const petFrameModeAnimated = false
 
-//go:embed prompts/pet_portrait_v1.txt
+//go:embed prompts/pet_portrait_v2.txt
 var petPortraitPrompt string
 
 //go:embed prompts/pet_animation_v1.txt

@@ -19,13 +19,28 @@ class HeartbeatService {
   /**
    * @param {object} [opts]
    * @param {() => string} [opts.getState] 返回宠物当前状态（focus/idel/sleep/pet/hide）
+   * @param {boolean} [opts.debug] 打印每次收发细节（HEARTBEAT_DEBUG=1 也可开启）
    */
-  constructor({ getState } = {}) {
+  constructor({ getState, debug = process.env.HEARTBEAT_DEBUG === '1' } = {}) {
     this.getState = getState || (() => 'idel');
     this.timer = null;
     this.sending = false;
+    this.sendStartedAt = 0;
+    this.debug = debug;
+    // 上报结果，供设置面板显示「心跳是否真的通着」（成功默认静默，光看日志无法判定）
+    this.status = { lastAttemptAt: 0, lastSuccessAt: 0, lastError: '', successCount: 0 };
     // 心跳每 60s 一次，网络持续不通时同一原因只记一条，避免刷满日志（对齐 mac 版 lastLoggedFailure）
     this.lastFailure = '';
+  }
+
+  /** 上报状态快照（面板展示 / 排查用） */
+  getStatus() {
+    return {
+      ...this.status,
+      sending: this.sending,
+      intervalSec: INTERVAL_MS / 1000,
+      url: serverURL('/api/heartbeat'),
+    };
   }
 
   start() {
@@ -56,13 +71,31 @@ class HeartbeatService {
   }
 
   async send() {
-    if (this.sending) return;
+    if (this.sending) {
+      // 看门狗：上一次请求卡在 fetch/json 上（网络栈挂起、abort 未触发）会让 sending 永远为 true，
+      // 心跳从此静默停摆且不报错。超过两个超时周期一律强制解锁重发。
+      if (this.sendStartedAt && Date.now() - this.sendStartedAt > TIMEOUT_MS * 2) {
+        const stuckSec = Math.round((Date.now() - this.sendStartedAt) / 1000);
+        this.sending = false;
+        this.recordFailure(`上次上报卡住 ${stuckSec}s 未返回，已重置`);
+      } else {
+        return;
+      }
+    }
     this.sending = true;
+    const startedAt = Date.now();
+    this.sendStartedAt = startedAt;
+    const wasFailing = Boolean(this.lastFailure);
     try {
+      const payload = this.makePayload();
+      this.status.lastAttemptAt = startedAt;
+      if (this.debug) {
+        console.log(`[heartbeat] → POST v=${payload.version} device=${payload.deviceId} state=${payload.petState}`);
+      }
       const res = await fetch(serverURL('/api/heartbeat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.makePayload()),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
@@ -71,8 +104,16 @@ class HeartbeatService {
         return;
       }
 
-      // 成功不写日志（每 60s 一条量级过大），只清空失败记录以便下次断开时重新记一条
+      // 成功默认静默（每 60s 一条量级过大），但首报与「失败恢复」各记一条，便于确认通道真的通
       this.lastFailure = '';
+      this.status.lastSuccessAt = Date.now();
+      this.status.lastError = '';
+      this.status.successCount += 1;
+      if (this.debug) {
+        console.log(`[heartbeat] ← ${res.status} ${Date.now() - startedAt}ms`);
+      } else if (this.status.successCount === 1 || wasFailing) {
+        console.log(`[heartbeat] 上报成功（累计 ${this.status.successCount} 次）`);
+      }
       // 响应里可能带宠物号（带 deviceId 首跳时服务端自动分配），先缓存下来供后续好友功能使用
       const json = await res.json().catch(() => null);
       const petNo = json && json.data && json.data.petNo;
@@ -84,10 +125,12 @@ class HeartbeatService {
       this.recordFailure(`上报失败: ${e.message}`);
     } finally {
       this.sending = false;
+      this.sendStartedAt = 0;
     }
   }
 
   recordFailure(message) {
+    this.status.lastError = message;
     if (message === this.lastFailure) return;
     this.lastFailure = message;
     console.warn(`[heartbeat] ${message}`);

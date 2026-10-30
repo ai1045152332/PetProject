@@ -697,8 +697,9 @@ final class PetViewModel: ObservableObject {
     /// Todo 到期提醒回调（供视图层用常驻卡片触达；专注动画由 ViewModel 侧播放）
     var onTodoReminder: ((TodoItem) -> Void)?
 
-    /// 好友消息触达回调（供视图层用常驻卡片展示，用户点击关闭前不消失；第二个参数为消息 ID，关卡时据此确认已读）
-    var onFriendMessage: ((String, [String]) -> Void)?
+    /// 好友消息触达回调（供视图层弹常驻会话窗：可回看最近聊天记录、也可直接回复；
+    /// 用户关卡时据此把消息 ID 上报确认已读）
+    var onFriendMessage: (([PetChatMessage]) -> Void)?
 
     /// 好友申请触达回调（供视图层弹申请卡，由用户同意/拒绝后才会互为好友）
     var onFriendRequest: ((PetFriendRequest) -> Void)?

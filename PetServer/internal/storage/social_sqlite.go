@@ -518,32 +518,78 @@ func (s *SocialSQLite) History(limit int) ([]model.PetConversationRecord, error)
 
 	out := []model.PetConversationRecord{}
 	for rows.Next() {
-		var (
-			kind, fromName, fromHost string
-			toName, toHost, toDevice string
-			text, status, idsCSV     sql.NullString
-			fromNo, toNo, sent       int64
-			delivered, read, handled sql.NullInt64
-		)
-		if err := rows.Scan(&kind, &fromNo, &fromName, &fromHost, &toNo, &toName, &toHost, &toDevice, &text,
-			&sent, &delivered, &read, &handled, &status, &idsCSV); err != nil {
+		rec, err := scanHistoryRow(rows)
+		if err != nil {
 			return nil, err
-		}
-		rec := model.PetConversationRecord{
-			Kind: kind, Status: strOr(status, ""), Text: strOr(text, ""),
-			FromPetNo: fromNo, FromName: fromName, FromHost: fromHost,
-			ToPetNo: toNo, ToName: toName, ToHost: toHost, ToDeviceID: toDevice,
-			SentAt:      millis(sent),
-			DeliveredAt: timeOrZero(delivered),
-			ReadAt:      timeOrZero(read),
-			HandledAt:   timeOrZero(handled),
-		}
-		if s := strOr(idsCSV, ""); s != "" {
-			rec.IDs = strings.Split(s, ",")
 		}
 		out = append(out, rec)
 	}
 	return out, rows.Err()
+}
+
+// HistoryBetween 只查两个宠物号之间的消息留痕（旧 → 新）：好友聊天窗回看用，
+// 因此天然排除 request 类型；限条数时仍取最近的 N 条再整序，与 History 同策略
+func (s *SocialSQLite) HistoryBetween(petNoA, petNoB int64, limit int) ([]model.PetConversationRecord, error) {
+	q := `SELECT ` + historyColumns + ` FROM history WHERE kind=? AND (`
+	args := []any{model.ConversationKindMessage}
+	if limit > 0 {
+		q += `seq IN (SELECT seq FROM history WHERE kind=? AND (`
+		args = append(args, model.ConversationKindMessage)
+	}
+	q += `(from_no=? AND to_no=?) OR (from_no=? AND to_no=?)`
+	args = append(args, petNoA, petNoB, petNoB, petNoA)
+	if limit > 0 {
+		// 括号配平：先关内层 AND (，ORDER+LIMIT 作用在子查询上，再关 seq IN ( 与外层 AND (
+		q += `) ORDER BY seq DESC LIMIT ?))`
+		args = append(args, limit)
+	} else {
+		q += `)`
+	}
+	q += ` ORDER BY seq ASC`
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []model.PetConversationRecord{}
+	for rows.Next() {
+		rec, err := scanHistoryRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// scanHistoryRow 把一行留痕扫描成记录（History 与 HistoryBetween 共用）
+func scanHistoryRow(rows *sql.Rows) (model.PetConversationRecord, error) {
+	var (
+		kind, fromName, fromHost string
+		toName, toHost, toDevice string
+		text, status, idsCSV     sql.NullString
+		fromNo, toNo, sent       int64
+		delivered, read, handled sql.NullInt64
+	)
+	if err := rows.Scan(&kind, &fromNo, &fromName, &fromHost, &toNo, &toName, &toHost, &toDevice, &text,
+		&sent, &delivered, &read, &handled, &status, &idsCSV); err != nil {
+		return model.PetConversationRecord{}, err
+	}
+	rec := model.PetConversationRecord{
+		Kind: kind, Status: strOr(status, ""), Text: strOr(text, ""),
+		FromPetNo: fromNo, FromName: fromName, FromHost: fromHost,
+		ToPetNo: toNo, ToName: toName, ToHost: toHost, ToDeviceID: toDevice,
+		SentAt:      millis(sent),
+		DeliveredAt: timeOrZero(delivered),
+		ReadAt:      timeOrZero(read),
+		HandledAt:   timeOrZero(handled),
+	}
+	if s := strOr(idsCSV, ""); s != "" {
+		rec.IDs = strings.Split(s, ",")
+	}
+	return rec, nil
 }
 
 func (s *SocialSQLite) MarkRequestHandled(requestID, status string, at time.Time) error {

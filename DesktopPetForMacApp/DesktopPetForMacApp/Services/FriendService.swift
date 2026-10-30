@@ -1,8 +1,9 @@
 // FriendService.swift
 // DesktopPetForMacApp — 好友与宠物消息客户端
-// 与后端 /api/social/<action> 交互：注册取宠物号、发好友申请、同意/拒绝、列好友、删好友、发消息、确认已读。
+// 与后端 /api/social/<action> 交互：注册取宠物号、发好友申请、同意/拒绝、列好友、删好友、发消息、确认已读、回看聊天记录。
 // 加好友需对方同意：add 只发申请，对方 accept 后双方才互为好友；
-// 消息卡关闭时调 read 上报，服务端据此标记已读（未确认前会重投几次）。
+// 消息卡关闭时调 read 上报，服务端据此标记已读（未确认前会重投几次）；
+// 聊天窗用 history 拉与某位好友的往来留痕（仅双方互为好友时开放）。
 // 请求体统一用服务端公钥加密（含 deviceId 等敏感字段），与激活码/云端图片一致；
 // 后端一律 HTTP 200，业务失败用信封 code≠0 + msg 回传，这里据此抛出本地化错误。
 
@@ -27,6 +28,19 @@ struct PetFriendRequest: Equatable {
     var display: String {
         fromName.isEmpty ? "宠物 #\(fromPetNo)" : "\(fromName) #\(fromPetNo)"
     }
+}
+
+/// 聊天窗的一行消息：好友往来留痕的展示视图
+/// 来源有两处——心跳下发的待展示消息（只有正文、无时间），与 history 回看的服务端留痕（带时间与已读状态）
+struct PetChatMessage: Equatable {
+    let id: String
+    let fromPetNo: Int
+    let fromName: String
+    let text: String
+    /// 发送时间（心跳下发的消息不带时间，nil 时气泡不显示时刻）
+    let sentAt: Date?
+    /// 对方是否已读（只对本机发出的那条有意义）
+    let isRead: Bool
 }
 
 /// 发好友申请的结果
@@ -150,6 +164,12 @@ enum FriendService {
         _ = try await post("send", payload: ["petNo": toPetNo, "text": text])
     }
 
+    /// 拉取与某位好友的最近聊天记录（旧 → 新）；服务端要求双方已互加好友
+    static func conversationHistory(with petNo: Int) async throws -> [PetChatMessage] {
+        let data = try await post("history", payload: ["petNo": petNo])
+        return decodeChatMessages(data?["messages"])
+    }
+
     // MARK: - 私有
 
     /// 构造并发送一个加密 POST，返回响应里的 data 字典（业务失败会抛出 msg）
@@ -210,6 +230,25 @@ enum FriendService {
             let petNo = intVal(dict["petNo"])
             guard petNo > 0 else { return nil }
             return PetFriend(petNo: petNo, petName: dict["petName"] as? String ?? "")
+        }
+    }
+
+    /// 聊天留痕解码：服务端时间给 UnixMilli，0（含缺失）视为「没有时间」，气泡不显示时刻
+    private static func decodeChatMessages(_ raw: Any?) -> [PetChatMessage] {
+        guard let arr = raw as? [[String: Any]] else { return [] }
+        return arr.compactMap { dict in
+            let fromPetNo = intVal(dict["fromPetNo"])
+            let text = dict["text"] as? String ?? ""
+            guard fromPetNo > 0, !text.isEmpty else { return nil }
+            let sentMs = intVal(dict["sentMs"])
+            return PetChatMessage(
+                id: dict["id"] as? String ?? "",
+                fromPetNo: fromPetNo,
+                fromName: dict["fromName"] as? String ?? "",
+                text: text,
+                sentAt: sentMs > 0 ? Date(timeIntervalSince1970: Double(sentMs) / 1000) : nil,
+                isRead: intVal(dict["readMs"]) > 0
+            )
         }
     }
 

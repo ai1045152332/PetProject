@@ -4,6 +4,30 @@
 //       弹窗未关闭（isShowing）时跳过本次触发，避免叠加。
 'use strict';
 
+// 喝水提醒间隔的合法区间（对齐 mac 版 PetViewModel.reminderInterval setter：1~120 分钟）
+const MIN_INTERVAL = 1;
+const MAX_INTERVAL = 120;
+const DEFAULT_INTERVAL = 30;
+
+/**
+ * 把任意输入收敛成合法间隔（分钟）。
+ * 非法 / 越界输入不报错，直接回落到默认值或边界（持久化里的脏数据也能安全读取）。
+ * @param {*} value
+ * @param {number} [fallback] 非法时的回落值
+ * @returns {number}
+ */
+function clampInterval(value, fallback = DEFAULT_INTERVAL) {
+  const n = parseInt(value, 10);
+  if (!Number.isInteger(n) || n < MIN_INTERVAL) return fallback;
+  return Math.min(n, MAX_INTERVAL);
+}
+
+/** 严格校验用户输入：只能是通过校验的正整数，用于设置面板给出提示 */
+function isValidInterval(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= MIN_INTERVAL && n <= MAX_INTERVAL;
+}
+
 class ReminderScheduler {
   /**
    * @param {object} opts
@@ -83,10 +107,15 @@ class ReminderScheduler {
   }
 
   _clamp(v) {
-    const n = parseInt(v, 10);
-    if (Number.isNaN(n) || n < 1) return 30;
-    return Math.min(n, 120);
+    return clampInterval(v);
   }
 }
 
-module.exports = { ReminderScheduler };
+module.exports = {
+  ReminderScheduler,
+  clampInterval,
+  isValidInterval,
+  MIN_INTERVAL,
+  MAX_INTERVAL,
+  DEFAULT_INTERVAL,
+};

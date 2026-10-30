@@ -10,4 +10,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   onDrinkWater: (callback) => {
     ipcRenderer.on('drink-water:show', () => callback());
   },
+  // 设置面板切换形象（focus / idel / sleep / pet）→ 渲染层换帧目录
+  onPetState: (callback) => {
+    ipcRenderer.on('pet:state', (event, state) => callback(state));
+  },
 });

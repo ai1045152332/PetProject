@@ -273,6 +273,24 @@ func TestMessageDeliveryRequiresConsentAndTracksRead(t *testing.T) {
 		t.Errorf("重复确认应命中 0 条，得到 hit=%d err=%v", hit, err)
 	}
 
+	// 聊天窗回看：A 能看到与 B 的最近聊天记录（旧 → 新，只含消息）
+	chat, err := svc.ConversationBetween("device-a", bPetNo)
+	if err != nil {
+		t.Fatalf("好友间回看聊天记录应成功: %v", err)
+	}
+	if len(chat) != 1 || chat[0].Text != "在吗" || chat[0].Kind != model.ConversationKindMessage {
+		t.Fatalf("聊天记录应含刚发的 1 条消息，得到 %+v", chat)
+	}
+	// 非好友设备摸不到别人的往来（隐私边界）
+	cPetNo := svc.EnsureRegistered("device-c", "h", "C")
+	if _, err := svc.ConversationBetween("device-c", bPetNo); !errors.Is(err, ErrSocialNotFriend) {
+		t.Errorf("非好友回看应报 ErrSocialNotFriend，得到 %v", err)
+	}
+	// 不存在的宠物号报不存在
+	if _, err := svc.ConversationBetween("device-a", cPetNo); !errors.Is(err, ErrSocialNotFriend) {
+		t.Errorf("单方未互加好友回看应报 ErrSocialNotFriend，得到 %v", err)
+	}
+
 	// 清空后不再展示
 	if err := svc.ClearConversations(); err != nil {
 		t.Fatalf("清空留痕应成功: %v", err)

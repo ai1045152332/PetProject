@@ -75,10 +75,10 @@ final class FloatingWindow {
             cv?.showTodoReminderAlert(item)
         }
 
-        // 好友消息：用常驻卡片展示，用户点 ✕ 关闭前不消失（不再用会自动淡出的气泡）
+        // 好友消息：弹常驻会话窗，既能回看与 TA 的最近聊天记录也能直接回复
         // 点 ✕ 时把消息 ID 上报服务端，对方后台才能看到「已读」
-        viewModel.onFriendMessage = { text, ids in
-            HTMLAlertWindow.showFriendMessage(body: text, ids: ids)
+        viewModel.onFriendMessage = { messages in
+            FriendChatWindow.present(messages: messages)
         }
 
         // 好友申请：弹常驻申请卡，用户同意/拒绝后服务端才建立（或取消）双向好友关系

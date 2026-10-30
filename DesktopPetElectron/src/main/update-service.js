@@ -300,6 +300,17 @@ class UpdateService {
     const ext = path.extname(filePath).toLowerCase();
 
     if (process.platform === 'win32' && (ext === '.exe' || ext === '.msi')) {
+      // 便携版（portable 目标）是单文件 exe，运行在临时解包目录里，无法自我替换；
+      // electron-builder 会注入 PORTABLE_EXECUTABLE_FILE 等环境变量作为识别依据
+      if (process.env.PORTABLE_EXECUTABLE_FILE) {
+        shell.showItemInFolder(filePath);
+        this.alert(
+          '便携版需手动替换',
+          `当前是免安装的便携版，自动更新无法替换正在运行的程序。新版本 ${version} 已下载到本机，请退出宠物后用新文件替换旧的 exe；换成安装版（setup）后可自动更新。`,
+        );
+        return;
+      }
+
       const { response } = await dialog.showMessageBox({
         type: 'info',
         title: '更新准备好了',

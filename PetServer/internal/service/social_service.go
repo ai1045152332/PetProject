@@ -516,6 +516,49 @@ func (s *SocialService) Conversations() []model.PetConversationRecord {
 	return out
 }
 
+// maxChatHistoryRows 好友聊天窗单次回看的历史条数上限（留痕全局有界，这里只取最近一段）
+const maxChatHistoryRows = 200
+
+// ConversationBetween 返回本设备与好友宠物号之间的最近聊天记录（旧 → 新，供聊天窗回看）。
+// 仅开放消息留痕；要求双方已互加好友，否则按 ErrSocialNotFriend 拒绝（隐私边界：非好友摸不到往来）。
+func (s *SocialService) ConversationBetween(deviceID string, friendPetNo int64) ([]model.PetConversationRecord, error) {
+	if !validSocialDevice(deviceID) {
+		return nil, ErrSocialInvalidDevice
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	self, err := s.repo.DeviceByID(deviceID)
+	if err != nil {
+		return nil, err
+	}
+	if self == nil {
+		return nil, ErrSocialInvalidDevice
+	}
+	target, err := s.repo.DeviceByPetNo(friendPetNo)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil {
+		return nil, ErrSocialPetNotFound
+	}
+	// 与 SendMessage 同样的双向好友校验：未互相同意过不开放回看
+	mine, err := s.repo.IsFriend(deviceID, friendPetNo)
+	if err != nil {
+		return nil, err
+	}
+	theirs, err := s.repo.IsFriend(target.DeviceID, self.PetNo)
+	if err != nil {
+		return nil, err
+	}
+	if !mine || !theirs {
+		return nil, ErrSocialNotFriend
+	}
+
+	return s.repo.HistoryBetween(self.PetNo, friendPetNo, maxChatHistoryRows)
+}
+
 // ClearConversations 清空全部对话留痕（管理后台维护用）。
 func (s *SocialService) ClearConversations() error {
 	s.mu.Lock()

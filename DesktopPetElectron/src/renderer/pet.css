@@ -11,15 +11,15 @@ html, body {
 }
 
 #pet {
-  width: 200px;
-  height: 200px;
+  width: 100%;
+  height: 100%;
   /* 整只小猫可拖动（对标 mac 版按住拖拽移动窗口） */
   -webkit-app-region: drag;
 }
 
 #cat {
-  width: 200px;
-  height: 200px;
+  width: 100%;
+  height: 100%;
   display: block;
   /* 去掉图片边缘锯齿，逐帧切换更平滑 */
   image-rendering: auto;

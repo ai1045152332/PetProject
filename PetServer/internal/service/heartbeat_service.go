@@ -4,6 +4,7 @@ package service
 import (
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,9 +18,19 @@ const onlineThreshold = 3 * time.Minute
 // HeartbeatService 处理心跳相关业务：登记设备最近心跳
 type HeartbeatService struct {
 	mu       sync.RWMutex
-	devices  map[string]model.Device // key: 主机名
+	devices  map[string]model.Device // key: 设备 ID（见 deviceKey）；缺 deviceId 的老客户端退回主机名
 	store    *storage.HeartbeatStore
 	snapshot *storage.DeviceSnapshotStore // 设备快照：重启后恢复列表
+}
+
+// deviceKey 设备身份键：以 deviceId 为准，缺失时退回主机名。
+// 宠物号在好友体系里按 deviceId 唯一分配，设备列表若按主机名做键，
+// 同一台机器换个主机名大小写（或改 LocalHostName）就会被当成两台设备、重复展示同一个宠物号。
+func deviceKey(d model.Device) string {
+	if id := strings.TrimSpace(d.DeviceID); id != "" {
+		return strings.ToLower(id)
+	}
+	return strings.ToLower(strings.TrimSpace(d.Hostname))
 }
 
 // NewHeartbeatService 创建心跳服务实例，并从快照恢复已知设备
@@ -44,11 +55,25 @@ func (s *HeartbeatService) restoreFromSnapshot() {
 		log.Printf("[heartbeat] 设备快照读取失败，忽略: %v", err)
 		return
 	}
+	migrated := 0
 	for hostname, d := range devices {
-		s.devices[hostname] = d
+		// 旧快照以主机名为 key，加载时按 deviceKey 重新归并，一次重启即完成迁移；
+		// 同一 deviceId 出现多条时保留最近一次心跳（map 遍历无序，不能靠覆盖顺序）
+		key := deviceKey(d)
+		if existing, ok := s.devices[key]; ok && !d.LastSeenAt.After(existing.LastSeenAt) {
+			migrated++
+			continue
+		}
+		s.devices[key] = d
+		if key != hostname {
+			migrated++
+		}
 	}
 	if len(devices) > 0 {
-		log.Printf("[heartbeat] 已从快照恢复 %d 台设备（重启不丢设备列表）", len(devices))
+		log.Printf("[heartbeat] 已从快照恢复 %d 台设备（重启不丢设备列表）", len(s.devices))
+	}
+	if migrated > 0 {
+		log.Printf("[heartbeat] 快照 %d 条旧记录已按 deviceId 归并", migrated)
 	}
 }
 
@@ -77,7 +102,7 @@ func (s *HeartbeatService) Record(h model.Heartbeat) model.Device {
 	}
 
 	s.mu.Lock()
-	s.devices[h.Hostname] = device
+	s.devices[deviceKey(device)] = device
 	s.mu.Unlock()
 
 	// 本地持久化失败不影响主流程，仅打日志
@@ -93,21 +118,37 @@ func (s *HeartbeatService) Record(h model.Heartbeat) model.Device {
 	return device
 }
 
-// Remove 删除一台设备记录（内存 + 快照），返回是否真的删掉
+// Remove 删除一台设备记录（内存 + 快照），返回是否真的删掉。
+// 优先按 deviceId 匹配，兼容按主机名（大小写不敏感）删除。
 // 注意：设备若仍在运行，下一次心跳（约 1 分钟内）会重新登记它；
 // 删除主要用于清理长期离线/换机的残留记录
-func (s *HeartbeatService) Remove(hostname string) bool {
-	s.mu.Lock()
-	_, ok := s.devices[hostname]
-	if ok {
-		delete(s.devices, hostname)
-	}
-	s.mu.Unlock()
-	if !ok {
+func (s *HeartbeatService) Remove(deviceOrHost string) bool {
+	target := strings.TrimSpace(deviceOrHost)
+	if target == "" {
 		return false
 	}
+
+	s.mu.Lock()
+	delKey := ""
+	if _, ok := s.devices[strings.ToLower(target)]; ok {
+		delKey = strings.ToLower(target)
+	} else {
+		for k, d := range s.devices {
+			if strings.EqualFold(d.Hostname, target) {
+				delKey = k
+				break
+			}
+		}
+	}
+	if delKey == "" {
+		s.mu.Unlock()
+		return false
+	}
+	delete(s.devices, delKey)
+	s.mu.Unlock()
+
 	s.persistSnapshot()
-	log.Printf("[heartbeat] 已删除设备记录: %s", hostname)
+	log.Printf("[heartbeat] 已删除设备记录: %s", target)
 	return true
 }
 

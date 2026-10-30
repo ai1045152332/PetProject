@@ -78,17 +78,37 @@ function petName() {
   return config.get('petName') || '毛豆';
 }
 
-/** 系统描述，形如 macOS 15.6.1 / Windows 11 10.0.22631 */
+/** 系统描述，与 mac 原生版格式对齐：macOS Version 15.6.1 (Build 24G90) / Windows 10.0.22631 */
 function osDescription() {
-  const release = os.release();
-  if (process.platform === 'darwin') return `macOS ${release}`;
-  if (process.platform === 'win32') return `Windows ${release}`;
-  return `${process.platform} ${release}`;
+  if (process.platform === 'darwin') {
+    // 原生版用 ProcessInfo.operatingSystemVersionString（形如 Version 15.6.1 (Build 24G90)），
+    // 这里从 sw_vers 拿同样的字段，避免上报成 Darwin 内核号（os.release() 是 24.6.0，会认成 macOS 24）
+    try {
+      const out = execFileSync('/usr/bin/sw_vers', [], { encoding: 'utf8', timeout: 3000 });
+      const version = /ProductVersion:\s*(\S+)/.exec(out);
+      const build = /BuildVersion:\s*(\S+)/.exec(out);
+      if (version && build) return `macOS Version ${version[1]} (Build ${build[1]})`;
+      if (version) return `macOS Version ${version[1]}`;
+    } catch (e) {
+      console.warn('[app-info] sw_vers 读取失败，回退 Electron 系统版本:', e.message);
+    }
+    const fallback = typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : os.release();
+    return `macOS ${fallback}`;
+  }
+  if (process.platform === 'win32') {
+    const v = typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : os.release();
+    return `Windows ${v}`;
+  }
+  return `${process.platform} ${os.release()}`;
 }
 
-/** 主机名（Windows 上 hostname 可能带大写域后缀，保持原样即可） */
+/**
+ * 主机名（服务端设备列表以它为唯一键）。
+ * macOS 的 gethostname 返回系统 LocalHostName 的原始大小写（如 MBP-XXX.local），
+ * 而 mac 原生版的 ProcessInfo.hostName 是小写——不统一会被服务端当成两台设备、同一宠物号出现两条记录。
+ */
 function hostname() {
-  return os.hostname() || 'unknown';
+  return (os.hostname() || 'unknown').toLowerCase();
 }
 
 module.exports = { currentVersion, normalizeVersion, resolveDeviceId, petName, osDescription, hostname };

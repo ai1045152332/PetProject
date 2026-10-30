@@ -143,21 +143,28 @@ final class HeartbeatService {
             }
         }
 
-        // 待展示消息：全部渲染进同一条气泡（服务端已按发送时间升序返回，多条时前缀条数，每条一行）
+        // 待展示消息：服务端已按发送时间升序返回，整批交给会话窗展示（可回看记录、直接回复）
         guard let messages = payload["messages"] as? [[String: Any]], !messages.isEmpty else { return }
-        let lines = messages.map { msg in
-            let fromName = (msg["fromName"] as? String) ?? ""
-            let fromPetNo = intValue(msg["fromPetNo"]) ?? 0
-            let text = (msg["text"] as? String) ?? ""
-            return "\(fromName.isEmpty ? "好友" : fromName)(#\(fromPetNo))：\(text)"
+        let incoming = messages.compactMap { dict -> PetChatMessage? in
+            let fromPetNo = intValue(dict["fromPetNo"]) ?? 0
+            let text = (dict["text"] as? String) ?? ""
+            guard fromPetNo > 0, !text.isEmpty else { return nil }
+            // 心跳载荷不带发送时间（留痕在服务端才有），聊天窗拉到历史后会自动补上时刻
+            return PetChatMessage(
+                id: dict["id"] as? String ?? "",
+                fromPetNo: fromPetNo,
+                fromName: dict["fromName"] as? String ?? "",
+                text: text,
+                sentAt: nil,
+                isRead: false
+            )
         }
-        var bubble = lines.joined(separator: "\n")
-        if messages.count > 1 { bubble = "收到 \(messages.count) 条好友消息\n" + bubble }
-        // 消息 ID 随卡片一起传出：用户看完点 ✕ 时回服务端确认已读（未确认前服务端会重投几次）
-        let ids = messages.map { ($0["id"] as? String) ?? "" }.filter { !$0.isEmpty }
-        FileLogger.log("[Heartbeat] 收到好友消息 \(messages.count) 条")
-        // 不再用会自动淡出的气泡，改走常驻消息卡（用户点 ✕ 关闭前不消失）
-        HeartbeatService.shared.viewModel?.onFriendMessage?(bubble, ids)
+        guard !incoming.isEmpty else { return }
+        // 待确认已读的消息 ID 由会话窗按展示的那一批自行收集（关卡时才上报）
+        FileLogger.log("[Heartbeat] 收到好友消息 \(incoming.count) 条")
+        // 不再用会自动淡出的气泡，也不再把几位好友的留言挤在同一张卡上：
+        // 改开常驻会话窗，展示最近一位的往来记录并支持回复
+        HeartbeatService.shared.viewModel?.onFriendMessage?(incoming)
     }
 
     /// JSON 数字统一取 Int

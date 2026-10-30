@@ -1811,7 +1811,7 @@ return row
         name.frame = NSRect(x: 12, y: (height - 18) / 2, width: width - 200, height: 18)
         row.addSubview(name)
 
-        let send = NSButton(title: "发消息", target: self, action: #selector(sendToFriend(_:)))
+        let send = NSButton(title: "聊天", target: self, action: #selector(openFriendChat(_:)))
         send.bezelStyle = .rounded
         send.controlSize = .small
         send.font = .systemFont(ofSize: 11)
@@ -2068,33 +2068,16 @@ return row
         }
     }
 
-    @objc private func sendToFriend(_ sender: NSButton) {
+    /// 打开与这位好友的会话窗：可回看最近的往来聊天记录，也可在窗内直接发消息
+    /// （不再用一次性的 NSAlert 输入框，免得看完历史发不了消息、发了又看不到记录）
+    @objc private func openFriendChat(_ sender: NSButton) {
         guard socialFriends.indices.contains(sender.tag) else { return }
         let f = socialFriends[sender.tag]
-        let alert = NSAlert()
-        alert.messageText = "发消息给 \(f.display)"
-        alert.alertStyle = .informational
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "想对 TA 说的话…"
-        field.font = .systemFont(ofSize: 13)
-        alert.accessoryView = field
-        alert.addButton(withTitle: "发送")
-        alert.addButton(withTitle: "取消")
-        alert.beginSheetModal(for: self) { [weak self] resp in
-            guard resp == .alertFirstButtonReturn else { return }
-            let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, let self else { return }
-            self.socialStatusLabel?.stringValue = "正在发送…"
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    try await FriendService.sendMessage(toPetNo: f.petNo, text: text)
-                    self.socialStatusLabel?.stringValue = "已发送，对方很快就能收到（通常 1 分钟内）"
-                } catch {
-                    self.socialStatusLabel?.stringValue = "发送失败：\(error.localizedDescription)"
-                }
-            }
-        }
+        FriendChatWindow.present(
+            friendPetNo: f.petNo,
+            friendDisplay: FriendChatWindow.displayName(petNo: f.petNo, name: f.petName)
+        )
+        socialStatusLabel?.stringValue = "已打开与 \(f.display) 的会话窗"
     }
 
     // MARK: - 左侧导航

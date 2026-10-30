@@ -113,6 +113,40 @@ func TestImportSocialStateKeepsPetNoAndUnreadMessages(t *testing.T) {
 	}
 }
 
+// HistoryBetween 只回两个宠物号间的消息留痕：第三方往来与好友申请不得混进来，
+// 限条数时取最近的 N 条但顺序仍是旧 → 新（聊天窗回看用）
+func TestHistoryBetweenOnlyCoversPairMessages(t *testing.T) {
+	now := time.Now()
+	repo := openTempSQLite(t)
+
+	appendRec := func(kind string, from, to int64, text string, sent time.Time) {
+		if err := repo.AppendHistory(model.PetConversationRecord{
+			Kind: kind, FromPetNo: from, ToPetNo: to, Text: text, SentAt: sent,
+		}, 0); err != nil {
+			t.Fatalf("写入留痕失败: %v", err)
+		}
+	}
+	appendRec(model.ConversationKindMessage, 100001, 100002, "在吗", now.Add(-3*time.Minute))
+	appendRec(model.ConversationKindMessage, 100002, 100001, "在的", now.Add(-2*time.Minute))
+	appendRec(model.ConversationKindMessage, 100001, 100003, "别人的私信", now.Add(-time.Minute))
+	appendRec(model.ConversationKindRequest, 100002, 100001, "想加你为好友", now)
+
+	chat, err := repo.HistoryBetween(100001, 100002, 0)
+	if err != nil {
+		t.Fatalf("回看失败: %v", err)
+	}
+	if len(chat) != 2 || chat[0].Text != "在吗" || chat[1].Text != "在的" {
+		t.Fatalf("应只拿到彼此的消息且旧 → 新，得到 %+v", chat)
+	}
+	// 反向查询结果一致；限 1 条时拿最近的那条
+	if back, err := repo.HistoryBetween(100002, 100001, 0); err != nil || len(back) != 2 {
+		t.Errorf("反向查询应对称，得到 %+v err=%v", back, err)
+	}
+	if last, err := repo.HistoryBetween(100001, 100002, 1); err != nil || len(last) != 1 || last[0].Text != "在的" {
+		t.Errorf("限 1 条应拿最近的，得到 %+v err=%v", last, err)
+	}
+}
+
 func TestExportSocialStateRoundTrip(t *testing.T) {
 	now := time.Now()
 	source := legacySocialState(now)

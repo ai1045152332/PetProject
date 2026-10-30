@@ -62,6 +62,9 @@ type SocialRepo interface {
 	AppendHistory(rec model.PetConversationRecord, keepLast int) error
 	// History 返回留痕（旧 → 新）；limit <= 0 表示不限条数
 	History(limit int) ([]model.PetConversationRecord, error)
+	// HistoryBetween 返回两个宠物号之间的消息留痕（旧 → 新，只含 message 不含申请），
+	// limit <= 0 表示不限条数；供好友聊天窗回看最近的聊天记录
+	HistoryBetween(petNoA, petNoB int64, limit int) ([]model.PetConversationRecord, error)
 	// MarkRequestHandled 按申请 ID 回写处理状态与处理时间
 	MarkRequestHandled(requestID, status string, at time.Time) error
 	// MarkHistoryDelivered 记下本批消息的首次下发时间（尚未确认已读时的中间态）

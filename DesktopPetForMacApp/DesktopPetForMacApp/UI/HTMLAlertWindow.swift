@@ -66,8 +66,6 @@ class HTMLAlertWindow: NSWindow {
     private static weak var currentTodoReminderWindow: HTMLAlertWindow?
     /// 当前喝水提醒卡引用（同一时刻只保留一张；定时器重复触发时只置顶复用，不堆叠新窗口）
     private static weak var currentWaterReminderWindow: HTMLAlertWindow?
-    /// 当前好友消息卡引用（只显示最新一条，不堆叠）
-    private static weak var currentFriendMessageWindow: HTMLAlertWindow?
     /// 当前好友申请卡引用（同一时刻只保留一张，避免堆叠）
     private static weak var currentFriendRequestWindow: HTMLAlertWindow?
     /// 页面是否已加载完成（didFinish 后置 true，之前到达的内容暂存）
@@ -162,9 +160,10 @@ class HTMLAlertWindow: NSWindow {
         window.orderFrontRegardless()
     }
 
-    // MARK: - 常驻通知卡（到期 Todo / 好友消息）
+    // MARK: - 常驻通知卡（到期 Todo / 喝水）
     // 与会自动淡出的气泡不同：这里用标准 borderless 弹窗（自带原生拖动条 + ✕），
     // 弹出后常驻，必须用户点 ✕ 才消失；同类通知复用同一窗口，避免堆叠。
+    // （好友消息已升级为 FriendChatWindow 会话窗，不再走这里的卡片）
 
     private static func htmlEscape(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;")
@@ -203,28 +202,6 @@ class HTMLAlertWindow: NSWindow {
             onClose()
         }
         currentWaterReminderWindow = window
-    }
-
-    /// 好友消息：弹一张常驻卡片，用户点 ✕ 前不消失；关闭时把消息 ID 上报服务端确认已读
-    static func showFriendMessage(body: String, ids: [String] = []) {
-        // 已有未关闭的消息卡：先静默关掉（不标记已读），保证只显示最新一条、不堆叠
-        // 被顶掉的那条用户其实没看过，故清掉 onClose 避免误确认；服务端稍后会重投
-        if let old = currentFriendMessageWindow {
-            old.onClose = nil
-            old.closeWindow()
-        }
-        let htmlBody = """
-        <div class="water-icon">💬</div>
-        <div class="water-text" style="font-size:15px;color:#f0f0f5;white-space:pre-wrap;line-height:1.7;">\(htmlEscape(body))</div>
-        <div class="water-tips">好友的留言，看完点 ✕ 关闭（关闭后对方能看到已读）</div>
-        """
-        let window = presentNotice(title: "好友消息 💬", width: 360, htmlBody: htmlBody)
-        window.onClose = {
-            if HTMLAlertWindow.currentFriendMessageWindow === window { HTMLAlertWindow.currentFriendMessageWindow = nil }
-            guard !ids.isEmpty else { return }
-            Task { await FriendService.confirmRead(ids: ids) }
-        }
-        currentFriendMessageWindow = window
     }
 
     /// 好友申请：弹一张常驻卡片，由用户点「同意 ✅ / 拒绝 ✕」后才消失（同意后双方互为好友）

@@ -9,6 +9,7 @@ const { app } = require('electron');
 
 const DEFAULTS = {
   drinkWaterInterval: 30, // 分钟
+  petScale: 1.0, // 宠物大小（0.5~2.0，按 200×200 精灵图等比缩放）
   serverBaseURL: 'http://101.96.248.75', // PetServer 地址（与 mac 版 ServerConfig.baseURL 同源）
   petName: '毛豆', // 宠物名称，随心跳上报
   deviceId: '', // 设备唯一标识，首次启动由 app-info 解析后写回

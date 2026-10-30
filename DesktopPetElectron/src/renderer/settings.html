@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>设置</title>
+  <link rel="stylesheet" href="./settings.css" />
+</head>
+<body>
+  <div class="panel">
+    <header class="header">
+      <span class="title">设置</span>
+      <span class="close" id="close" title="关闭（Esc）">×</span>
+    </header>
+
+    <div class="body">
+      <!-- 左侧一级菜单（对齐 mac 版 SettingsPanel 的五项导航） -->
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-section="pet" type="button">🐱 宠物信息</button>
+        <button class="nav-item" data-section="general" type="button">⚙️ 通用设置</button>
+        <button class="nav-item" data-section="reminder" type="button">🔔 提醒设置</button>
+        <button class="nav-item" data-section="menu" type="button">🖱️ 菜单设置</button>
+        <button class="nav-item" data-section="social" type="button">👫 好友消息</button>
+      </nav>
+
+      <!-- 右侧内容区 -->
+      <div class="content" id="content">
+
+        <!-- ── 宠物信息 ───────────────────────────── -->
+        <section class="section active" data-section="pet">
+          <div class="section-head">
+            <div class="section-title">🐱 宠物信息</div>
+            <div class="section-desc">当前状态：<span id="state-badge">专注</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">形象切换</div>
+            <div class="card-desc">点一下立即切换小猫正在播放的动画</div>
+            <div class="states" id="states"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">宠物名称</div>
+            <div class="card-desc">名称会随心跳上报到服务端</div>
+            <div class="row">
+              <input id="pet-name" class="text-input" type="text" maxlength="20" placeholder="毛豆" />
+              <button class="primary" id="save-name" type="button">保存</button>
+            </div>
+            <div class="hint" id="name-hint">留空保存会回到默认名「毛豆」</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">宠物号</span>
+              <span class="value" id="pet-no">未分配</span>
+            </div>
+            <div class="card-desc">服务端分配，同一台机器的 mac 原生版与 Electron 版共用一个号</div>
+          </div>
+
+          <div class="card todo">
+            <div class="card-title">自定义状态图片（本期不做）</div>
+            <div class="card-desc">上传或 AI 生成每个状态的形象图，mac 版已支持</div>
+          </div>
+        </section>
+
+        <!-- ── 通用设置 ───────────────────────────── -->
+        <section class="section" data-section="general">
+          <div class="section-head">
+            <div class="section-title">⚙️ 通用设置</div>
+            <div class="section-desc">应用启动行为与其他通用选项</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">开机自启</div>
+                <div class="card-desc">登录系统后自动启动宠物</div>
+              </div>
+              <button class="switch" id="auto-launch" type="button" aria-pressed="false"><span></span></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">宠物大小</span>
+              <span class="value" id="scale-value">1.0x</span>
+            </div>
+            <div class="row">
+              <input id="scale" class="slider" type="range" min="0.5" max="2" step="0.1" value="1" />
+            </div>
+            <div class="hint" id="scale-hint">0.5x～2.0x，拖动后立即生效</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">版本</div>
+                <div class="card-desc" id="version">—</div>
+              </div>
+              <button class="ghost" id="check-update" type="button">检查更新</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">心跳上报</div>
+                <div class="card-desc" id="heartbeat">正在读取…</div>
+              </div>
+              <span class="value" id="heartbeat-state">—</span>
+            </div>
+            <div class="hint" id="heartbeat-hint">每 60 秒一次，服务端据此统计在线设备与分配宠物号</div>
+          </div>
+
+          <div class="card todo">
+            <div class="card-title">权限（本期不做）</div>
+            <div class="card-desc">mac 版用校验码解锁天气、AI 生成等付费能力</div>
+          </div>
+        </section>
+
+        <!-- ── 提醒设置 ───────────────────────────── -->
+        <section class="section" data-section="reminder">
+          <div class="section-head">
+            <div class="section-title">🔔 提醒设置</div>
+            <div class="section-desc">喝水提醒</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">喝水提醒</span>
+              <div class="current">当前：<strong id="current">30</strong> 分钟</div>
+            </div>
+            <div class="card-desc">每隔一段时间提醒你起身喝水，修改后立即按新间隔重新计时</div>
+            <div class="row">
+              <div class="presets" id="presets">
+                <button class="preset" data-minutes="15" type="button">15</button>
+                <button class="preset" data-minutes="30" type="button">30</button>
+                <button class="preset" data-minutes="45" type="button">45</button>
+                <button class="preset" data-minutes="60" type="button">60</button>
+                <span class="unit">分钟</span>
+              </div>
+            </div>
+            <div class="row">
+              <input id="custom" class="custom" type="number" min="1" max="120" step="1"
+                     placeholder="自定义" autocomplete="off" />
+              <button class="primary" id="apply" type="button">应用</button>
+              <button class="ghost push-right" id="test" type="button">测试提醒</button>
+            </div>
+            <div class="hint" id="hint">可填 1～120 分钟，回车或点「应用」生效</div>
+          </div>
+
+          <div class="card todo">
+            <div class="card-title">天气提醒（本期不做）</div>
+            <div class="card-desc">每天定时播报天气，mac 版需校验码解锁（天气接口按量付费）</div>
+          </div>
+
+          <div class="card todo">
+            <div class="card-title">主动搭话（本期不做）</div>
+            <div class="card-desc">结合新闻 / Todo 定时冒泡陪伴，mac 版已支持间隔设置</div>
+          </div>
+        </section>
+
+        <!-- ── 菜单设置 ───────────────────────────── -->
+        <section class="section" data-section="menu">
+          <div class="section-head">
+            <div class="section-title">🖱️ 菜单设置</div>
+            <div class="section-desc">宠物右键菜单展示项</div>
+          </div>
+          <div class="card todo">
+            <div class="card-title">右键菜单（本期不做）</div>
+            <div class="card-desc">mac 版可勾选右键菜单里要展示的功能项；本版宠物窗还没有右键菜单（路线图 P3）</div>
+          </div>
+        </section>
+
+        <!-- ── 好友消息 ───────────────────────────── -->
+        <section class="section" data-section="social">
+          <div class="section-head">
+            <div class="section-title">👫 好友消息</div>
+            <div class="section-desc">宠物号与好友互动</div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">我的宠物号</span>
+              <span class="value" id="pet-no-social">未分配</span>
+            </div>
+            <div class="card-desc">把宠物号发给好友，就能互相串门、发消息</div>
+          </div>
+          <div class="card todo">
+            <div class="card-title">好友与消息（本期不做）</div>
+            <div class="card-desc">添加好友、处理申请、互发消息，mac 版已支持；服务端接口已就绪，本版待接入</div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+  <script src="./settings.js"></script>
+</body>
+</html>

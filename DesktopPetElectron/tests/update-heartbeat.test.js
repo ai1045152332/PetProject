@@ -18,7 +18,7 @@ Module._load = function (request) {
   if (request === 'electron') {
     return {
       app: {
-        getVersion: () => '0.0.1',
+        getVersion: () => APP_VERSION,
         getPath: () => USER_DATA,
         focus() {},
         quit() {},
@@ -37,6 +37,7 @@ Module._load = function (request) {
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
 const { isNewer, selectPackage, verifySignature, UpdateService } = require(path.join(SRC, 'update-service.js'));
+const APP_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
 const { HeartbeatService } = require(path.join(SRC, 'heartbeat.js'));
 const config = require(path.join(SRC, 'config-store.js'));
 
@@ -108,12 +109,27 @@ global.fetch = async (url, opts) => {
   check('Content-Type', captured.opts.headers['Content-Type'], 'application/json');
   check('字段集合', Object.keys(payload).sort(),
     ['deviceId', 'hostname', 'machine', 'os', 'petName', 'petState', 'version'].sort());
-  check('version 为 electron 前缀', payload.version, 'electron0.0.1');
+  check('version 为 electron 前缀', payload.version, `electron${APP_VERSION}`);
   check('petState 来自状态机', payload.petState, 'focus');
   check('petName 默认毛豆', payload.petName, '毛豆');
   check('machine 为 CPU 架构', payload.machine, process.arch);
+  // 服务端设备列表以 hostname 为唯一键：必须与 mac 原生版一致（小写），否则同一 deviceId 会变成两条记录
+  check('hostname 已小写（与 mac 原生版 ProcessInfo.hostName 对齐）',
+    payload.hostname === payload.hostname.toLowerCase(), true);
+  check('hostname 与系统主机名小写一致', payload.hostname, os.hostname().toLowerCase());
+  if (process.platform === 'darwin') {
+    check('os 为 macOS 产品版本而非 Darwin 内核号', /^macOS Version \d+\.\d+/.test(payload.os), true);
+  }
   check('deviceId 非空且已持久化', payload.deviceId.length > 0 && config.get('deviceId') === payload.deviceId, true);
   check('响应回填宠物号', config.get('petNo'), 10086);
+
+  // 上报成功后状态可观测（成功本身静默，面板靠这几个字段判断「心跳是不是真通了」）
+  const st = hb.getStatus();
+  check('成功后记录成功时间', st.lastSuccessAt > 0, true);
+  check('成功后累计次数', st.successCount, 1);
+  check('成功后清空错误', st.lastError, '');
+  check('状态里带上报间隔', st.intervalSec, 60);
+  check('状态里带上报地址', st.url, `${config.get('serverBaseURL')}/api/heartbeat`);
 
   // 失败原因去重：同一原因连续出现只记一条
   const logs = [];
@@ -125,6 +141,28 @@ global.fetch = async (url, opts) => {
   console.warn = origWarn;
   check('同一失败原因只记一条日志', logs.filter((l) => l.includes('ECONNREFUSED')).length, 1);
   check('未产生安装分发动作', opened.length, 0);
+  check('失败后记录错误原因', hb.getStatus().lastError.includes('ECONNREFUSED'), true);
+
+  // 看门狗：请求卡死（sending 一直为 true）时不能永久停摆，超时后自动解锁重发
+  captured = null;
+  global.fetch = async (url, opts) => {
+    captured = { url, opts };
+    return { ok: true, status: 200, json: async () => ({ code: 0, msg: 'ok', data: { petNo: 10086 } }) };
+  };
+  hb.sending = true;
+  hb.sendStartedAt = Date.now() - 30 * 1000;
+  await hb.send();
+  check('卡死超过 2 个超时周期后自动重发', Boolean(captured), true);
+  check('重发后 sending 已释放', hb.getStatus().sending, false);
+
+  // 未到超时窗口时保持互斥，不叠加并发请求
+  captured = null;
+  hb.sending = true;
+  hb.sendStartedAt = Date.now() - 1000;
+  await hb.send();
+  check('请求进行中不并发重发', captured, null);
+  hb.sending = false;
+  hb.sendStartedAt = 0;
 
   // ── 5. 检查更新：无本平台包 / 已是最新时的提示 ──
   dialogs.length = 0;

@@ -11,7 +11,7 @@ let reminderWin = null;
 function openReminderWindow() {
   if (reminderWin && !reminderWin.isDestroyed()) {
     reminderWin.focus();
-    return;
+    return reminderWin;
   }
 
   reminderWin = new BrowserWindow({
@@ -34,6 +34,7 @@ function openReminderWindow() {
   reminderWin.setAlwaysOnTop(true, 'screen-saver');
   reminderWin.loadFile(path.join(__dirname, '..', 'renderer', 'reminder.html'));
   reminderWin.on('closed', () => { reminderWin = null; });
+  return reminderWin;
 }
 
 function closeReminderWindow() {

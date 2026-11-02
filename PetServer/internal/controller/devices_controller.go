@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"math"
 	"net/http"
+	"sort"
 	"time"
 
+	"petserver/internal/model"
 	"petserver/internal/service"
 )
 
@@ -47,6 +50,8 @@ func (c *DevicesController) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sortDeviceViews(devices)
+
 	writeJSON(w, http.StatusOK, Response{
 		Code: 0,
 		Msg:  "ok",
@@ -57,4 +62,26 @@ func (c *DevicesController) List(w http.ResponseWriter, r *http.Request) {
 			"devices":    devices,
 		},
 	})
+}
+
+// sortDeviceViews 固定排序规则：在线优先，其次按宠物号升序（未分配宠物号的排最后），
+// 其余情况按主机名兜底，保证每次刷新列表顺序稳定不跳动
+func sortDeviceViews(devices []model.DeviceView) {
+	sort.SliceStable(devices, func(i, j int) bool {
+		if devices[i].Online != devices[j].Online {
+			return devices[i].Online
+		}
+		if noI, noJ := petNoRank(devices[i].PetNo), petNoRank(devices[j].PetNo); noI != noJ {
+			return noI < noJ
+		}
+		return devices[i].Hostname < devices[j].Hostname
+	})
+}
+
+// petNoRank 宠物号排序权重：0 表示尚未分配，视为最大，排到有号的后面
+func petNoRank(no int64) int64 {
+	if no == 0 {
+		return math.MaxInt64
+	}
+	return no
 }

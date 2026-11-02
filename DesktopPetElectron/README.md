@@ -12,8 +12,8 @@ macOS 原生版（`DesktopPetForMacApp`）的跨平台重写，目标同时覆�
 | P0+ | 自动更新（检查 / 下载 / sha256 + Ed25519 校验 / 安装）+ 托盘手动检查 | ✅ |
 | P0+ | 设置面板（喝水提醒间隔：预设 15/30/45/60 + 自定义 1～120 分钟） | ✅ |
 | P1 | 精灵图动画 + 完整状态机 | ⏳ |
-| P2 | 拖拽 / 点击 / 托盘 | ⏳ |
-| P3 | 右键菜单 + 喝水提醒 | ⏳ |
+| P2 | 拖拽 / 点击 / 托盘 | 🔄 拖拽（手动搬窗）✅、托盘 ✅；左键点击互动待做 |
+| P3 | 右键菜单 + 喝水提醒 | 🔄 喝水 ✅；基础右键菜单（仅抚摸/关闭，同 Swift 版不含显隐/设置/检查更新）✅；喂猫条、躲起来等待后续 |
 | P4 | 新闻 / 天气 / 股票服务 | ⏳ |
 | P5 | Todo + 背单词 | ⏳ |
 | P6 | electron-builder 打包 Windows / macOS 安装包 | ✅ 已配置 |
@@ -98,6 +98,7 @@ DesktopPetElectron/
 │   │   ├── index.js            # 主进程入口 + 应用生命周期 + 各服务接线
 │   │   ├── pet-window.js       # 透明置顶悬浮窗
 │   │   ├── tray.js             # 托盘菜单（显隐 / 设置 / 检查更新 / 退出）+ 状态提示
+│   │   ├── pet-context-menu.js # 宠物右键菜单（P3：抚摸 / 关闭）
 │   │   ├── settings-window.js  # 设置面板窗口（无边框透明，单例）
 │   │   ├── settings-service.js # 设置业务逻辑：读间隔 / 校验写入 / 立即重启计时
 │   │   ├── heartbeat.js        # 心跳上报（1 分钟一次，移植自 mac 版 HeartbeatService）
@@ -118,10 +119,19 @@ DesktopPetElectron/
 │   ├── settings-panel.test.js   # 间隔区间校验 / 持久化 / 改完重启计时 / 脏数据回落
 │   ├── on-top-guard.test.js     # 置顶守护：失焦补位 / 定时兜底 / 让出层级 / stop 生效
 │   └── tray-interaction.test.js # 托盘：Windows 左键切换右键菜单、mac 弹菜单、文案与 tooltip 跟随状态
+│   └── pet-context-menu.test.js # 右键菜单：项构成 / 抚摸与退出回调 / 层级让位
 └── assets/
     ├── Sprites/              # 从 mac 工程拷贝的动画帧（focus/idel/sleep/pet，提醒已合并进专注，warn 已删除）
-    └── tray/                 # 托盘图标（由 MenuBarIcon.png 派生）：MenuBarTemplate(@2x).png 单色模板图（mac）/ WindowsTray(@2x).png 白猫+描边（Windows）
+    ├── MenuBarIcon.png       # 菜单栏图标 → 软链到仓库根 SharedAssets/MenuBarIcon.png（与 mac 原生版共用）
+    └── WindowsTray(@2x).png  # Windows 专用：带五官的白猫 + 深灰描边（32/64，4x 超采样导出）
 ```
+
+- mac 菜单栏图标与原生版**共用同一个物理文件**（`SharedAssets/MenuBarIcon.png`），不做任何像素加工：
+  `src/main/tray.js` 加载后经 `resize()` 缩到 22pt 并标为模板图，与 Swift 侧 `img.size = 22×22` + `isTemplate = true` 完全对称。
+  两个坑：Electron 把位图尺寸直接当点尺寸，360×348 原图不缩放会巨到不显示；`resize()` 返回新图、不改原对象，必须接住返回值。
+- Windows 无模板图反色机制，用单独一张 `WindowsTray.png`（+@2x）：保留原画五官/胡须的白猫 + 深灰描边，深浅任务栏都能看清。
+  导出时做 4x 超采样再缩回，避免描边锯齿与断裂（直接在 32px 上算形态学会得到白面团 + 碎块描边）。
+  这两张图从同一张源图一次性导出，仓库里不留生成脚本；**换 `SharedAssets/MenuBarIcon.png` 时记得同步重导这两张**。
 
 - 打包相关：`packaging/`（图标资源 icon.icns / icon.png）、`dist/`（electron-builder 产物）。
 
@@ -150,7 +160,7 @@ DesktopPetElectron/
 | 🐱 宠物信息 | 部分可用 | 形象切换（专注/休闲/睡觉/抚摸，点击即时切帧）✅、宠物名称 ✅、宠物号展示 ✅；自定义状态图片（本期不做） |
 | ⚙️ 通用设置 | 部分可用 | 开机自启 ✅、宠物大小 0.5x～2.0x ✅、版本号 + 检查更新 ✅；权限校验码（本期不做） |
 | 🔔 提醒设置 | 喝水可用 | 喝水提醒 ✅（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）；天气提醒、主动搭话（本期不做） |
-| 🖱️ 菜单设置 | 本期不做 | 宠物右键菜单展示项（本版还没有右键菜单，路线图 P3） |
+| 🖱️ 菜单设置 | 本期不做 | 宠物右键菜单展示项（右键菜单已有基础项，展示配置过滤待做） |
 | 👫 好友消息 | 本期不做 | 宠物号展示 ✅；添加好友 / 消息列表待接入（服务端接口已就绪） |
 
 入口：
@@ -210,12 +220,37 @@ SIG=$(openssl pkeyutl -sign -rawin -inkey ~/.cute-pet-release/ed25519_private.pe
 # 把 winVersion/winFile/winSHA256/winSignature/winNotes 加进服务器 dist/latest.json，安装包放到服务器 dist/ 下
 ```
 
+## 宠物右键菜单（P3）
+
+对标 Swift 版 `CatView.rightMouseDown`（FloatingWindow.swift），本版只收录能力已就绪的项：
+
+| 菜单项 | 行为 | 对应 Swift 版 |
+|--------|------|--------------|
+| 抚摸 🐾 | 一次性动画：播完一圈 pet 帧 + hold 1.5s 自动回原状态（对标 Swift `playOneShot`），心跳 `petState` 同步上报 | `petAction` |
+| 关闭 ❌ | 退出应用 | `quitAction` |
+
+与 Swift 版一致，显隐、「设置… / 检查更新」都不在右键菜单，入口在菜单栏托盘（Swift 右键里的「躲起来 👀」是贴边藏，与显隐无关，属未移植能力）。
+
+未抄的项（喂猫条 🍡、躲起来 👀、背单词 📚、苦练基本功 🧩、新闻 📰、天气 ☀️、Todo 📝、股票 📈、「解锁更多功能 🔓」置灰、菜单设置过滤）依赖 P4/P5 服务与权限模块，就绪后逐步补齐。
+
+实现要点（`src/main/pet-context-menu.js`）：
+
+- 触发链路：渲染层监听 `contextmenu`（拦默认菜单）→ IPC → 主进程 `Menu.popup()`。
+  **不能用 `-webkit-app-region: drag` + 主进程 `webContents.on('context-menu')`**：原生拖拽区会在事件到达页面前吞掉鼠标事件，真实右键根本弹不出菜单（`webContents.sendInputEvent` 注入能绕过这条拦截，用它验证会得到假阳性，必须用真实鼠标事件验证）。
+- 拖拽同步改为手动实现（对标 Swift 版 `mouseDragged → setFrameOrigin`）：渲染层 mousedown/mousemove 拿鼠标屏幕坐标，主进程 `createDragController` 按 offset 搬窗（rAF 合帧防 IPC 洪水），见 `tests/pet-drag.test.js`。
+- 层级让位：弹出前 `petGuard.pause(10000)`，菜单 `menu-will-close`（含 Esc / 点外部自动收起）后 `resume()` 抢回置顶，与托盘菜单同一套规则。
+- 测试钩子：`PET_TEST_CONTEXT_MENU=1 npm start` 2.5s 后自动弹菜单（菜单弹在光标处，肉眼可验）。
+
 ## 测试
 
 ```bash
-npm test          # 两个用例文件依次跑：
+npm test          # 五个用例文件依次跑：
                   #   tests/update-heartbeat.test.js —— 版本比较、平台选包、真实签名验签、心跳上报体
                   #   tests/settings-panel.test.js  —— 间隔区间校验、持久化、改完重启计时、脏数据回落
+                  #   tests/on-top-guard.test.js    —— 置顶守护
+                  #   tests/tray-interaction.test.js—— 托盘交互
+                  #   tests/pet-context-menu.test.js—— 右键菜单项构成、抚摸/退出回调、层级让位
+                  #   tests/pet-drag.test.js        —— 手动拖窗 offset/取整/松键收尾
 ```
 
 界面本身用 Electron 的 `webContents.capturePage()` 截图验证（不依赖系统录屏权限）；想直接看面板可 `PET_TEST_SETTINGS=1 npm start`，启动 2.5 秒后自动弹出设置面板。

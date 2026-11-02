@@ -51,3 +51,49 @@ if (window.petAPI && window.petAPI.onDrinkWater) {
 if (window.petAPI && window.petAPI.onPetState) {
   window.petAPI.onPetState((next) => setState(next));
 }
+
+// ── 鼠标交互：手动拖窗 + 右键菜单（对标 Swift 版 CatView）──
+// 不用 -webkit-app-region: drag：原生拖拽区会吞掉鼠标事件，右键菜单弹不出来
+let dragging = false;
+let moveQueued = false;
+let lastMove = null;
+
+function sendMove() {
+  moveQueued = false;
+  if (!dragging || !lastMove || !window.petAPI) return;
+  window.petAPI.dragMove(lastMove.x, lastMove.y);
+}
+
+window.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || !window.petAPI) return;
+  dragging = true;
+  window.petAPI.dragStart(e.screenX, e.screenY);
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  // 鼠标滑出窗口外松键时收不到 mouseup，按按键状态兜底结束
+  if (e.buttons === 0) {
+    dragging = false;
+    if (window.petAPI) window.petAPI.dragEnd();
+    return;
+  }
+  // 按帧合并 mousemove，避免高频 IPC 拖垮主进程
+  lastMove = { x: e.screenX, y: e.screenY };
+  if (!moveQueued) {
+    moveQueued = true;
+    requestAnimationFrame(sendMove);
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 0 || !dragging) return;
+  dragging = false;
+  if (window.petAPI) window.petAPI.dragEnd();
+});
+
+// 右键 → 弹原生菜单（对标 Swift 版 CatView.rightMouseDown）
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (window.petAPI) window.petAPI.requestContextMenu();
+});

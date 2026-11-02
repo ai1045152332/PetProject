@@ -1,4 +1,32 @@
-/* src/renderer/settings.css — 设置面板：左侧一级菜单 + 右侧内容区（对齐 mac 版 SettingsPanel 布局） */
+/* src/renderer/settings.css — 设置面板：左侧一级菜单 + 右侧内容区
+ * 配色 1:1 对齐 mac 版 SettingsPanel：
+ *   底板 NSVisualEffectView(material: .popover) 浅色毛玻璃
+ *   导航/内容容器 controlBackgroundColor 0.35 / 0.5
+ *   卡片 makeSettingRow：white 0.04 + 圆角 10
+ *   选中态 controlAccentColor 0.18（导航）/ 0.14 + 2px 描边（状态格）
+ *   开关 ToggleSwitch：开 systemGreen，关 systemGray
+ */
+:root {
+  /* 对应 NSColor.controlAccentColor，macOS 默认强调色（蓝）；
+     用户在系统设置里改强调色时由主进程注入覆盖 */
+  --accent: #0a82ff;
+  --accent-18: rgba(10, 130, 255, 0.18);
+  --accent-14: rgba(10, 130, 255, 0.14);
+  --accent-08: rgba(10, 130, 255, 0.08);
+  /* NSColor.systemGreen（开关开启态） */
+  --switch-on: #34c759;
+  /* NSColor.systemGray（开关关闭态） */
+  --switch-off: #8e8e93;
+  /* NSColor.labelColor / secondaryLabelColor / tertiaryLabelColor */
+  --label: rgba(0, 0, 0, 0.85);
+  --label-secondary: rgba(0, 0, 0, 0.5);
+  --label-tertiary: rgba(0, 0, 0, 0.25);
+  /* NSColor.separatorColor */
+  --separator: rgba(0, 0, 0, 0.1);
+  /* NSColor.controlBackgroundColor */
+  --control-bg: rgba(255, 255, 255, 0.85);
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -24,11 +52,15 @@ body {
   display: flex;
   flex-direction: column;
   padding: 0 14px 14px;
-  background: linear-gradient(160deg, #2b2d42, #1e1e2e);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* 底板：必须是不透明实色。窗口已改成真透明（settings-window.js 的 backgroundColor: #00000000），
+     而 backdrop-filter 只能糊页面内容、糊不动窗口外的桌面，所以半透明底板会直接变成
+     “能被看穿的塑料片”。不开系统 vibrancy，三平台统一由 CSS 画卡片，
+     14px 外边距透出桌面 + 阴影，只留一层边框。 */
+  background: #f6f6f6;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 16px;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
-  color: #f0f0f5;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+  color: var(--label);
   overflow: hidden;
   /* 空白区域可拖动整窗（透明无边框），交互控件单独排除 */
   -webkit-app-region: drag;
@@ -46,19 +78,19 @@ body {
 .title {
   font-size: 15px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--label);
 }
 
 .close {
   -webkit-app-region: no-drag;
   font-size: 20px;
   line-height: 1;
-  color: #8888a0;
+  color: var(--label-tertiary);
   cursor: pointer;
   padding: 0 4px;
 }
 
-.close:hover { color: #ffffff; }
+.close:hover { color: var(--label); }
 
 /* ── 主体：左导航 + 右内容 ─────────────────── */
 .body {
@@ -78,8 +110,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--control-bg);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 12px;
 }
 
@@ -90,7 +122,7 @@ body {
   font-size: 13px;
   font-weight: 500;
   text-align: left;
-  color: #a7abc8;
+  color: var(--label-secondary);
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -99,12 +131,13 @@ body {
   white-space: nowrap;
 }
 
-.nav-item:hover { background: rgba(255, 255, 255, 0.06); }
+.nav-item:hover { background: rgba(0, 0, 0, 0.045); }
 
+/* mac 版 applyNavStyle：选中 = accent 0.18 淡底 + accent 文字 + semibold */
 .nav-item.active {
-  font-weight: 700;
-  color: #ffffff;
-  background: rgba(124, 137, 255, 0.22);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-18);
 }
 
 /* 右侧内容区 */
@@ -115,14 +148,14 @@ body {
   box-sizing: border-box;
   padding: 14px 16px;
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--control-bg);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 12px;
 }
 
 .content::-webkit-scrollbar { width: 8px; }
 .content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.16);
   border-radius: 4px;
 }
 .content::-webkit-scrollbar-track { background: transparent; }
@@ -134,28 +167,32 @@ body {
 .section-head {
   padding-bottom: 10px;
   margin-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--separator);
 }
 
 .section-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--label);
 }
 
 .section-desc {
   margin-top: 4px;
   font-size: 11px;
-  color: #7d819c;
+  color: var(--label-secondary);
 }
 
+/* mac 版整条「当前状态：XX」徽章都是 accent，其余分区副标题是 secondaryLabel */
+.section-desc:has(#state-badge),
+#state-badge { color: var(--accent); }
+
 /* ── 卡片 ─────────────────────────────────── */
+/* mac 版 makeSettingRow：white 0.04 底 + 圆角 10，无边框 */
 .card {
   margin-bottom: 12px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .card:last-child { margin-bottom: 0; }
@@ -173,25 +210,31 @@ body {
 .card-title {
   font-size: 13px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--label);
 }
 
 .card-desc {
   margin-top: 4px;
   font-size: 11px;
   line-height: 1.5;
-  color: #7d819c;
+  color: var(--label-secondary);
 }
 
+/* 普通值：对应 12px medium 的状态标签；宠物号等强调值单独加 .strong */
 .value {
   font-size: 12px;
-  font-weight: 600;
-  color: #9aa4ff;
+  font-weight: 500;
+  color: var(--accent);
   white-space: nowrap;
 }
 
-.value.ok { color: #7fd6a0; }
-.value.bad { color: #ff8a8a; }
+.value.strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.value.ok { color: var(--switch-on); }
+.value.bad { color: #ff3b30; }
 
 .row {
   display: flex;
@@ -205,12 +248,12 @@ body {
 .hint {
   margin-top: 8px;
   font-size: 11px;
-  color: #6f7290;
+  color: var(--label-tertiary);
   min-height: 14px;
 }
 
-.hint.error { color: #ff8a8a; }
-.hint.ok { color: #7fd6a0; }
+.hint.error { color: #ff3b30; }
+.hint.ok { color: var(--switch-on); }
 
 /* ── 形象切换卡片 ─────────────────────────── */
 .states {
@@ -229,21 +272,22 @@ body {
   gap: 4px;
   font-family: inherit;
   font-size: 12px;
-  color: #b9bde0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid transparent;
+  color: var(--label);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.state-tile:hover { background: rgba(255, 255, 255, 0.1); }
+.state-tile:hover { background: rgba(0, 0, 0, 0.07); }
 
+/* mac 版 applyTileStyle：选中 = accent 0.14 淡底 + 2px accent 描边 + accent 文字 */
 .state-tile.selected {
-  font-weight: 700;
-  color: #ffffff;
-  background: rgba(124, 137, 255, 0.22);
-  border-color: rgba(140, 152, 255, 0.85);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-14);
+  border: 2px solid var(--accent);
 }
 
 /* ── 输入框 / 按钮 ────────────────────────── */
@@ -256,15 +300,18 @@ body {
   box-sizing: border-box;
   font-size: 13px;
   font-family: inherit;
-  color: #f0f0f5;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  color: var(--label);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 6px;
   outline: none;
   user-select: text;
 }
 
-.text-input:focus { border-color: rgba(140, 152, 255, 0.8); }
+.text-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-18);
+}
 
 .custom {
   -webkit-app-region: no-drag;
@@ -275,16 +322,20 @@ body {
   font-size: 13px;
   font-family: inherit;
   text-align: center;
-  color: #f0f0f5;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  color: var(--label);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 6px;
   outline: none;
   user-select: text;
 }
 
-.custom::placeholder { color: #6f7290; }
-.custom:focus { border-color: rgba(140, 152, 255, 0.8); }
+.custom::placeholder { color: var(--label-tertiary); }
+
+.custom:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-18);
+}
 
 .custom::-webkit-inner-spin-button,
 .custom::-webkit-outer-spin-button {
@@ -292,33 +343,42 @@ body {
   margin: 0;
 }
 
+/* 对应 NSButton(bezelStyle: .rounded)：浅灰立体按钮 */
 .primary, .ghost {
   -webkit-app-region: no-drag;
   height: 28px;
   padding: 0 14px;
   font-size: 12px;
   font-family: inherit;
-  font-weight: 600;
-  border-radius: 8px;
+  font-weight: 500;
+  border-radius: 6px;
   cursor: pointer;
-  border: 1px solid transparent;
   white-space: nowrap;
 }
 
 .primary {
-  color: #ffffff;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  color: var(--label);
+  background: linear-gradient(#ffffff, #f0f0f0);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
 }
 
-.primary:hover { filter: brightness(1.08); }
+.primary:hover { background: linear-gradient(#ffffff, #e8e8e8); }
+
+.primary:active,
+.ghost:active {
+  background: #e2e2e2;
+  box-shadow: none;
+}
 
 .ghost {
-  color: #b9bde0;
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--label);
+  background: linear-gradient(#ffffff, #f0f0f0);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
 }
 
-.ghost:hover { background: rgba(255, 255, 255, 0.11); }
+.ghost:hover { background: linear-gradient(#ffffff, #e8e8e8); }
 
 /* ── 预设间隔 ─────────────────────────────── */
 .presets {
@@ -333,41 +393,113 @@ body {
   height: 28px;
   font-size: 13px;
   font-family: inherit;
-  color: #d6d9ef;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid transparent;
+  color: var(--label);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.16);
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.preset:hover { background: rgba(255, 255, 255, 0.11); }
+.preset:hover { background: rgba(0, 0, 0, 0.05); }
 
 .preset.selected {
-  font-weight: 700;
-  color: #ffffff;
-  background: rgba(124, 137, 255, 0.22);
-  border-color: rgba(140, 152, 255, 0.85);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-14);
+  border-color: var(--accent);
 }
 
 .unit {
   font-size: 11px;
-  color: #6f7290;
+  color: var(--label-secondary);
   margin-left: 2px;
 }
 
 .current {
   font-size: 12px;
-  color: #8b93d8;
+  font-weight: 500;
+  color: var(--label-secondary);
   white-space: nowrap;
 }
 
 .current strong {
   font-size: 13px;
-  color: #9aa4ff;
+  color: var(--accent);
 }
 
+/* 系统深色外观：对齐 mac 版在 dark mode 下 NSColor 自适应的结果
+   （popover 材质变深、controlBackgroundColor 变深、labelColor 变白、
+   卡片 white 0.04 变 black 0.04） */
+html.dark {
+  --label: rgba(255, 255, 255, 0.85);
+  --label-secondary: rgba(255, 255, 255, 0.55);
+  --label-tertiary: rgba(255, 255, 255, 0.25);
+  --separator: rgba(255, 255, 255, 0.16);
+  --control-bg: rgba(120, 120, 128, 0.22);
+}
+
+html.dark .panel {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #28282c;
+}
+
+html.dark .nav,
+html.dark .content {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .card,
+html.dark .state-tile {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .state-tile {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+html.dark .state-tile:hover,
+html.dark .nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .content::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); }
+
+html.dark .text-input,
+html.dark .custom {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .primary,
+html.dark .ghost {
+  color: var(--label);
+  background: linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+
+html.dark .primary:hover,
+html.dark .ghost:hover {
+  background: linear-gradient(rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.12));
+}
+
+html.dark .primary:active,
+html.dark .ghost:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .preset {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .preset:hover { background: rgba(255, 255, 255, 0.14); }
+
+html.dark .slider::-webkit-slider-runnable-track { background: rgba(255, 255, 255, 0.2); }
+
 /* ── 开关 ─────────────────────────────────── */
+/* mac 版 ToggleSwitch：开 = systemGreen，关 = systemGray，白钮带阴影 */
 .switch {
   -webkit-app-region: no-drag;
   width: 46px;
@@ -376,7 +508,7 @@ body {
   padding: 0;
   border: none;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--switch-off);
   cursor: pointer;
   position: relative;
   transition: background 0.15s;
@@ -390,11 +522,15 @@ body {
   height: 20px;
   border-radius: 50%;
   background: #ffffff;
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s;
 }
 
-.switch[aria-pressed="true"] { background: #6b7bf0; }
+.switch[aria-pressed="true"] { background: var(--switch-on); }
 .switch[aria-pressed="true"] span { transform: translateX(20px); }
+
+/* 权限未解锁等不可交互态（mac 版 isEnabled=false 整体降到 0.4 透明） */
+.switch[disabled] { opacity: 0.4; cursor: default; }
 
 /* ── 滑杆 ─────────────────────────────────── */
 .slider {
@@ -409,7 +545,7 @@ body {
 .slider::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .slider::-webkit-slider-thumb {
@@ -418,7 +554,8 @@ body {
   height: 16px;
   margin-top: -6px;
   border-radius: 50%;
-  background: #9aa4ff;
+  background: var(--accent);
   border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }

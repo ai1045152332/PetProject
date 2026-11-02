@@ -15,6 +15,11 @@ const DEFAULTS = {
   deviceId: '', // 设备唯一标识，首次启动由 app-info 解析后写回
   petNo: 0, // 服务端分配的宠物号，心跳响应回填
   lastUpdateCheckAt: 0, // 上次检查更新的时间戳（毫秒）
+  // 托盘「系统信息」勾选：指标是否显示在顶栏（键名对齐 mac 原生版 UserDefaults 的 menuBar.show*）
+  'menuBar.showCPU': false,
+  'menuBar.showMemory': false,
+  'menuBar.showDisk': false,
+  'menuBar.showNet': false,
 };
 
 function configPath() {

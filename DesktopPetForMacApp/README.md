@@ -109,7 +109,7 @@ DesktopPetForMacApp/
     ├── Info.plist                         # 应用配置（版本号 / 权限说明 / 禁用 App Nap）
     └── Resources/
         ├── AppIcon.icns / AppIcon.png     # 应用图标
-        ├── MenuBarIcon.png                # 菜单栏图标
+        ├── MenuBarIcon.png                # 菜单栏图标 → 软链到仓库根 SharedAssets/MenuBarIcon.png（与 Electron 版共用同一文件）
         ├── WordBank/                      # 单词词库（cet4 / cet6 / ielts / travel）
         └── Sprites/                       # 动画帧资源（按状态分目录）
             ├── focus/                     # 专注（8 帧）

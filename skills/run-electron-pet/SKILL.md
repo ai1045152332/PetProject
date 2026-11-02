@@ -74,10 +74,27 @@ PET_TEST_REMINDER=1 npm start
 | 🐱 宠物信息 | 形象切换（focus/idel/sleep/pet 即时换帧）、宠物名称、宠物号；自定义图片（本期不做） |
 | ⚙️ 通用设置 | 开机自启、宠物大小 0.5x～2.0x、版本 + 检查更新；权限校验码（本期不做） |
 | 🔔 提醒设置 | 喝水提醒可用；天气提醒、主动搭话（本期不做） |
-| 🖱️ 菜单设置 | 右键菜单（本期不做，宠物窗还没有右键菜单） |
+| 🖱️ 菜单设置 | 右键菜单已有基础项（仅抚摸/关闭，同 Swift 版不含显隐/设置/检查更新，见下），展示配置过滤本期不做 |
 | 👫 好友消息 | 宠物号展示；好友/消息（本期不做） |
 
 喝水提醒：预设 15/30/45/60 点击立即生效；自定义 1～120 整数，越界/非整数红字提示且不写入；改完立刻重启计时，日志形如 `[settings] drinkWaterInterval -> {"ok":true,"minutes":45}` 紧跟 `[reminder] start: interval=45min, first fire in 195s`。
+
+### 配色对齐 mac 版（浅色毛玻璃）
+
+面板样式在 `settings.css`，颜色全部走 `:root` 的 CSS 变量，与 `SettingsPanel.swift` 一一对应：
+
+| 元素 | mac 版来源 | Electron 侧 |
+|------|-----------|-------------|
+| 底板 | `NSVisualEffectView(material: .popover)` | 窗口 `vibrancy: 'popover'`（`settings-window.js`）+ `html.macos .panel` 透明透出系统模糊层；非 macOS 用半透明白 + `backdrop-filter` 近似 |
+| 导航/内容容器 | `controlBackgroundColor` | `--control-bg` |
+| 卡片 | `makeSettingRow` 的 `white 0.04` | `rgba(0,0,0,.04)` |
+| 选中态 | `controlAccentColor` 0.18（导航）/ 0.14 + 2px 描边（状态格） | `--accent-18` / `--accent-14` |
+| 开关 | `ToggleSwitch`：开 `systemGreen`、关 `systemGray` | `--switch-on` / `--switch-off` |
+| 文字分层 | `label/secondaryLabel/tertiaryLabelColor` | `--label` / `--label-secondary` / `--label-tertiary` |
+
+强调色与深浅外观由 `settings-preload.js` 用 `systemPreferences.isDarkMode() / getAccentColor()` 读出来，`settings.js` 的 `applySystemTheme()` 挂到 `<html>`（`.macos` / `.dark` + 覆盖 `--accent*`），所以**不要在样式里再写死颜色**，一律加变量。深色外观样式集中在 `html.dark` 段。
+
+验证 UI 不用手动点：`PET_TEST_SETTINGS_SHOT=/tmp/a.png npx electron .` 会打开面板、`capturePage` 落盘后自退；加 `PET_TEST_SETTINGS_SECTION=general|reminder|menu|social` 截指定分区，加 `PET_TEST_SETTINGS_DARK=1` 预置 `.dark` 验证深色分支。⚠️ 该截图只含网页像素，**不含系统 vibrancy 层**，要确认毛玻璃效果得用 `screencapture -x -l <windowID>` 截真实窗口（窗口 ID 用 `CGWindowListCopyWindowInfo` 查）。
 
 其他动作的日志：`[settings] petState -> sleep` / `[settings] petName -> 汤圆` / `[settings] petScale -> {"ok":true,"scale":1.5}` / `[settings] autoLaunch -> true`。
 
@@ -88,6 +105,15 @@ PET_TEST_REMINDER=1 npm start
 - 宠物放大后跑到屏幕外 → 缩放以右下角为锚点并钳制在当前显示器工作区内，正常不会出界；若手工改了 `petScale` 超过 2.0，读取时会截到 2.0。
 
 快速回归：`npm test` 里的 `tests/settings-panel.test.js` 覆盖五项导航的基础数据、间隔区间校验、持久化、改完重启计时、名称/大小校验与窗口尺寸换算、脏数据回落。
+
+## 宠物右键菜单（P3）
+
+右键小猫弹原生菜单：**抚摸 🐾（切 pet 帧，一次性动画）/ 关闭 ❌**，代码在 `src/main/pet-context-menu.js`。同 Swift 版，显隐、「设置… / 检查更新」都不在右键菜单，入口在菜单栏托盘。
+
+- 触发链路：渲染层 `pet.js` 监听 `contextmenu` → IPC `pet:context-menu` → 主进程弹原生菜单。**不能再用 `-webkit-app-region: drag`**——drag 区会在原生层吞掉真实鼠标事件（含右键），页面收不到任何事件；拖拽改为主进程手动搬窗（`createDragController` + `pet:drag-start/move/end`）。⚠️ `webContents.sendInputEvent` 注入的模拟事件会绕过 drag 区直达渲染层，用它验证右键会得到**假阳性**，必须用真实鼠标（CGEvent）确认。
+- 日志：`[context-menu] 右键宠物窗，弹原生菜单`；抚摸是一次性动画（一圈 + hold 1.5s 自动回弹，对标 Swift playOneShot），日志形如 `[settings] petState -> pet` 紧跟 `[settings] petState -> focus`。
+- 测试钩子：`PET_TEST_CONTEXT_MENU=1 npm start` 2.5s 自动弹菜单验证。拖窗单测：`tests/pet-drag.test.js`。
+- 喂猫条、躲起来、背单词、新闻、天气、Todo、股票等 Swift 版高级项依赖 P4/P5，尚未移植。
 
 ## 验证心跳与自动更新
 
@@ -157,7 +183,8 @@ DesktopPetElectron/
 │   ├── reminder-window.js      # 喝水提醒独立弹窗（380×300 居中）
 │   ├── reminder-scheduler.js   # 提醒调度：对齐触发点 + 间隔重复 + 防叠加
 │   ├── tray.js                 # 菜单栏托盘：显示/隐藏 + 设置 + 检查更新 + 退出
-│   ├── settings-window.js      # 设置面板窗口（无边框透明，单例）
+│   ├── pet-context-menu.js     # 宠物右键菜单（抚摸/关闭）
+│   ├── settings-window.js      # 设置面板窗口（无边框透明 + macOS vibrancy 毛玻璃，单例）
 │   ├── settings-service.js     # 设置业务逻辑：读间隔 / 校验写入 / 重启计时
 │   ├── heartbeat.js            # 心跳上报（1 分钟一次，移植 mac 版 HeartbeatService）
 │   ├── update-service.js       # 自动更新：检查/下载/sha256+Ed25519 校验/按平台安装
@@ -167,9 +194,11 @@ DesktopPetElectron/
 │   ├── index.html / pet.css / pet.js         # 宠物窗：focus 帧循环（提醒触发时从头播放）
 │   ├── preload.js              # petAPI（onDrinkWater）
 │   ├── reminder.html/.css/.js + reminder-preload.js   # 提醒卡 UI + close
+│   ├── settings.html/.css/.js  + settings-preload.js  # 设置面板（配色对齐 mac 版，见「设置面板」节）
 └── assets/
     ├── Sprites/                # 从 mac 工程拷贝的动画帧（focus/idel/sleep/pet，各 8 帧 200×200；warn 已合并进 focus 删除）
-    └── tray/                   # MenuBarTemplate(@2x).png = mac 单色模版图；WindowsTray(@2x).png = Windows 白猫图（均由 MenuBarIcon.png 派生）
+    ├── MenuBarIcon.png         # 软链到仓库根 SharedAssets/MenuBarIcon.png，与 mac 原生版共用同一张图（无派生脚本）
+    └── WindowsTray(@2x).png    # Windows 专用：带五官的白猫+深灰描边（32/64，4x 超采样从同源图导出，不留脚本）
 ```
 
 ## 常见排障
@@ -181,10 +210,14 @@ DesktopPetElectron/
 | 透明窗出现白色方底 | body/html 背景必须 `transparent`；见 `pet.css`、`reminder.css` |
 | 快捷键触发不了 | `globalShortcut` 可能与系统快捷键冲突，改用 `PET_TEST_REMINDER=1` 启动验证 |
 | 看不到小猫但进程在跑 / 无法退出 | 悬浮窗 `skipTaskbar` 无 Dock 图标，看顶部菜单栏托盘图标→退出；无托盘则 `ps` 查 PID 后精确 `kill`（别 `pkill` 按名杀，易漏外层 npm 包装进程） |
-| 菜单栏图标模糊 / 像一坨白块 | 图标由 `assets/MenuBarIcon.png`（与 mac 原生版同一张图）派生，不要自绘也不要直接塞原图：原图 360×348 不透明，直塞会被当成 360pt 巨图、当模版图会变成实心方块，跑 `python3 scripts/make-tray-icons.py` 重新生成 22/44 单色模版图（`--full` 可换成整只猫） |
+| 菜单栏看不到图标 / 巨图 | `tray.js` 里 `nativeImage.createFromPath(...).resize({width, height})` 必须**接住返回值**：`resize()` 返回新图、不改原对象，丢返回值等于把 360×348 原图交给 Tray，会被当成 360pt 巨图直接不显示。**不要**再加派生脚本或自绘剪影 |
+| 菜单栏图标与 mac 原生版长得不一样 | mac 侧两边已是同一张图（`SharedAssets/MenuBarIcon.png`，两工程软链），差异只可能来自尺寸以外的加工（剪影/描边/裁脸）。mac 侧只依赖 `resize` + `setTemplateImage(true)`，Swift 侧只依赖 `img.size = 22×22` + `isTemplate = true`，保持两边都不做像素加工 |
+| 换了菜单栏图标但 Windows 没变 | Windows 用的是独立的静态图 `assets/WindowsTray.png`（+@2x，仓库内不留生成脚本），改完 `SharedAssets/MenuBarIcon.png` 要手动重导这两张 |
+| Windows 托盘图标描边断裂 / 猫成白面团 | 不要在小尺寸上直接跑形态学（腐蚀会把细胡须删成孤立碎块，回填又把五官抹平）。正确做法：先 4x 超采样，取原画像素作猫身（保留五官不填洞），描边用 `MaxFilter` 环带，两层各自高斯模糊后缩回目标尺寸 |
 | 首次安装卡在下载 | 设 `ELECTRON_MIRROR` 镜像后重跑 `npm install` |
 | 托盘「检查更新」提示「服务端还没有发布 Windows 版安装包」 | 服务端 `dist/latest.json` 缺 `win*` 字段（或 PetServer 未部署支持平台字段的新版），属预期提示 |
 | 更新一直反复提示同一版本 | `winVersion`/`macVersion` 与包内 `package.json` 的 `version` 不一致（注意带 `electron` 前缀），改到一致再发 |
+| 设置面板底板发灰 / 看不到毛玻璃 | macOS 上窗口已开 `vibrancy`，`html.macos:not(.dark) .panel` 必须保持 `background: transparent`，再叠一层半透明白就会发灰；`capturePage` 截不到系统模糊层，别拿它判断毛玻璃好坏 |
 | 想确认心跳是否真的上报成功 | 先看设置面板「通用设置 → 心跳上报」；或 `curl -s http://101.96.248.75/api/devices` 找自己的 `deviceId` 看 `version`。注意同一台机器上 mac 原生版与 Electron 版共用 deviceId，记录会被交替覆盖（看到 `v1.0.031` 是原生版刚报的）。本地起 PetServer 则看 `data/heartbeats.jsonl` |
 
 ## 与其他 skill / 工程的关系
@@ -195,5 +228,5 @@ DesktopPetElectron/
 
 ## 当前进度
 
-已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + 心跳上报 + 自动更新/检查更新 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
-P1 完整动画状态机 → P2 拖拽/点击/托盘（托盘✅）→ P3 右键菜单 → P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。
+已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + 心跳上报 + 自动更新/检查更新 + P3 基础右键菜单 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
+P1 完整动画状态机 → P2 拖拽/点击/托盘（托盘✅）→ P3 右键菜单（基础项✅，高级项随 P4/P5 补齐）→ P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。

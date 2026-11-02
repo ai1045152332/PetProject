@@ -7,6 +7,30 @@ const api = window.settingsAPI;
 // ── 通用小工具 ────────────────────────────────
 const $ = (id) => document.getElementById(id);
 
+/**
+ * 把 mac 系统信息映射成 CSS 变量（配色对齐 SettingsPanel.swift）：
+ * 底板三平台统一由 CSS 画不透明卡片（窗口不开 vibrancy），这里只负责深色/强调色；
+ * 强调色跟随 controlAccentColor，拿不到就用 macOS 默认蓝。
+ * .macos 类当前无样式依赖，只作为平台钩子保留。
+ */
+function applySystemTheme() {
+  const theme = window.settingsTheme || {};
+  const root = document.documentElement;
+  if (theme.isMac) root.classList.add('macos');
+  if (theme.dark) root.classList.add('dark');
+  if (theme.accent) {
+    const hex = theme.accent.startsWith('#') ? theme.accent : `#${theme.accent}`;
+    const n = parseInt(hex.slice(1), 16);
+    const rgb = `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-18', `rgba(${rgb}, 0.18)`);
+    root.style.setProperty('--accent-14', `rgba(${rgb}, 0.14)`);
+    root.style.setProperty('--accent-08', `rgba(${rgb}, 0.08)`);
+  }
+}
+
+applySystemTheme();
+
 function setHint(id, text, kind) {
   const el = $(id);
   if (!el) return;

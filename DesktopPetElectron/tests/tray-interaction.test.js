@@ -13,11 +13,13 @@ const TRAY_PATH = path.join(SRC, 'tray.js');
 const trayInstances = [];
 
 class FakeTray {
-  constructor() {
+  constructor(image) {
+    this.image = image;
     this.handlers = new Map();
     this.tooltips = [];
     this.contextMenus = [];
     this.poppedMenus = [];
+    this.balloons = [];
     this.destroyed = false;
     trayInstances.push(this);
   }
@@ -30,8 +32,17 @@ class FakeTray {
     this.contextMenus.push(menu);
   }
 
+  setTitle(text) {
+    this.titles = this.titles || [];
+    this.titles.push(text);
+  }
+
   popUpContextMenu(menu) {
     this.poppedMenus.push(menu);
+  }
+
+  displayBalloon(opts) {
+    this.balloons.push(opts);
   }
 
   on(event, fn) {
@@ -49,6 +60,23 @@ class FakeTray {
 }
 
 // ── mock electron ──
+// nativeImage 必须按真实语义模拟：共享原图 createFromPath 得到 360×348，
+// resize() 返回**新图**而不改原对象（把返回值丢掉就会拿到巨图，菜单栏直接不显示）；
+// Windows 预描边图则本身就是 32×32，运行时不缩放。
+const RAW_SIZE = { width: 360, height: 348 };
+const WIN_ASSET_SIZE = { width: 32, height: 32 };
+
+function fakeNativeImage(size, isTemplate) {
+  const img = {
+    size,
+    isTemplate,
+    // 真实语义：resize 返回新图，原对象尺寸不变
+    resize: (opts) => fakeNativeImage({ width: opts.width, height: opts.height }, img.isTemplate),
+    setTemplateImage: (flag) => { img.isTemplate = Boolean(flag); },
+  };
+  return img;
+}
+
 const origLoad = Module._load;
 Module._load = function (request) {
   if (request === 'electron') {
@@ -56,7 +84,11 @@ Module._load = function (request) {
       Tray: FakeTray,
       Menu: { buildFromTemplate: (template) => ({ template }) },
       app: { on: () => {} },
-      nativeImage: { createFromPath: () => ({ setTemplateImage: () => {} }) },
+      nativeImage: {
+        createFromPath: (file) => fakeNativeImage(
+          /WindowsTray\.png$/.test(file) ? WIN_ASSET_SIZE : RAW_SIZE, false,
+        ),
+      },
     };
   }
   return origLoad.apply(this, arguments);
@@ -98,6 +130,9 @@ function check(name, condition) {
   });
 
   check('Windows 不设 contextMenu（否则左键也会弹菜单）', tray.contextMenus.length === 0);
+  check('Windows 用预描边静态图（32×32，不依赖共享原图）',
+    tray.image.size.width === 32 && tray.image.size.height === 32);
+  check('Windows 不标模板图（无系统反色机制）', tray.image.isTemplate === false);
 
   tray.emit('click');
   check('Windows 左键单击切换显隐', toggled === 1);
@@ -109,7 +144,8 @@ function check(name, condition) {
   check('Windows 右键不触发切换', toggled === 1);
 
   const menu = tray.poppedMenus[0];
-  const first = menu.template[0];
+  // 未注入 buildSysInfoTemplate 时不挂「系统信息」项，首项仍是显隐
+  const first = menu.template.find((t) => t.label === '隐藏宠物' || t.label === '显示宠物');
   check('宠物可见时菜单显示「隐藏宠物」', first.label === '隐藏宠物');
   first.click();
   check('菜单项点击触发切换', toggled === 2);
@@ -124,6 +160,21 @@ function check(name, condition) {
 
   trayModule.setTrayStatus('正在检查更新…');
   check('进度文案覆盖默认 tooltip', tray.tooltips[tray.tooltips.length - 1] === '正在检查更新…');
+
+  // Win11 托盘图标常被折进通知区溢出面板 → 首启弹一次引导气泡（未注入 shouldShowTrayHint 时默认该弹）
+  check('Windows 首启弹一次托盘引导气泡', tray.balloons.length === 1);
+  check('气泡文案指向通知区溢出面板',
+    tray.balloons[0].content.includes('^') && tray.balloons[0].content.includes('通知区'));
+}
+
+// ── Windows：已弹过（shouldShowTrayHint 返回 false）不再重复打扰 ──
+{
+  const trayModule = loadTray('win32');
+  const tray = trayModule.createTray({
+    togglePet: () => {},
+    shouldShowTrayHint: () => false,
+  });
+  check('shouldShowTrayHint=false 时不弹气泡', tray.balloons.length === 0);
 }
 
 // ── macOS：左键弹菜单，不直接切换（避免「弹菜单 + 隐藏」双触发）──
@@ -140,6 +191,10 @@ function check(name, condition) {
   check('mac 左键弹出菜单', tray.poppedMenus.length === 1);
   check('mac 左键不直接切换显隐', toggled === 0);
   check('mac 不依赖 setContextMenu 自动弹菜单', tray.contextMenus.length === 0);
+  check('mac 图标缩到 22pt（resize 返回值必须接住，否则巨图不显示）',
+    tray.image.size.width === 22 && tray.image.size.height === 22);
+  check('mac 标为模板图（系统按深浅色反色）', tray.image.isTemplate === true);
+  check('mac 不弹 Windows 托盘引导气泡', tray.balloons.length === 0);
 }
 
 Object.defineProperty(process, 'platform', { value: ORIGINAL_PLATFORM, configurable: true });

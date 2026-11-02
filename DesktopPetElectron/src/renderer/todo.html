@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>Todo 清单</title>
+  <link rel="stylesheet" href="./todo.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title">Todo 清单 📝</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="body">
+      <div class="todo-input-group">
+        <input type="text" id="todoInput" maxlength="200" placeholder="记下要做的事，回车添加…" />
+        <button type="button" id="remindBtn">🕐 无提醒</button>
+        <button type="button" id="addBtn">➕</button>
+      </div>
+      <div class="todo-hint">默认只是随手记；需要到点提醒时点「🕐」设个时间</div>
+
+      <div class="due-picker" id="duePicker">
+        <div class="dp-quick" id="dpQuick">
+          <span class="dp-chip" data-q="15m">15分钟后</span>
+          <span class="dp-chip" data-q="30m">30分钟后</span>
+          <span class="dp-chip" data-q="1h">1小时后</span>
+          <span class="dp-chip" data-q="tonight">今晚8点</span>
+          <span class="dp-chip" data-q="tom9">明早9点</span>
+        </div>
+        <div class="dp-custom">
+          <select class="dp-select" id="dpDate"></select>
+          <select class="dp-select" id="dpHour"></select>
+          <select class="dp-select" id="dpMin"></select>
+        </div>
+        <div class="dp-preview" id="dpPreview"></div>
+        <div class="dp-actions">
+          <button type="button" id="dpClear">清除提醒</button>
+          <button type="button" id="dpOk">确定</button>
+        </div>
+      </div>
+
+      <div class="todo-list" id="todoList"></div>
+      <div class="copy-tip" id="copyTip"></div>
+    </div>
+  </div>
+  <script src="./todo.js"></script>
+</body>
+</html>

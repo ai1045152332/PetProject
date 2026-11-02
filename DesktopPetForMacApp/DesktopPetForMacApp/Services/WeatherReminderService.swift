@@ -20,7 +20,12 @@ final class WeatherReminderService {
     static let defaultHour = 8
     static let defaultMinute = 0
 
+    /// 补触发宽限窗口：定时器逾期超过该时长则视为睡眠积压，静默跳过本次
+    static let fireGraceInterval: TimeInterval = 2 * 60 * 60
+
     private var timer: Timer?
+    /// 当前定时器的目标触发时刻，用于识别唤醒后的逾期补发
+    private var scheduledFireDate: Date?
 
     private init() {}
 
@@ -81,6 +86,7 @@ final class WeatherReminderService {
     func reschedule() {
         timer?.invalidate()
         timer = nil
+        scheduledFireDate = nil
         guard isEnabled else { return }
         scheduleNext()
     }
@@ -104,6 +110,7 @@ final class WeatherReminderService {
         let t = Timer(fireAt: next, interval: 0, target: self, selector: #selector(handleFire), userInfo: nil, repeats: false)
         RunLoop.main.add(t, forMode: .common)
         timer = t
+        scheduledFireDate = next
 
         let formatter = DateFormatter()
         formatter.dateFormat = "MM-dd HH:mm"
@@ -112,8 +119,18 @@ final class WeatherReminderService {
 
     @objc private func handleFire() {
         timer = nil
+        let target = scheduledFireDate
+        scheduledFireDate = nil
         // 无论结果如何都先安排明天
         defer { scheduleNext() }
+
+        // 一次性 Timer 在系统睡眠期间不会按时触发，唤醒后会立刻逾期补发；
+        // 这里按目标时刻校验，睡几天再醒来就不在午后弹上午的天气提醒
+        if let target, !Self.deliverNow(target: target) {
+            let late = Int(Date().timeIntervalSince(target) / 60)
+            FileLogger.log("[WeatherReminder] 本次触发逾期 \(late)min（多为睡眠期间积压），跳过提醒")
+            return
+        }
 
         // 基础权限不提醒（天气接口按量付费，仅解锁用户可用）
         guard AccessControl.isFullAccess else {
@@ -121,6 +138,14 @@ final class WeatherReminderService {
             return
         }
         deliver()
+    }
+
+    /// 本次触发是否应实际推送。
+    /// 逾期在宽限内（晚开机一会仍想提醒）正常推送；超过宽限多为睡眠期间积压的补发，跳过。
+    static func deliverNow(target: Date,
+                           now: Date = Date(),
+                           grace: TimeInterval = fireGraceInterval) -> Bool {
+        return now.timeIntervalSince(target) <= grace
     }
 
     /// 立即抓取并弹卡片（也用于设置面板的「预览」）

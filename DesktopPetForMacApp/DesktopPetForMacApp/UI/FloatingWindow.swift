@@ -859,7 +859,7 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
         }
     }
 
-    /// 显示 Todo 到期提醒（常驻卡片，需用户点 ✕ 确认才关闭）
+    /// 显示 Todo 到期提醒（常驻卡片：点「✅ 完成」删除待办停止提醒，点 ✕ 仅收起卡片）
     func showTodoReminderAlert(_ item: TodoItem) {
         let subtitle: String
         if let due = item.dueDate {
@@ -870,7 +870,9 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
         } else {
             subtitle = ""
         }
-        HTMLAlertWindow.showTodoReminder(body: item.text, subtitle: subtitle)
+        HTMLAlertWindow.showTodoReminder(body: item.text, subtitle: subtitle, onComplete: {
+            TodoManager.shared.delete(id: item.id)
+        })
     }
 
     /// 显示喝水提醒弹窗（HTML 样式）

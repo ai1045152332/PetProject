@@ -1,0 +1,45 @@
+/* src/renderer/todo-reminder.css — 到期提醒卡相对喝水提醒的排版差异（底板样式复用 reminder.css） */
+
+/* 待办文本可长可短：字号收一档、允许换行，长词也不撑破卡片 */
+.card .body .text {
+  font-size: 17px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow: hidden;
+}
+
+/* 底部留白：多行待办文本时「完成」按钮不被卡片底边裁掉 */
+.card .body {
+  padding-bottom: 14px;
+}
+
+.card .body .icon { font-size: 30px; }
+
+.subtitle {
+  margin-top: 4px;
+  color: #8888a0;
+}
+
+/* ✅ 完成按钮：确认后删除待办、停止逾期重复提醒（配色与好友申请「同意」一致） */
+.done-btn {
+  /* 卡片整体是 drag 区，按钮必须显式 no-drag 才能点（否则只拖窗不触发点击） */
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  margin-top: 12px;
+  padding: 7px 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(47, 179, 110, 0.5);
+  background: rgba(47, 179, 110, 0.18);
+  color: #7de2b0;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.done-btn:hover {
+  background: rgba(47, 179, 110, 0.3);
+  color: #a5f0c8;
+}

@@ -7,6 +7,30 @@ const api = window.settingsAPI;
 // ── 通用小工具 ────────────────────────────────
 const $ = (id) => document.getElementById(id);
 
+/**
+ * 把 mac 系统信息映射成 CSS 变量（配色对齐 SettingsPanel.swift）：
+ * 底板三平台统一由 CSS 画不透明卡片（窗口不开 vibrancy），这里只负责深色/强调色；
+ * 强调色跟随 controlAccentColor，拿不到就用 macOS 默认蓝。
+ * .macos 类当前无样式依赖，只作为平台钩子保留。
+ */
+function applySystemTheme() {
+  const theme = window.settingsTheme || {};
+  const root = document.documentElement;
+  if (theme.isMac) root.classList.add('macos');
+  if (theme.dark) root.classList.add('dark');
+  if (theme.accent) {
+    const hex = theme.accent.startsWith('#') ? theme.accent : `#${theme.accent}`;
+    const n = parseInt(hex.slice(1), 16);
+    const rgb = `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-18', `rgba(${rgb}, 0.18)`);
+    root.style.setProperty('--accent-14', `rgba(${rgb}, 0.14)`);
+    root.style.setProperty('--accent-08', `rgba(${rgb}, 0.08)`);
+  }
+}
+
+applySystemTheme();
+
 function setHint(id, text, kind) {
   const el = $(id);
   if (!el) return;
@@ -28,36 +52,118 @@ for (const btn of navItems) {
   btn.addEventListener('click', () => selectSection(btn.dataset.section));
 }
 
-// ── 宠物信息：形象切换 ────────────────────────
+// ── 宠物信息：形象（缩略图切换 + 为选中状态上传自定义图）──
 const stateBadge = $('state-badge');
+let petStateList = [];
+let currentState = 'focus';
+let spriteStatus = {};
 
-function renderStates(states, current) {
-  const box = $('states');
+/** 预览图：有自定义图显本地上传图（file://），否则显内置首帧 */
+function previewSrcFor(id) {
+  return spriteStatus[id] || `../../assets/Sprites/${id}/frame_00.png`;
+}
+
+/** 4 个状态缩略图，点击切换当前动画；选中态描高亮环，已自定义右上角小圆点 */
+function renderGrid() {
+  const box = $('sprite-grid');
+  if (!box) return;
   box.textContent = '';
-  for (const item of states) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'state-tile';
-    btn.dataset.state = item.id;
-    btn.classList.toggle('selected', item.id === current);
+  for (const item of petStateList) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'sprite-tile';
+    tile.dataset.state = item.id;
+    tile.classList.toggle('selected', item.id === currentState);
+    tile.classList.toggle('custom', Boolean(spriteStatus[item.id]));
 
-    btn.textContent = item.label;
-    btn.addEventListener('click', () => applyState(item));
-    box.appendChild(btn);
+    const img = document.createElement('img');
+    img.className = 'sprite-thumb';
+    img.alt = item.label;
+    img.draggable = false;
+    img.src = previewSrcFor(item.id);
+
+    const label = document.createElement('span');
+    label.className = 'sprite-label';
+    label.textContent = item.label;
+
+    tile.append(img, label);
+    tile.addEventListener('click', () => applyState(item));
+    box.append(tile);
   }
 }
 
+/** 选中状态的操作条：显示当前来源 + 上传 / 恢复默认 */
+function renderActions() {
+  const box = $('sprite-actions');
+  if (!box) return;
+  box.textContent = '';
+  const item = petStateList.find((s) => s.id === currentState) || { label: '' };
+  const has = Boolean(spriteStatus[item.id]);
+
+  const info = document.createElement('span');
+  info.className = 'sprite-current';
+  const name = document.createElement('b');
+  name.textContent = item.label;
+  const tag = document.createElement('span');
+  tag.className = 'sprite-tag' + (has ? '' : ' muted');
+  tag.textContent = has ? '已自定义' : '内置动画';
+  info.append(name, tag);
+
+  const upload = document.createElement('button');
+  upload.type = 'button';
+  upload.className = 'primary';
+  upload.textContent = '上传图片';
+  upload.addEventListener('click', async () => {
+    upload.disabled = true;
+    upload.textContent = '选择中…';
+    const res = await api.pickCustomSprite(item.id);
+    upload.disabled = false;
+    upload.textContent = '上传图片';
+    if (res && res.ok) {
+      setHint('sprite-hint', `已为「${item.label}」上传形象`, 'ok');
+      await refreshSpriteStatus();
+    } else if (res && res.canceled) {
+      // 用户取消，不打扰
+    } else {
+      setHint('sprite-hint', (res && res.error) || '上传失败', 'error');
+    }
+  });
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'ghost';
+  reset.textContent = '恢复默认';
+  reset.disabled = !has;
+  reset.addEventListener('click', async () => {
+    const res = await api.clearCustomSprite(item.id);
+    if (res && res.ok) {
+      setHint('sprite-hint', `「${item.label}」已恢复默认动画`, 'ok');
+      await refreshSpriteStatus();
+    } else {
+      setHint('sprite-hint', (res && res.error) || '操作失败', 'error');
+    }
+  });
+
+  box.append(info, upload, reset);
+}
+
+async function refreshSpriteStatus() {
+  spriteStatus = (await api.listCustomSprites()) || {};
+  renderGrid();
+  renderActions();
+}
+
 function markState(id, label) {
+  currentState = id;
   stateBadge.textContent = label;
-  for (const btn of document.querySelectorAll('.state-tile')) {
-    btn.classList.toggle('selected', btn.dataset.state === id);
-  }
+  renderGrid();
+  renderActions();
 }
 
 async function applyState(item) {
   const res = await api.setPetState(item.id);
   if (res && res.ok) markState(res.state, item.label);
-  else setHint('name-hint', (res && res.error) || '切换形象失败', 'error');
+  else setHint('sprite-hint', (res && res.error) || '切换形象失败', 'error');
 }
 
 // ── 宠物信息：名称 ────────────────────────────
@@ -65,9 +171,8 @@ async function savePetName() {
   const res = await api.setPetName($('pet-name').value);
   if (res && res.ok) {
     $('pet-name').value = res.name;
-    setHint('name-hint', `已保存为「${res.name}」`, 'ok');
   } else {
-    setHint('name-hint', (res && res.error) || '保存失败', 'error');
+    setHint('sprite-hint', (res && res.error) || '保存失败', 'error');
   }
 }
 
@@ -189,66 +294,24 @@ function formatPetNo(petNo) {
   return petNo ? `#${petNo}` : '未分配';
 }
 
-/** 相对时间：12 秒前 / 3 分钟前 / 2 小时前 */
-function agoLabel(ts) {
-  if (!ts) return '—';
-  const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (sec < 60) return `${sec} 秒前`;
-  if (sec < 3600) return `${Math.round(sec / 60)} 分钟前`;
-  return `${Math.round(sec / 3600)} 小时前`;
-}
-
-/** 心跳卡片：失败原因优先，其次展示最近一次成功时间（成功默认不写日志，这里是主要观测口） */
-function renderHeartbeat(hb) {
-  const stateEl = $('heartbeat-state');
-  const descEl = $('heartbeat');
-  if (!hb) {
-    stateEl.textContent = '—';
-    stateEl.className = 'value';
-    return;
-  }
-  stateEl.className = 'value';
-  if (hb.lastError) {
-    stateEl.textContent = '失败';
-    stateEl.classList.add('bad');
-    descEl.textContent = hb.lastError;
-    return;
-  }
-  if (hb.lastSuccessAt) {
-    stateEl.textContent = '正常';
-    stateEl.classList.add('ok');
-    descEl.textContent = `最近一次 ${agoLabel(hb.lastSuccessAt)} · 每 ${hb.intervalSec} 秒一次`;
-    return;
-  }
-  stateEl.textContent = hb.sending ? '上报中' : '等待首次上报';
-  descEl.textContent = hb.url ? `目标 ${hb.url}` : '尚未上报';
-}
-
-/** 心跳每 60s 一次，面板打开期间轮询刷新，只改心跳卡片不动其他表单 */
-async function refreshHeartbeat() {
-  const state = await api.load();
-  if (state) renderHeartbeat(state.general && state.general.heartbeat);
-}
-
 api.load().then((state) => {
   if (!state) return;
 
   // 宠物信息
   const pet = state.pet || {};
   $('pet-name').value = pet.name || '';
-  $('pet-name').placeholder = '毛豆';
-  $('pet-no').textContent = formatPetNo(pet.petNo);
+  $('pet-name').placeholder = pet.name || '毛豆';
   $('pet-no-social').textContent = formatPetNo(pet.petNo);
-  renderStates(pet.states || [], pet.state || 'focus');
-  const currentLabel = (pet.states || []).find((s) => s.id === pet.state);
+  petStateList = pet.states || [];
+  currentState = pet.state || 'focus';
+  const currentLabel = petStateList.find((s) => s.id === currentState);
   stateBadge.textContent = currentLabel ? currentLabel.label : '专注';
+  refreshSpriteStatus();
 
   // 通用设置
   const general = state.general || {};
   $('version').textContent = general.version || '—';
   autoLaunchBtn.setAttribute('aria-pressed', String(Boolean(general.autoLaunch)));
-  renderHeartbeat(general.heartbeat);
-  setInterval(refreshHeartbeat, 5000);
 
   if (typeof pet.scale === 'number') {
     scaleSlider.value = String(pet.scale);

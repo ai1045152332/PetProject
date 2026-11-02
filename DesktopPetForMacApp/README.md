@@ -108,14 +108,15 @@ DesktopPetForMacApp/
     ├── AccessibilityHelper.swift          # 辅助功能权限检测（预留）
     ├── Info.plist                         # 应用配置（版本号 / 权限说明 / 禁用 App Nap）
     └── Resources/
-        ├── AppIcon.icns / AppIcon.png     # 应用图标
-        ├── MenuBarIcon.png                # 菜单栏图标
+        ├── AppIcon.icns                   # 应用图标 → 软链到仓库根 SharedAssets/AppIcon.icns（与 Electron 版共用同一文件）
+        ├── MenuBarIcon.png                # 菜单栏图标 → 软链到仓库根 SharedAssets/MenuBarIcon.png（与 Electron 版共用同一文件）
         ├── WordBank/                      # 单词词库（cet4 / cet6 / ielts / travel）
-        └── Sprites/                       # 动画帧资源（按状态分目录）
+        └── Sprites/                       # 动画帧 → 软链到仓库根 SharedAssets/Sprites（与 Electron 版共用同一批帧，按状态分目录）
             ├── focus/                     # 专注（8 帧）
             ├── idel/                      # 休闲（24 帧，摇尾巴）
             ├── sleep/                     # 睡觉（8 帧）
-            └── pet/                       # 抚摸（24 帧，轻微蹭头）
+            ├── pet/                       # 抚摸（24 帧，轻微蹭头）
+            └── hide/                      # 躲藏（1 帧，贴屏幕侧边）
 ```
 
 ---

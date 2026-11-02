@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>Todo 提醒</title>
+  <!-- 复用提醒卡底板样式（.card / .header / .body），本功能只补到期文案的排版差异 -->
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./todo-reminder.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title" id="title">Todo 提醒 ⏰</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="body">
+      <div class="icon">⏰</div>
+      <div class="text" id="text"></div>
+      <div class="tips">到点啦，别忘了～</div>
+      <div class="tips subtitle" id="subtitle"></div>
+      <!-- 确认完成：删除该待办并收起卡片，否则逾期项会按间隔一直提醒下去 -->
+      <button type="button" class="done-btn" id="doneBtn">✅ 完成</button>
+    </div>
+  </div>
+  <script src="./todo-reminder.js"></script>
+</body>
+</html>

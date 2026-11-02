@@ -31,6 +31,9 @@ class HTMLAlertWindow: NSWindow {
     private var onTodoDelete: ((String) -> Void)?
     private var todoAddHandler: TodoAddMessageHandler?
     private var todoDeleteHandler: TodoDeleteMessageHandler?
+    /// 到期提醒卡的「✅ 完成」回调（删除对应待办，停止逾期重复提醒）
+    private var onTodoReminderComplete: (() -> Void)?
+    private var todoReminderCompleteHandler: FriendDecisionHandler?
     
     // MARK: - Word Learning
     private var onNextQuiz: ((Bool) -> Void)?
@@ -171,8 +174,9 @@ class HTMLAlertWindow: NSWindow {
          .replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    /// 到期 Todo 提醒：弹一张常驻卡片，用户点 ✕ 前不消失
-    static func showTodoReminder(body: String, subtitle: String) {
+    /// 到期 Todo 提醒：弹一张常驻卡片，用户点「✅ 完成」或 ✕ 才消失
+    /// 只点 ✕ 仅收起卡片，待办仍会按间隔重复提醒；点「完成」才真正删除该待办
+    static func showTodoReminder(body: String, subtitle: String, onComplete: (() -> Void)? = nil) {
         if let existing = currentTodoReminderWindow, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             existing.orderFrontRegardless()
@@ -183,8 +187,12 @@ class HTMLAlertWindow: NSWindow {
         <div class="water-icon">⏰</div>
         <div class="water-text" style="font-size:17px;color:#f0f0f5;white-space:pre-wrap;">\(htmlEscape(body))</div>
         <div class="water-tips">到点啦，别忘了～\(subLine)</div>
+        <div style="display:flex;justify-content:center;margin-top:14px;">
+            <button type="button" style="padding:8px 26px;border-radius:18px;border:1px solid rgba(47,179,110,.5);background:rgba(47,179,110,.18);color:#7de2b0;font-size:14px;cursor:pointer;" onclick="window.webkit.messageHandlers.completeTodo.postMessage('')">✅ 完成</button>
+        </div>
         """
-        let window = presentNotice(title: "Todo 提醒 ⏰", width: 340, htmlBody: htmlBody)
+        let window = presentNotice(title: "Todo 提醒 ⏰", width: 340, htmlBody: htmlBody, isTodoReminderMode: true)
+        window.onTodoReminderComplete = onComplete
         window.onClose = { if HTMLAlertWindow.currentTodoReminderWindow === window { HTMLAlertWindow.currentTodoReminderWindow = nil } }
         currentTodoReminderWindow = window
     }
@@ -228,7 +236,7 @@ class HTMLAlertWindow: NSWindow {
     }
 
     /// 创建并弹出一张常驻通知窗（borderless + 非可缩放 → didFinish 会自动挂原生拖动条，可拖）
-    private static func presentNotice(title: String, width: CGFloat, htmlBody: String, isFriendRequestMode: Bool = false) -> HTMLAlertWindow {
+    private static func presentNotice(title: String, width: CGFloat, htmlBody: String, isFriendRequestMode: Bool = false, isTodoReminderMode: Bool = false) -> HTMLAlertWindow {
         let window = HTMLAlertWindow(
             contentRect: NSRect(x: -1000, y: -1000, width: width, height: 800),
             styleMask: [.borderless],
@@ -238,7 +246,7 @@ class HTMLAlertWindow: NSWindow {
         window.hasShadow = false
         window.targetWidth = width
         window.targetMaxHeight = 420
-        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isFriendRequestMode: isFriendRequestMode)
+        window.setupWebView(title: title, htmlBody: htmlBody, isInputMode: false, isFriendRequestMode: isFriendRequestMode, isTodoReminderMode: isTodoReminderMode)
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -986,7 +994,7 @@ class HTMLAlertWindow: NSWindow {
         }
     }
 
-    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, isProblemMode: Bool = false, isFriendRequestMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
+    private func setupWebView(title: String, htmlBody: String, isInputMode: Bool, isTodoMode: Bool = false, okLabel: String? = nil, isWordLearningMode: Bool = false, isProblemMode: Bool = false, isFriendRequestMode: Bool = false, isTodoReminderMode: Bool = false, onCityQuery: ((String) -> Void)? = nil, hideCloseButton: Bool = false) {
         let config = WKWebViewConfiguration()
         config.setValue(false, forKey: "drawsBackground")
 
@@ -1121,6 +1129,19 @@ class HTMLAlertWindow: NSWindow {
             self.friendRejectHandler = rejectHandler
             config.userContentController.add(acceptHandler, name: "acceptFriend")
             config.userContentController.add(rejectHandler, name: "rejectFriend")
+        }
+
+        if isTodoReminderMode {
+            // 到期提醒卡「完成」：先收起卡片（onClose 会清静态引用），再回调业务侧删除待办
+            let completeHandler = FriendDecisionHandler { [weak self] in
+                DispatchQueue.main.async {
+                    let action = self?.onTodoReminderComplete
+                    self?.closeWindow()
+                    action?()
+                }
+            }
+            self.todoReminderCompleteHandler = completeHandler
+            config.userContentController.add(completeHandler, name: "completeTodo")
         }
 
         // 注入 JS：拦截所有链接点击，阻止默认导航，通过 message handler 打开外部浏览器

@@ -19,7 +19,8 @@ const KEY = 'drinkWaterInterval';
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.0;
 const DEFAULT_SCALE = 1.0;
-const DEFAULT_PET_NAME = '毛豆';
+// 首次启动随机取的宠物名（用户可在面板里自行改名）
+const PET_NAME_POOL = ['毛豆', '汤圆', '布丁', '奶糖', '芝麻', '糯米', '土豆', '团子', '花卷', '年糕'];
 const MAX_PET_NAME = 20;
 
 // 形象（对齐 mac 版 CatAnimationState.displayName；hide 为贴边躲藏态，不在面板里手动切换）
@@ -60,10 +61,18 @@ function currentInterval() {
   return clampInterval(config.get(KEY));
 }
 
-/** 当前宠物名称（空值回落默认名，对齐 PetName.currentName） */
+/** 随机取一个宠物名 */
+function randomPetName() {
+  return PET_NAME_POOL[Math.floor(Math.random() * PET_NAME_POOL.length)];
+}
+
+/** 当前宠物名称：没设过就随机取一个并落盘，保证心跳与面板读到同一个稳定名字 */
 function currentPetName() {
   const saved = String(config.get('petName') || '').trim();
-  return saved || DEFAULT_PET_NAME;
+  if (saved) return saved;
+  const picked = randomPetName();
+  config.set('petName', picked);
+  return picked;
 }
 
 /** 当前宠物大小 */
@@ -138,7 +147,7 @@ class SettingsService {
   }
 
   /**
-   * 写入宠物名称：空输入回退默认名（与 mac 版 PetName.setName 一致）。
+   * 写入宠物名称：空输入随机取一个新名字（首次默认名也是随机）。
    * @param {*} name
    */
   setPetName(name) {
@@ -146,7 +155,7 @@ class SettingsService {
     if (trimmed.length > MAX_PET_NAME) {
       return { ok: false, error: `名称最多 ${MAX_PET_NAME} 个字符`, name: currentPetName() };
     }
-    const value = trimmed || DEFAULT_PET_NAME;
+    const value = trimmed || randomPetName();
     config.set('petName', value);
     return { ok: true, name: value };
   }
@@ -182,11 +191,12 @@ module.exports = {
   currentPetScale,
   clampScale,
   isValidPetState,
+  randomPetName,
   PET_STATES,
+  PET_NAME_POOL,
   PRESETS,
   KEY,
   MIN_SCALE,
   MAX_SCALE,
-  DEFAULT_PET_NAME,
   MAX_PET_NAME,
 };

@@ -150,11 +150,41 @@ function applyPetScale(win, scale) {
   win.setBounds({ x: nextX, y: nextY, width: size, height: size });
 }
 
+/**
+ * 手动拖窗控制器（替代 -webkit-app-region: drag，对标 Swift 版 mouseDragged → setFrameOrigin）。
+ * CSS 拖拽区会在原生层吞掉鼠标事件（左键拖动、右键菜单都收不到），只能在渲染层接 mousedown/mousemove
+ * 后通过 IPC 搬窗口；offset 记录「窗口原点 - 鼠标屏幕坐标」，拖动中鼠标相对窗口的位置不变。
+ * @param {BrowserWindow} win
+ * @returns {{start: (x: number, y: number) => void, move: (x: number, y: number) => boolean, end: () => void}}
+ */
+function createDragController(win) {
+  let offset = null;
+  return {
+    start(screenX, screenY) {
+      if (!win || win.isDestroyed()) return;
+      const [x, y] = win.getPosition();
+      offset = { dx: x - screenX, dy: y - screenY };
+    },
+    move(screenX, screenY) {
+      if (!offset || !win || win.isDestroyed()) return false;
+      win.setPosition(Math.round(screenX + offset.dx), Math.round(screenY + offset.dy));
+      return true;
+    },
+    end() {
+      offset = null;
+    },
+    get dragging() {
+      return offset !== null;
+    },
+  };
+}
+
 module.exports = {
   createPetWindow,
   applyPetScale,
   startOnTopGuard,
   raisePet,
   scaledSize,
+  createDragController,
   BASE_SIZE,
 };

@@ -5,7 +5,7 @@
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
-    "test": "node tests/update-heartbeat.test.js && node tests/settings-panel.test.js && node tests/on-top-guard.test.js && node tests/tray-interaction.test.js",
+    "test": "node tests/update-heartbeat.test.js && node tests/settings-panel.test.js && node tests/custom-sprite.test.js && node tests/on-top-guard.test.js && node tests/tray-interaction.test.js && node tests/sysinfo-menu.test.js && node tests/pet-context-menu.test.js && node tests/sprite-frames.test.js && node tests/pet-drag.test.js && node tests/todo.test.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64",

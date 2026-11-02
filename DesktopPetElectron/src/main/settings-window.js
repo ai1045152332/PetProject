@@ -26,6 +26,12 @@ function openSettingsWindow() {
     height: 500,
     frame: false,
     transparent: true,
+    // 底板交给渲染层画（settings.css .panel：不透明实色卡片 + 阴影），不开系统 vibrancy：
+    // 开了之后 14px 外边距会露出一圈系统材质，和 .panel 自己的描边叠成“两层边框”，
+    // 且系统浅色材质上叠 CSS 底板会发灰。
+    // backgroundColor 必须显式写成全透明：只给 transparent: true 时窗口仍会留一层默认底色，
+    // 外边距透不出桌面，同样会形成那圈“第二层框”。
+    backgroundColor: '#00000000',
     resizable: false,
     minimizable: false,
     maximizable: false,

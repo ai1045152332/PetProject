@@ -1,41 +1,57 @@
 // src/renderer/pet.js
-// 小猫帧循环（focus / idel / sleep / pet 四态，各 8 帧）
+// 小猫帧循环（focus / idel / sleep / pet 四态，帧数由主进程枚举目录后下发）
 // 喝水提醒触发时专注动画从头播放唤起注意（原 warn 状态已合并进专注）。
 // 状态由设置面板「宠物信息」切换（主进程 → pet:state），后续 P1 再由状态机自动流转。
 'use strict';
 
-// 各状态帧数（assets/Sprites/<state>/frame_XX.png）
-const FRAME_COUNTS = { focus: 8, idel: 8, sleep: 8, pet: 8 };
-const FPS = 12;
+// 各状态帧数：先给一份保守兜底，真值由主进程枚举 assets/Sprites/<state>/ 后回传（pet:frame-counts）。
+// 不写死的原因：素材与 mac 原生版共用 SharedAssets/Sprites，idel / pet 已迭代到 24 帧，
+// 写死 8 会只播前三分之一、循环在中间卡断。
+const FALLBACK_COUNTS = { focus: 8, idel: 8, sleep: 8, pet: 8 };
+let frameCounts = { ...FALLBACK_COUNTS };
+const FPS = 12;                     // 与 Swift 版 PetViewModel 的 12 FPS 一致
 const FRAME_INTERVAL = 1000 / FPS;
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const frameSrc = (state, i) => `../../assets/Sprites/${state}/frame_${pad2(i)}.png`;
 
-// 预加载全部帧，避免切换状态时闪烁
-for (const [state, count] of Object.entries(FRAME_COUNTS)) {
-  for (let i = 0; i < count; i++) {
-    const img = new Image();
-    img.src = frameSrc(state, i);
+/** 预加载全部帧，避免切换状态时闪烁 */
+function preloadFrames(counts) {
+  for (const [state, count] of Object.entries(counts)) {
+    for (let i = 0; i < count; i++) {
+      const img = new Image();
+      img.src = frameSrc(state, i);
+    }
   }
 }
+
+// 先用兜底帧数预加载，拿到真值后再补一次
+preloadFrames(frameCounts);
 
 const cat = document.getElementById('cat');
 
 let state = 'focus';
 let index = 0;
+// 各状态自定义形象图：{ state: fileURL }，无则该状态走内置帧动画
+let sprites = {};
+
+/** 当前帧应显示的 src：有自定义图就用它（单图静态），否则用内置帧 */
+function srcFor(nextState, i) {
+  const custom = sprites[nextState];
+  return custom || frameSrc(nextState, i);
+}
 
 // 状态切换：不认识的 state 忽略，避免渲染层出现空 src
 function setState(next) {
-  if (!FRAME_COUNTS[next] || state === next) return;
+  if (!frameCounts[next] || state === next) return;
   state = next;
   index = 0;
-  cat.src = frameSrc(state, 0);
+  cat.src = srcFor(state, 0);
 }
 
 setInterval(() => {
-  index = (index + 1) % FRAME_COUNTS[state];
-  cat.src = frameSrc(state, index);
+  index = (index + 1) % (frameCounts[state] || 1);
+  cat.src = srcFor(state, index);
 }, FRAME_INTERVAL);
 
 // 喝水提醒联动：提醒触发时专注动画从第 0 帧重新播放（原 warn 切换已合并进专注）
@@ -43,7 +59,16 @@ if (window.petAPI && window.petAPI.onDrinkWater) {
   window.petAPI.onDrinkWater(() => {
     state = 'focus';
     index = 0;
-    cat.src = frameSrc('focus', 0);
+    cat.src = srcFor('focus', 0);
+  });
+}
+
+// Todo 到期联动：同喝水提醒，专注动画从第 0 帧重播唤起注意（提醒卡由主进程弹）
+if (window.petAPI && window.petAPI.onTodoReminder) {
+  window.petAPI.onTodoReminder(() => {
+    state = 'focus';
+    index = 0;
+    cat.src = srcFor('focus', 0);
   });
 }
 
@@ -51,3 +76,88 @@ if (window.petAPI && window.petAPI.onDrinkWater) {
 if (window.petAPI && window.petAPI.onPetState) {
   window.petAPI.onPetState((next) => setState(next));
 }
+
+// 应用自定义形象映射：换图后立即重绘当前状态（新增→显示单图，清除→恢复帧动画）
+function applySprites(map) {
+  sprites = map || {};
+  cat.src = srcFor(state, index);
+}
+
+if (window.petAPI && window.petAPI.onPetSprite) {
+  window.petAPI.onPetSprite((map) => applySprites(map));
+}
+// 刚启动时主进程可能还没推，主动拉一次，保证重启后自定义形象仍在
+if (window.petAPI && window.petAPI.requestSpriteSnapshot) {
+  window.petAPI.requestSpriteSnapshot().then(applySprites).catch(() => {});
+}
+
+// 拉真实帧数：拿到后重新预加载，并把当前下标夹回合法范围（8 帧→ 24 帧不会错位）
+if (window.petAPI && window.petAPI.requestFrameCounts) {
+  window.petAPI.requestFrameCounts().then((counts) => {
+    if (!counts || !Object.keys(counts).length) return; // 主进程没读到就继续用兜底
+    frameCounts = counts;
+    preloadFrames(counts);
+    index = index % (frameCounts[state] || 1);
+    cat.src = srcFor(state, index);
+  }).catch(() => {});
+}
+
+// ── 鼠标交互：手动拖窗 + 右键菜单（对标 Swift 版 CatView）──
+// 不用 -webkit-app-region: drag：原生拖拽区会吞掉鼠标事件，右键菜单弹不出来
+let dragging = false;
+let moveQueued = false;
+let lastMove = null;
+let downAt = null;   // 按下点（屏幕坐标）：用于区分“拖过”与“原地点两下”
+let pressedMoved = false; // 本次按下期间是否移动过（移动过就是拖动，不算点击）
+
+function sendMove() {
+  moveQueued = false;
+  if (!dragging || !lastMove || !window.petAPI) return;
+  window.petAPI.dragMove(lastMove.x, lastMove.y);
+}
+
+window.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || !window.petAPI) return;
+  dragging = true;
+  downAt = { x: e.screenX, y: e.screenY };
+  pressedMoved = false;
+  window.petAPI.dragStart(e.screenX, e.screenY);
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  // 鼠标滑出窗口外松键时收不到 mouseup，按按键状态兜底结束
+  if (e.buttons === 0) {
+    dragging = false;
+    if (window.petAPI) window.petAPI.dragEnd();
+    return;
+  }
+  // 拖动位移超过阈值就标脏，后续 dblclick 不再当作“双击开清单”
+  if (downAt && Math.hypot(e.screenX - downAt.x, e.screenY - downAt.y) > 6) pressedMoved = true;
+  // 按帧合并 mousemove，避免高频 IPC 拖垮主进程
+  lastMove = { x: e.screenX, y: e.screenY };
+  if (!moveQueued) {
+    moveQueued = true;
+    requestAnimationFrame(sendMove);
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 0 || !dragging) return;
+  dragging = false;
+  if (window.petAPI) window.petAPI.dragEnd();
+});
+
+// 双击宠物 → 打开 Todo 清单（对标 mac 版 CatView mouseDown clickCount == 2 → showTodoList）
+// 拖动过（位移 > 6px）或仍在拖窗中不算点击，避免拖完窗口就弹清单
+window.addEventListener('dblclick', (e) => {
+  if (e.button !== 0 || !window.petAPI || !window.petAPI.openTodoList) return;
+  if (dragging || pressedMoved) return;
+  window.petAPI.openTodoList();
+});
+
+// 右键 → 弹原生菜单（对标 Swift 版 CatView.rightMouseDown）
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (window.petAPI) window.petAPI.requestContextMenu();
+});

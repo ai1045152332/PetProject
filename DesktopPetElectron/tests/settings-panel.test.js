@@ -34,7 +34,7 @@ const {
   PET_STATES,
   isValidPetState,
   clampScale,
-  DEFAULT_PET_NAME,
+  PET_NAME_POOL,
   MAX_PET_NAME,
 } = require(path.join(SRC, 'settings-service.js'));
 const { scaledSize } = require(path.join(SRC, 'pet-window.js'));
@@ -100,7 +100,7 @@ check('初始间隔 30 分钟（与 mac 版 defaultReminderInterval 一致）', 
 check('预设为 15/30/45/60', initial.reminder.presets, [15, 30, 45, 60]);
 check('PRESETS 常量一致', PRESETS, [15, 30, 45, 60]);
 check('合法区间 1～120', [initial.reminder.min, initial.reminder.max], [MIN_INTERVAL, MAX_INTERVAL]);
-check('宠物名称默认毛豆', initial.pet.name, DEFAULT_PET_NAME);
+check('宠物名称首次读取随机取一个（在名字池内）', PET_NAME_POOL.includes(initial.pet.name), true);
 check('宠物号来自 provider', initial.pet.petNo, 100003);
 check('当前形象来自 provider', initial.pet.state, 'idel');
 check('宠物大小默认 1', initial.pet.scale, 1);
@@ -150,21 +150,24 @@ for (const bad of [0, -1, 121, 30.5, 'abc', null, undefined, '']) {
 check('非法间隔不写配置', config.get(KEY), before);
 check('非法间隔不重启计时', scheduler.state.restart, restartsBefore);
 
-// ── 6. 宠物名称：空值回落默认、超长拒绝（对齐 PetName.setName）──
+// ── 6. 宠物名称：空值随机取名、超长拒绝 ──
 config.set('petName', '');
-check('空名称读成默认名', service.load().pet.name, DEFAULT_PET_NAME);
+const randomName = service.load().pet.name;
+check('空名称读成随机名（在名字池内）', PET_NAME_POOL.includes(randomName), true);
+check('随机名已落盘持久化', config.get('petName'), randomName);
 
 res = service.setPetName('  汤圆  ');
 check('保存名称会去首尾空格', res, { ok: true, name: '汤圆' });
 check('名称已持久化', config.get('petName'), '汤圆');
 
 res = service.setPetName('   ');
-check('空输入保存回退默认名', res, { ok: true, name: DEFAULT_PET_NAME });
-check('默认名已写入配置', config.get('petName'), DEFAULT_PET_NAME);
+const afterEmpty = res.name;
+check('空输入保存随机取新名', PET_NAME_POOL.includes(afterEmpty), true);
+check('随机新名已写入配置', config.get('petName'), afterEmpty);
 
 res = service.setPetName('x'.repeat(MAX_PET_NAME + 1));
 check('超长名称被拒绝', res.ok, false);
-check('超长名称不动配置', config.get('petName'), DEFAULT_PET_NAME);
+check('超长名称不动配置', config.get('petName'), afterEmpty);
 
 // ── 7. 宠物大小：0.5~2.0 校验 + 窗口尺寸换算 ──
 res = service.setPetScale(1.4);

@@ -1,6 +1,6 @@
 ---
 name: deploy-cute-pet
-description: 发布 cute pet（桌面宠物）App 到远程服务器：编译、Ed25519 签名、上传安装包并验证，让已安装客户端自动升级。也用于查询线上最新版本。当用户说「部署/发布/发版 app 到远程」「推送 app 更新」「上线新版本」时使用。
+description: 发布 cute pet（桌面宠物）App 到远程服务器：编译、Ed25519 签名、上传安装包并验证，让已安装客户端自动升级。也用于查询线上最新版本。另覆盖本地（macOS/Linux）交叉打 Electron Windows 包前先清旧产物。当用户说「部署/发布/发版 app 到远程」「推送 app 更新」「上线新版本」「打 Windows 包/编译 Windows 版/清理旧安装包再打包」时使用。
 metadata:
   short-description: Deploy cute pet app releases to the remote server
 ---
@@ -103,6 +103,30 @@ objects/<sha256(设备ID)>/<YYYYMMDD-HHMMSS-6hex>/
 
 启动 30 秒后、每 6 小时、或设置 → 通用设置 → 版本 →「检查更新」。静默检查发现新版本会弹窗，用户需两次确认（立即更新 → 立即重启）。
 
+## 本地打 Windows 包（Electron 版，先清旧产物）
+
+> 与上面的「App 发版（mac 原生版 → 远程）」是两回事：本节是在**本机**用 `DesktopPetElectron/` 的 `electron-builder` 交叉打 Windows 安装包，不上传、不签名、不发远程。更细的 Electron 启动/测试/托盘细节见 `run-electron-pet` skill。
+
+`DesktopPetElectron/dist/` 是 mac 与 Windows **共用**的输出目录。反复打 Windows 包时，旧版本 exe（文件名带版本号，如 `DesktopPet Setup 0.0.2.exe`）不会被自动覆盖，dist 越积越多，容易把错版本发出去。所以打新包前先精准清掉旧的 **Windows 产物**，绝不用 `rm -rf dist`（会连带删掉 mac 的 dmg/zip）。
+
+```bash
+# 1) 先预览要删什么（删除是破坏性操作，务必先看清单再执行）
+./skills/deploy-cute-pet/scripts/clean-win-dist.sh --dry-run
+
+# 2) 清单确认无误后，实际清理
+./skills/deploy-cute-pet/scripts/clean-win-dist.sh
+
+# 3) 打 Windows 包（x64；ARM64 用 dist:win:arm64）
+cd DesktopPetElectron && npm run dist:win
+```
+
+脚本安全边界（`scripts/clean-win-dist.sh`）：
+- **只匹配 Windows 专属模式** `*.exe` / `*.exe.blockmap` / `latest.yml` / `win-*`（unpacked 目录）；mac 的 `*.dmg` / `*-mac.zip` / `latest-mac.yml` / `mac-arm64` 天然不在范围内，完整保留。
+- 路径校验闸：从脚本自身位置推断仓库根 → `DesktopPetElectron/dist`；`DIST_DIR=` 可覆盖，但目标末级必须是 `dist`，否则拒绝执行。
+- 幂等：dist 里没有旧 Windows 产物时也不报错。
+- 版本号是产物文件名与自动更新比较的唯一来源（`package.json` 的 `version`）：要打「新版本」先改版本号再打包，否则同名 exe 直接覆盖、清不清都一样。本机临时验证包可用 `-test` 后缀（如 `0.0.3-test`）与正式发布区分。
+- 交叉打包无需 Wine：electron-builder 25 自带 NSIS 工具链，macOS 上可直接产出 `nsis` + `portable` 两个包；产物未签名，Windows 首启弹 SmartScreen 属正常。
+
 ## 相关文件
 
 | 用途 | 位置 |
@@ -114,6 +138,7 @@ objects/<sha256(设备ID)>/<YYYYMMDD-HHMMSS-6hex>/
 | 服务端下发接口 | `PetServer/internal/controller/release_controller.go` |
 | 官网下载页（动态取 dmg 链接） | `PetServer/internal/web/site/index.html` |
 | 服务端部署脚本 | `skills/deploy-cute-pet/scripts/deploy-server.sh` |
+| 本地打 Windows 包前清旧产物脚本 | `skills/deploy-cute-pet/scripts/clean-win-dist.sh` |
 | 线上版本查询 | `curl http://101.96.248.75/api/app/latest` |
 
 ## 排障

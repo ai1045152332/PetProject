@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>查看天气</title>
+  <!-- 复用提醒卡底板（.card / .header / .close），本功能只补城市输入框与预报排版 -->
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./weather.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title">查看天气 ☀️</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="body weather-body">
+      <div class="w-input-group">
+        <input type="text" id="cityInput" maxlength="40" placeholder="城市名，如：北京" />
+        <button type="button" id="queryBtn">查询天气 🔍</button>
+      </div>
+      <!-- 加载 / 错误等纯文本状态行（textContent 写入，与预报卡互斥显示） -->
+      <div class="w-status" id="wStatus" hidden></div>
+      <div id="weatherContent"></div>
+    </div>
+  </div>
+  <script src="./weather.js"></script>
+</body>
+</html>

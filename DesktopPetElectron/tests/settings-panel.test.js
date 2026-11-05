@@ -32,7 +32,10 @@ const {
   PRESETS,
   KEY,
   PET_STATES,
+  allPetStateIds,
+  panelPetStates,
   isValidPetState,
+  isSwitchablePetState,
   clampScale,
   PET_NAME_POOL,
   MAX_PET_NAME,
@@ -104,11 +107,12 @@ check('宠物名称首次读取随机取一个（在名字池内）', PET_NAME_P
 check('宠物号来自 provider', initial.pet.petNo, 100003);
 check('当前形象来自 provider', initial.pet.state, 'idel');
 check('宠物大小默认 1', initial.pet.scale, 1);
-check('形象列表与 mac 版 displayName 一致（不含 hide）', initial.pet.states, [
-  { id: 'focus', label: '专注' },
-  { id: 'idel', label: '休闲' },
-  { id: 'sleep', label: '睡觉' },
-  { id: 'pet', label: '抚摸' },
+check('形象列表与 mac 版 displayName 一致（躲藏作为只读项附在末尾）', initial.pet.states, [
+  { id: 'focus', label: '专注', switchable: true },
+  { id: 'idel', label: '休闲', switchable: true },
+  { id: 'sleep', label: '睡觉', switchable: true },
+  { id: 'pet', label: '抚摸', switchable: true },
+  { id: 'hide', label: '躲藏', switchable: false },
 ]);
 check('通用区版本号来自 provider', initial.general.version, 'electron0.0.1');
 check('通用区开机自启来自 provider', initial.general.autoLaunch, true);
@@ -188,11 +192,22 @@ check('非法大小不写配置', config.get('petScale'), 1.4);
 check('clampScale(5) 截到上限 2', clampScale(5), 2);
 check('clampScale(0) 截到下限 0.5', clampScale(0), 0.5);
 
-// ── 8. 形象 id 校验（只接受四个可见形象）──
+// ── 8. 形象 id 校验（面板展示 5 格，hide 可上传图但不进手动切换列表）──
 check('focus 合法', isValidPetState('focus'), true);
 check('pet 合法', isValidPetState('pet'), true);
-check('hide 不在面板可选项里', isValidPetState('hide'), false);
-check('PET_STATES 长度为 4', PET_STATES.length, 4);
+check('hide 是合法形象（贴边躲藏 / 上传自定义图要用）', isValidPetState('hide'), true);
+check('未知形象仍不合法', isValidPetState('walk'), false);
+check('PET_STATES 长度为 4（可手动切换的四态）', PET_STATES.length, 4);
+check('面板列表含 hide，但它是只读项（不可切换）', [
+  panelPetStates().some((s) => s.id === 'hide'),
+  isSwitchablePetState('hide'),
+], [true, false]);
+check('四态都能点着切换', ['focus', 'idel', 'sleep', 'pet'].every(isSwitchablePetState), true);
+check('未知形象既不能切换也不能持有图', [isSwitchablePetState('walk'), isValidPetState('walk')], [false, false]);
+check('可持有图的状态含 hide（自定义图快照要遍历到）', allPetStateIds().includes('hide'), true);
+check('面板列表按 id 顺序为 focus/idel/sleep/pet/hide', panelPetStates().map((s) => s.id), [
+  'focus', 'idel', 'sleep', 'pet', 'hide',
+]);
 
 // ── 9. 脏数据回落：配置文件被手工改坏也能安全启动 ──
 config.set(KEY, 999);

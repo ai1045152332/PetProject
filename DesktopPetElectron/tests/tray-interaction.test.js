@@ -1,7 +1,7 @@
 // tests/tray-interaction.test.js
 // 托盘交互回归测试：node 直接跑，不依赖 electron 运行时
-// 覆盖：Windows 左键切换显隐 / 右键才弹菜单（不设 contextMenu）、mac 左键弹菜单不误触发切换、
-//       菜单文案与 tooltip 跟随显隐状态
+// 覆盖：两平台统一左键/右键都弹菜单（Windows 单击不再切换显隐，防误点「猫没了」）、
+//       显隐走菜单项、菜单文案与 tooltip 跟随显隐状态
 'use strict';
 
 const path = require('path');
@@ -113,7 +113,7 @@ function check(name, condition) {
   }
 }
 
-// ── Windows：左键切换，右键弹菜单 ──
+// ── Windows：左键/右键都弹菜单，单击不再直接切换显隐 ──
 {
   let toggled = 0;
   let petVisible = true;
@@ -129,30 +129,30 @@ function check(name, condition) {
     onMenuOpen: () => { menuOpens += 1; },
   });
 
-  check('Windows 不设 contextMenu（否则左键也会弹菜单）', tray.contextMenus.length === 0);
+  check('Windows 不设 contextMenu（菜单统一走 popUpContextMenu）', tray.contextMenus.length === 0);
   check('Windows 用预描边静态图（32×32，不依赖共享原图）',
     tray.image.size.width === 32 && tray.image.size.height === 32);
   check('Windows 不标模板图（无系统反色机制）', tray.image.isTemplate === false);
 
   tray.emit('click');
-  check('Windows 左键单击切换显隐', toggled === 1);
-  check('Windows 左键单击不弹菜单', tray.poppedMenus.length === 0);
+  check('Windows 左键单击弹出菜单', tray.poppedMenus.length === 1);
+  check('Windows 左键单击不触发切换（防误点「猫没了」）', toggled === 0);
+  check('弹菜单前先让出置顶层', menuOpens === 1);
 
   tray.emit('right-click');
-  check('Windows 右键弹出菜单', tray.poppedMenus.length === 1);
-  check('弹菜单前先让出置顶层', menuOpens === 1);
-  check('Windows 右键不触发切换', toggled === 1);
+  check('Windows 右键弹出菜单', tray.poppedMenus.length === 2);
+  check('Windows 右键不触发切换', toggled === 0);
 
   const menu = tray.poppedMenus[0];
   // 未注入 buildSysInfoTemplate 时不挂「系统信息」项，首项仍是显隐
   const first = menu.template.find((t) => t.label === '隐藏宠物' || t.label === '显示宠物');
   check('宠物可见时菜单显示「隐藏宠物」', first.label === '隐藏宠物');
   first.click();
-  check('菜单项点击触发切换', toggled === 2);
+  check('菜单项点击触发切换', toggled === 1);
 
   petVisible = false;
   tray.emit('right-click');
-  const hiddenMenu = tray.poppedMenus[1];
+  const hiddenMenu = tray.poppedMenus[tray.poppedMenus.length - 1];
   check('宠物隐藏时菜单显示「显示宠物」', hiddenMenu.template[0].label === '显示宠物');
 
   trayModule.setTrayStatus();
@@ -177,7 +177,7 @@ function check(name, condition) {
   check('shouldShowTrayHint=false 时不弹气泡', tray.balloons.length === 0);
 }
 
-// ── macOS：左键弹菜单，不直接切换（避免「弹菜单 + 隐藏」双触发）──
+// ── macOS：左键/右键都弹菜单，不直接切换（与 Windows 行为统一）──
 {
   let toggled = 0;
   const trayModule = loadTray('darwin');

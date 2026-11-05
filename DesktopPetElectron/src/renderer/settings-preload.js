@@ -32,9 +32,16 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   // 立即弹一次提醒，便于确认效果
   testReminder: () => ipcRenderer.send('settings:test-reminder'),
 
+  // 菜单设置：宠物右键菜单项展示开关（主进程写盘，下次弹菜单即应用）
+  setMenuItem: (key, visible) => ipcRenderer.invoke('settings:set-menu-item', { key, visible }),
+
   // 宠物信息：名称 / 形象
   setPetName: (name) => ipcRenderer.invoke('settings:set-pet-name', name),
   setPetState: (state) => ipcRenderer.invoke('settings:set-pet-state', state),
+  // 主进程状态机改掉形象时回推（贴边躲藏 / 专注跟随 / 右键抚摸），面板的「当前状态」跟着实时更新
+  onPetState: (callback) => {
+    ipcRenderer.on('settings:pet-state', (event, payload) => callback(payload));
+  },
 
   // 自定义形象图：列状态 / 选图上传 / 恢复默认
   listCustomSprites: () => ipcRenderer.invoke('settings:list-custom-sprite'),
@@ -45,6 +52,18 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   setPetScale: (scale) => ipcRenderer.invoke('settings:set-pet-scale', scale),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('settings:set-auto-launch', enabled),
   checkUpdate: () => ipcRenderer.invoke('settings:check-update'),
+
+  // 权限（校验码解锁）：解锁/清除都在主进程，面板只拿结果码回填提示
+  unlockAccess: (code) => ipcRenderer.invoke('settings:unlock-access', code),
+  clearAccess: () => ipcRenderer.invoke('settings:clear-access'),
+  // 定时复核收回权限时主进程主动推一次（面板开着才能收到；下次打开走 load 兜底）
+  onAccessChanged: (callback) => {
+    ipcRenderer.on('settings:access-changed', (event, state) => callback(state));
+  },
+
+  // 每日天气提醒：写配置 + 预览（未解锁时主进程拒改/拒推）
+  setWeatherReminder: (patch) => ipcRenderer.invoke('settings:set-weather-reminder', patch),
+  previewWeather: () => ipcRenderer.invoke('settings:preview-weather'),
 
   close: () => ipcRenderer.send('settings:close'),
 });

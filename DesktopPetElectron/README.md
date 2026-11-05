@@ -13,9 +13,10 @@ macOS 原生版（`DesktopPetForMacApp`）的跨平台重写，目标同时覆�
 | P0+ | 设置面板（喝水提醒间隔：预设 15/30/45/60 + 自定义 1～120 分钟） | ✅ |
 | P1 | 精灵图动画 + 完整状态机 | ⏳ |
 | P2 | 拖拽 / 点击 / 托盘 | 🔄 拖拽（手动搬窗）✅、托盘 ✅；左键点击互动待做 |
-| P3 | 右键菜单 + 喝水提醒 | 🔄 喝水 ✅；基础右键菜单（仅抚摸/关闭，同 Swift 版不含显隐/设置/检查更新）✅；喂猫条、躲起来等待后续 |
-| P4 | 新闻 / 天气 / 股票服务 | ⏳ |
-| P5 | Todo + 背单词 | ⏳ |
+| P3 | 右键菜单 + 喝水提醒 | 🔄 喝水 ✅；右键菜单（抚摸 / 新闻 / 天气 / Todo / 躲起来 / 设置）✅；喂猫条等待后续 |
+| P4 | 新闻 / 天气 / 股票服务 | 🔄 热点新闻（头条主源 + 百度兜底）✅、天气（走 PetServer `/api/weather` 转发）✅；股票待做 |
+| P5 | Todo + 背单词 | 🔄 Todo ✅；背单词待做 |
+| P5+ | 权限校验码（解锁/定时复核）+ 每日天气提醒 | ✅（混合加密与 mac 版 / PetServer 契约互验） |
 | P6 | electron-builder 打包 Windows / macOS 安装包 | ✅ 已配置 |
 
 ## 运行
@@ -33,7 +34,7 @@ npm start
 | 命令 | 目标平台 | 产物 |
 |------|----------|------|
 | `npm run dist:mac` | macOS | `dist/*.dmg` + `dist/*.zip`（内含 `DesktopPet.app`） |
-| `npm run dist:win` | Windows | `dist/*-setup.exe`（NSIS 安装包）+ `dist/*.portable.exe` |
+| `npm run dist:win` | Windows | `dist/*-setup.exe`（NSIS 安装包） |
 | `npm run dist` | 当前系统 | 按当前 OS 自动打对应包 |
 
 图标资源放在 `packaging/`：`icon.icns`（mac）、`icon.png`（1024×1024，electron-builder 会据此自动生成 Windows `icon.ico`）。
@@ -51,8 +52,42 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
 
 - **推荐在 Windows 机器上执行** `npm run dist:win`，最稳妥。
 - **架构默认 x64**：`dist:win` 已带 `--x64`。在 Apple Silicon Mac 上交叉打包时，若不带该参数会默认产出 arm64 包，绝大多数 Windows 机器（Intel/AMD）无法运行。ARM64 Windows 用 `npm run dist:win:arm64`（产物同名，与 x64 包互相覆盖，需要并存请自行加 `artifactName` 区分）。
-- 在 macOS / Linux 上交叉打 Windows 包时，`nsis` 目标可能需要安装 **Wine**（`brew install --cask wine-stable`）；`portable` 目标一般无需 Wine 可直接产出。
-- Windows 安装包同样默认未做代码签名。
+- 在 macOS / Linux 上交叉打 Windows 包时，`nsis` 目标可能需要安装 **Wine**（`brew install --cask wine-stable`）。
+- Windows 安装包**未做代码签名**时，浏览器下载会报「不常见、可能有害」，首次运行 SmartScreen 蓝屏拦截。要消除「非基线 / 没签名」警告，需用代码签名证书，详见下方「代码签名」。
+
+### 代码签名（消除「非基线 / 没签名」警告）
+
+未签名的 `.exe` 在 Windows 上会遇到两类拦截：
+1. **浏览器下载拦截**（Edge/Chrome SmartScreen）：报「此文件不常见，可能下载有害软件」，发布者显示「Unknown」。
+2. **首次运行拦截**（Windows SmartScreen 蓝屏）：报「Windows 已保护你的电脑」。
+
+两者都靠 **Authenticode 代码签名**解决。证书分两类：
+
+| 类型 | 价格（年） | SmartScreen 效果 | 适用 |
+|------|-----------|------------------|------|
+| OV（组织验证） | ~¥1500–3000 | 签名后仍可能短暂拦截，下载量积累数周后消除 | 内部工具、小范围分发 |
+| **EV**（扩展验证） | ~¥3000–6000 | **立即信任**，显示发布者名称，无蓝屏 | 公开下载、正式分发 |
+
+> **推荐 EV**：桌面宠物对外分发，一次到位无后续摩擦。主流颁发机构：Sectigo、DigiCert、SSL.com。购买后会得到一个 `.p12`（或 `.pfx`）证书文件和密码。
+
+#### 配置签名
+
+electron-builder 通过环境变量读取证书，无需修改 `package.json`：
+
+```bash
+WIN_CSC_LINK=/path/to/your-cert.p12 \
+WIN_CSC_KEY_PASSWORD=your-cert-password \
+npm run dist:win
+```
+
+> 在 macOS 上交叉签名 Windows 包时，electron-builder 调用 `osslsigncode`（`brew install osslsigncode`），首次使用前确认已安装。EV 证书如为 USB 硬件令牌，需额外配置 PKCS#11。
+> **不要把证书路径或密码提交到 git**。
+
+暂未购买证书时的临时方案：把 `dist/*-setup.exe` 打成 `.zip` 分发（浏览器对 zip 不拦截下载），解压后首次运行仍需点「更多信息 → 仍要运行」。SmartScreen 对未签名 PE 文件的蓝屏无法绕过。
+
+#### 签名验证
+
+打包产物（`dist/*-setup.exe`）签名完成后，在 Windows 上右键 → 属性 → 数字签名，应能看到签名者名称。Edge/Chrome 下载该 `.exe` 后不再拦截。
 
 ### Windows 安装
 
@@ -61,7 +96,6 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
 | 文件 | 用法 |
 |------|------|
 | `DesktopPet Setup <版本>.exe` | NSIS 安装包：双击安装，可改安装目录、自动建桌面快捷方式 |
-| `DesktopPet <版本>.exe` | portable 免安装版：双击直接运行，适合放 U 盘或不想写注册表 |
 
 未做代码签名，首次运行 Windows SmartScreen 会拦截：点「更多信息 → 仍要运行」。
 
@@ -98,9 +132,15 @@ DesktopPetElectron/
 │   │   ├── index.js            # 主进程入口 + 应用生命周期 + 各服务接线
 │   │   ├── pet-window.js       # 透明置顶悬浮窗
 │   │   ├── tray.js             # 托盘菜单（显隐 / 设置 / 检查更新 / 退出）+ 状态提示
-│   │   ├── pet-context-menu.js # 宠物右键菜单（P3：抚摸 / 关闭）
+│   │   ├── pet-context-menu.js # 宠物右键菜单（P3：抚摸 / 新闻 / 天气 / Todo / 躲起来 / 设置 / 关闭）
+│   │   ├── card-window.js      # 无边框透明卡片窗工厂（新闻 / 天气结果卡共用，单例复用）
+│   │   ├── news-service.js     # 热点新闻抓取：头条主源 + 百度热搜兜底（对标 NewsFetcher.swift）
+│   │   ├── weather-service.js  # 天气查询：IP 定位 / 城市地理编码 → PetServer /api/weather（对标 WeatherService.swift）
 │   │   ├── settings-window.js  # 设置面板窗口（无边框透明，单例）
-│   │   ├── settings-service.js # 设置业务逻辑：读间隔 / 校验写入 / 立即重启计时
+│   │   ├── settings-service.js # 设置业务逻辑：读间隔 / 校验写入 / 天气提醒配置 / 权限状态
+│   │   ├── access-service.js   # 权限校验码：本地码直过 / 加密后走 /api/access/verify / 定时复核（对标 AccessControl.swift）
+│   │   ├── crypto-envelope.js  # 载荷混合加密：AES-256-GCM + RSA-OAEP（对标 PayloadCrypto.swift / 服务端 HybridEnvelope）
+│   │   ├── weather-reminder.js # 每日天气提醒调度：睡眠补偿 + 权限守卫（对标 WeatherReminderService.swift）
 │   │   ├── heartbeat.js        # 心跳上报（1 分钟一次，移植自 mac 版 HeartbeatService）
 │   │   ├── update-service.js   # 自动更新：检查 / 下载 / sha256 + Ed25519 校验 / 安装
 │   │   ├── app-info.js         # 版本号、设备 ID（IOPlatformUUID / MachineGuid）、宠物名
@@ -119,7 +159,7 @@ DesktopPetElectron/
 │   ├── settings-panel.test.js   # 间隔区间校验 / 持久化 / 改完重启计时 / 脏数据回落
 │   ├── on-top-guard.test.js     # 置顶守护：失焦补位 / 定时兜底 / 让出层级 / stop 生效
 │   └── tray-interaction.test.js # 托盘：Windows 左键切换右键菜单、mac 弹菜单、文案与 tooltip 跟随状态
-│   └── pet-context-menu.test.js # 右键菜单：项构成 / 抚摸与退出回调 / 层级让位
+│   └── pet-context-menu.test.js # 右键菜单：项构成 / 抚摸、设置与退出回调 / 层级让位
 └── assets/
     ├── Sprites/              # 软链 → 仓库根 SharedAssets/Sprites（与 mac 原生版共用同一批帧；focus/sleep 8 帧、idel/pet 24 帧、hide 1 帧，均 200×200）
     ├── MenuBarIcon.png       # 菜单栏图标 → 软链到仓库根 SharedAssets/MenuBarIcon.png（与 mac 原生版共用）
@@ -159,9 +199,9 @@ DesktopPetElectron/
 
 | 一级菜单 | 本版状态 | 内容 |
 |----------|----------|------|
-| 🐱 宠物信息 | 部分可用 | 形象切换（专注/休闲/睡觉/抚摸，点击即时切帧）✅、宠物名称 ✅、宠物号展示 ✅；自定义状态图片（本期不做） |
-| ⚙️ 通用设置 | 部分可用 | 开机自启 ✅、宠物大小 0.5x～2.0x ✅、版本号 + 检查更新 ✅；权限校验码（本期不做） |
-| 🔔 提醒设置 | 喝水可用 | 喝水提醒 ✅（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）；天气提醒、主动搭话（本期不做） |
+| 🐱 宠物信息 | 部分可用 | 形象网格 5 格（专注/休闲/睡觉/抚摸点击即时切帧 + 躲藏只读展示）✅、每格可上传自定义小猫图（存 userData，更新不丢）✅、宠物名称 ✅、宠物号展示 ✅ |
+| ⚙️ 通用设置 | 部分可用 | 开机自启 ✅、宠物大小 0.5x～2.0x ✅、版本号 + 检查更新 ✅、权限校验码解锁 ✅ |
+| 🔔 提醒设置 | 部分可用 | 喝水提醒 ✅（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）、每日天气提醒 ✅（需解锁，含时间/城市/预览）；主动搭话（本期不做） |
 | 🖱️ 菜单设置 | 本期不做 | 宠物右键菜单展示项（右键菜单已有基础项，展示配置过滤待做） |
 | 👫 好友消息 | 本期不做 | 宠物号展示 ✅；添加好友 / 消息列表待接入（服务端接口已就绪） |
 
@@ -181,6 +221,15 @@ DesktopPetElectron/
 - 配置被手工改坏（0 / 999 / 非数字）读取时自动收敛到合法值，不会因为脏数据导致提醒失效。
 
 其他持久化字段：`petName`（心跳上报，空值回落「毛豆」）、`petScale`（0.5～2.0，窗口 = 200px × scale，以右下角为锚点缩放并钳制在屏幕工作区内）。
+
+### 形象区与躲藏态
+
+「宠物信息 → 形象」固定展示 5 格（`settings-service.panelPetStates()`）：四个可切换态 + `hide`。
+
+- 躲藏格（虚线框）能预览、能上传/恢复默认 `local-hide.png`，但点它不会切换形象：`settings:set-pet-state` 会用 `isSwitchablePetState` 拒掉 hide，因为窗口没吸附就切过去等于把半个身子留在屏外；进入躲藏只能拖到屏幕侧边或右键「躲起来」。
+- 格子上两个圆点：左上绿点 = 宠物此刻正在播这一格，右上蓝点 = 这一格已上传自定义图；选中框只表示上传/恢复默认针对哪一格（因此躲藏格上三者会不一致）。
+- 面板开着时主进程会推 `settings:pet-state`，因此贴边躲藏 / 专注跟随 / 右键抚摸都会实时把「当前状态」刷成「躲藏中」。
+- 躲藏中从面板切其他形象会先调 `revealFromHiding` 把窗口收回屏内，再切帧目录。
 
 ## 自动更新 / 检查更新
 
@@ -212,14 +261,24 @@ Electron 版**只认带平台前缀的字段**，避免把 mac 原生 Swift 版�
 
 > 版本号格式：Electron 版自身版本形如 `electron0.0.1`（取自 `package.json` 的 `version` 加 `electron` 前缀），mac 原生版是 `v1.0.031`。`winVersion`/`macVersion` 必须写成同样的 `electron` 前缀形式，并与包内 `package.json` 的 `version` 对应，否则会出现「装完还提示同一版本」的循环。比较时会自动剥掉 `electron`/`v` 前缀，两种前缀视为同一版本序列。
 
-手工发布 Windows 包（与 mac 版同一把私钥 `~/.cute-pet-release/ed25519_private.pem`）：
+发布 Windows 包（与 mac 版同一把私钥 `~/.cute-pet-release/ed25519_private.pem`）。
+
+**推荐走脚本**（自动递增版本、只挑 NSIS 安装版、签名自检、合并写 manifest、上传后回读验证）：
+
+```bash
+../skills/deploy-cute-pet/scripts/build-win-local.sh   # 只本地打包，自己试
+../skills/deploy-cute-pet/scripts/deploy-win.sh        # 发线上（官网可下载 + 客户端自动更新）
+```
+
+以下是手工等价做法，仅供理解流程（**手动改 latest.json 时必须合并，不能整体覆盖**，否则会挤掉 mac 原生版的更新通道）：
 
 ```bash
 npm run dist:win                     # 产出 dist/*-setup.exe
 SHA=$(shasum -a 256 dist/*-setup.exe | awk '{print $1}')
 printf '%s' "$SHA" > digest.txt
 SIG=$(openssl pkeyutl -sign -rawin -inkey ~/.cute-pet-release/ed25519_private.pem -in digest.txt | base64 | tr -d '\n')
-# 把 winVersion/winFile/winSHA256/winSignature/winNotes 加进服务器 dist/latest.json，安装包放到服务器 dist/ 下
+# 先 GET /api/app/latest 取现有 manifest，只合并 winVersion/winFile/winSHA256/winSignature/winNotes/winSize
+# 再连同安装包一起上传到服务器 dist/ 下
 ```
 
 ## 宠物右键菜单（P3）
@@ -229,11 +288,23 @@ SIG=$(openssl pkeyutl -sign -rawin -inkey ~/.cute-pet-release/ed25519_private.pe
 | 菜单项 | 行为 | 对应 Swift 版 |
 |--------|------|--------------|
 | 抚摸 🐾 | 一次性动画：播完一圈 pet 帧 + hold 1.5s 自动回原状态（对标 Swift `playOneShot`），心跳 `petState` 同步上报 | `petAction` |
+| 今日热点新闻 📰 | 主进程抓头条热榜（失败自动换百度热搜）取 Top10，弹单例卡片窗；点条目走系统浏览器 | `hotNewsAction` → `fetchAndShowHotNews` |
+| 查看天气 ☀️ | 弹带城市输入框的天气窗，打开即按 IP 定位查本地天气，输入城市同窗刷新；请求走 PetServer `/api/weather`（上游 Key 只在服务端） | `showWeatherAction` → `showWeatherInput` |
+| Todo 清单 📝 | 开本地待办窗（userData 持久化，也可双击宠物打开） | `todoAction` → `showTodoList` |
+| 躲起来 👀 | 不看当前距离直接吸到最近一侧屏幕边进入 hide（贴边探头） | `hideAction` → `snapToEdgeForHiding` |
+| 设置… | 打开设置面板（与托盘「设置」同一入口，任何权限下都可点） | `settingsAction` |
 | 关闭 ❌ | 退出应用 | `quitAction` |
 
-与 Swift 版一致，显隐、「设置… / 检查更新」都不在右键菜单，入口在菜单栏托盘（Swift 右键里的「躲起来 👀」是贴边藏，与显隐无关，属未移植能力）。
+菜单分**三栏**（栏间留分隔线）：其他功能（抚摸 / Todo / 躲起来 / 新闻 / 天气）｜设置…｜关闭。与 Swift 版一致，右键宠物即可打开「设置…」；显隐、检查更新仍只在菜单栏托盘（Windows 托盘图标会被 Win11 折进通知区，因此额外走 trayFallback 补到「其他功能」栏末尾）。
 
-未抄的项（喂猫条 🍡、躲起来 👀、背单词 📚、苦练基本功 🧩、新闻 📰、天气 ☀️、Todo 📝、股票 📈、「解锁更多功能 🔓」置灰、菜单设置过滤）依赖 P4/P5 服务与权限模块，就绪后逐步补齐。
+未实现的项（喂猫条 🍡、背单词 📚、苦练基本功 🧩、股票 📈、菜单设置过滤）依赖 P5 剩余服务与菜单设置模块，就绪后逐步补齐。基础权限下新闻/天气菜单项置灰并尾部加「解锁更多功能 🔓」引导（对标 Swift fullOnly），入口层另有兜底：即使被其它路径调到也会转到设置面板权限区，不直接碰付费接口。
+
+新闻 / 天气实现要点：
+
+- 抓取与查询全部在主进程完成（`news-service.js` / `weather-service.js`），渲染页只展示 IPC 推来的内容，因此无需给这两个页面放开 CSP 连外网；上游接口改字段时也只改主进程解析。
+- 两个结果卡共用 `card-window.js` 工厂：无边框透明 + `screen-saver` 层级 + 单例复用（已开着只前置并推新内容），与 Todo / 提醒窗同风格；打开期间由 `yieldTopTo` 让出宠物置顶。
+- 天气不直连和风：按 mac 版同样走 PetServer `/api/weather` 转发（服务端代持 Key、按 deviceId 限流）；城市名先过 Nominatim 地理编码拿坐标，本地天气走 api.ip.sb IP 定位。
+- 调试验证 UI 不烧按量付费接口：`PET_TEST_WEATHER_MOCK=1 PET_TEST_WEATHER_SHOT=/tmp/x.png npm start` 用假预报数据渲染；去掉 MOCK 才会真请求 `/api/weather`。
 
 实现要点（`src/main/pet-context-menu.js`）：
 
@@ -246,13 +317,10 @@ SIG=$(openssl pkeyutl -sign -rawin -inkey ~/.cute-pet-release/ed25519_private.pe
 ## 测试
 
 ```bash
-npm test          # 五个用例文件依次跑：
-                  #   tests/update-heartbeat.test.js —— 版本比较、平台选包、真实签名验签、心跳上报体
-                  #   tests/settings-panel.test.js  —— 间隔区间校验、持久化、改完重启计时、脏数据回落
-                  #   tests/on-top-guard.test.js    —— 置顶守护
-                  #   tests/tray-interaction.test.js—— 托盘交互
-                  #   tests/pet-context-menu.test.js—— 右键菜单项构成、抚摸/退出回调、层级让位
-                  #   tests/pet-drag.test.js        —— 手动拖窗 offset/取整/松键收尾
+npm test          # tests/ 下 14 个用例文件依次跑（node 直跑、mock 掉 electron）：
+                  #   update-heartbeat / settings-panel / custom-sprite / on-top-guard
+                  #   tray-interaction / sysinfo-menu / metric-bar-image / pet-context-menu
+                  #   sprite-frames / pet-drag / focus-edge / todo / news-weather / access-weather-reminder
 ```
 
 界面本身用 Electron 的 `webContents.capturePage()` 截图验证（不依赖系统录屏权限）；想直接看面板可 `PET_TEST_SETTINGS=1 npm start`，启动 2.5 秒后自动弹出设置面板。
@@ -261,4 +329,4 @@ npm test          # 五个用例文件依次跑：
 
 - 资源（Sprites）从 `DesktopPetForMacApp` 拷贝而来，后续词库 / 题库接入方式相同。
 - 服务端 `PetServer`（Go）跨平台，心跳 / 版本接口与 mac 版共用（Electron 发布字段见上文「跨平台发布字段」）。
-- 设置面板目前只做了 mac 版「提醒设置」里的喝水提醒；天气提醒（付费解锁）、主动搭话尚未移植。
+- 设置面板已移植：喝水提醒、权限（校验码解锁）、每日天气提醒（需解锁，含时间/城市/预览）；主动搭话尚未移植。

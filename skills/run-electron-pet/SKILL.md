@@ -71,10 +71,10 @@ PET_TEST_REMINDER=1 npm start
 
 | 一级菜单 | 本版状态 |
 |----------|----------|
-| 🐱 宠物信息 | 形象切换（focus/idel/sleep/pet 即时换帧）、宠物名称、宠物号；自定义图片（本期不做） |
-| ⚙️ 通用设置 | 开机自启、宠物大小 0.5x～2.0x、版本 + 检查更新；权限校验码（本期不做） |
-| 🔔 提醒设置 | 喝水提醒可用；天气提醒、主动搭话（本期不做） |
-| 🖱️ 菜单设置 | 右键菜单已有基础项（仅抚摸/关闭，同 Swift 版不含显隐/设置/检查更新，见下），展示配置过滤本期不做 |
+| 🐱 宠物信息 | 形象网格 5 格（focus/idel/sleep/pet 即时换帧 + hide 只读展示）、每格可上传自定义图（存 userData）、宠物名称、宠物号 |
+| ⚙️ 通用设置 | 开机自启、宠物大小 0.5x～2.0x、版本 + 检查更新、权限校验码解锁（天气等按量付费能力需解锁） |
+| 🔔 提醒设置 | 喝水提醒 + 每日天气提醒（需解锁，含时间/城市/预览）可用；主动搭话（本期不做） |
+| 🖱️ 菜单设置 | 右键菜单已有抚摸/新闻/天气/Todo/躲起来/设置/关闭（同 Swift 版；显隐/检查更新只在托盘，Windows 走 trayFallback 补），展示配置过滤本期不做 |
 | 👫 好友消息 | 宠物号展示；好友/消息（本期不做） |
 
 喝水提醒：预设 15/30/45/60 点击立即生效；自定义 1～120 整数，越界/非整数红字提示且不写入；改完立刻重启计时，日志形如 `[settings] drinkWaterInterval -> {"ok":true,"minutes":45}` 紧跟 `[reminder] start: interval=45min, first fire in 195s`。
@@ -94,7 +94,7 @@ PET_TEST_REMINDER=1 npm start
 
 强调色与深浅外观由 `settings-preload.js` 用 `systemPreferences.isDarkMode() / getAccentColor()` 读出来，`settings.js` 的 `applySystemTheme()` 挂到 `<html>`（`.macos` / `.dark` + 覆盖 `--accent*`），所以**不要在样式里再写死颜色**，一律加变量。深色外观样式集中在 `html.dark` 段。
 
-验证 UI 不用手动点：`PET_TEST_SETTINGS_SHOT=/tmp/a.png npx electron .` 会打开面板、`capturePage` 落盘后自退；加 `PET_TEST_SETTINGS_SECTION=general|reminder|menu|social` 截指定分区，加 `PET_TEST_SETTINGS_DARK=1` 预置 `.dark` 验证深色分支。⚠️ 该截图只含网页像素，**不含系统 vibrancy 层**，要确认毛玻璃效果得用 `screencapture -x -l <windowID>` 截真实窗口（窗口 ID 用 `CGWindowListCopyWindowInfo` 查）。
+验证 UI 不用手动点：`PET_TEST_SETTINGS_SHOT=/tmp/a.png npx electron .` 会打开面板、`capturePage` 落盘后自退；加 `PET_TEST_SETTINGS_SECTION=general|reminder|menu|social` 截指定分区，加 `PET_TEST_SETTINGS_DARK=1` 预置 `.dark` 验证深色分支，加 `PET_TEST_SETTINGS_CLICK_STATE=hide` 预先点某一格形象（验证躲藏格只选中不切换）。⚠️ 该截图只含网页像素，**不含系统 vibrancy 层**，要确认毛玻璃效果得用 `screencapture -x -l <windowID>` 截真实窗口（窗口 ID 用 `CGWindowListCopyWindowInfo` 查）。
 
 其他动作的日志：`[settings] petState -> sleep` / `[settings] petName -> 汤圆` / `[settings] petScale -> {"ok":true,"scale":1.5}` / `[settings] autoLaunch -> true`。
 
@@ -104,16 +104,38 @@ PET_TEST_REMINDER=1 npm start
 - 只想看面板不想到点等 30 分钟：`PET_TEST_SETTINGS=1 npm start`，2.5 秒后自动弹出。
 - 宠物放大后跑到屏幕外 → 缩放以右下角为锚点并钳制在当前显示器工作区内，正常不会出界；若手工改了 `petScale` 超过 2.0，读取时会截到 2.0。
 
-快速回归：`npm test` 里的 `tests/settings-panel.test.js` 覆盖五项导航的基础数据、间隔区间校验、持久化、改完重启计时、名称/大小校验与窗口尺寸换算、脏数据回落。
+快速回归：`npm test` 里的 `tests/settings-panel.test.js` 覆盖五项导航的基础数据、间隔区间校验、持久化、改完重启计时、名称/大小校验与窗口尺寸换算、形象列表（含 hide 只读格）与脏数据回落。
+
+## 宠物专注跟随与贴边躲藏（P1 状态机首批能力）
+
+**专注跟随**（`src/main/focus-mode-monitor.js`，对标 mac 版 `FocusModeMonitor.swift`）：只读检测系统勿扰/专注，开勿扰→宠物走 focus，关掉→idel，绝不写系统状态。
+
+- macOS：读 `~/Library/DoNotDisturb/DB/Assertions.json`，`data[].storeAssertionRecords` 非空即视为开启；目录监听 + 1s 兜底轮询。本机从没用过勿扰时该目录可能不存在，读不到一律判为未开启（预期）。
+- Windows：`reg query HKCU\...\ContentDeliveryManager` 读 `Windows.System.FocusAssistAppStateEnabled` / `QuietHours`；Win11 已把状态挪进 CloudStore 加密 blob，读不到就判未开启（宠物保持休闲），不影响其它功能。
+- 只施加在 focus/idel 两态上：睡觉 / 抚摸 / 躲藏中不会被专注跟随打断。
+- 验证：`PET_TEST_FOCUS=1 npm start`（2s 强制切专注、5s 切回休闲，不依赖真开勿扰），日志 `[focus-mode] 系统勿扰/专注状态变化 → 已开启(专注)` + `[settings] petState -> focus`。
+
+**贴边躲藏**（`src/main/edge-snap.js` 纯几何 + `index.js` 接线，对标 mac 版 `snapToEdgeForHiding` / `revealFromEdge`）：
+
+- 拖到屏幕**左/右**侧边 60px 内松手 → 窗口整边对齐显示器 workArea 边缘并进入 `hide`（素材只画一侧探头，所以不支持上/下边）。日志 `[pet] 贴边躲藏: edge=right, 边距=30px, 吸附到 x,y`。
+- 渲染层配合：`pet.css` 的 `#cat.hide-left/hide-right` 把画面钉在同一条边（贴右再镜像 `scaleX(-1)`），让素材裁切边正好落在屏幕边上。
+- 解除：**拖回屏内**（拖动中即视为现身）或**单击探头猫**→ 窗口先完整收回屏内（留 4px）再回躲藏前状态；托盘/右键「显示宠物」、喝水与 Todo 到期提醒也会先现身。
+- 右键菜单新增「躲起来 👀」（在 Todo 之后）：不看当前距离，直接吸到最近一侧。
+- 躲藏中改宠物大小：`applyPetScale` 识别出「已整边贴边」并按新尺寸重新吸附，返回吸附结果后主进程再推一次 `{state, facing}`（对齐 mac 版 `resizeWindow` 的重新吸附）。
+- 状态机 IPC 契约变更：`pet:state` 现在传 `{ state, facing }`（不是裸字符串），渲染层只执行不自行推状态；`hide` 必须等主进程确认已吸附才显示。渲染层不认识的状态（帧清单里没有）直接忽略。
+- 设置面板「形象」区：`panelPetStates()` 返回五格（四态 `switchable:true` + hide `switchable:false`），躲藏格虚线框、能预览也能上传/恢复默认 `local-hide.png`，但点它不切换（主进程 `isSwitchablePetState` 也会拒，防止没吸附就切过去把半个身子留在屏外）。格子上两个圆点含义不同：左上绿点 = 此刻正在播，右上蓝点 = 已上传自定义图；选中框只表示上传/恢复默认针对哪一格。
+- 面板开着时主进程会推 `settings:pet-state`，所以拖到边上躲起来、专注跟随、右键抚摸都会实时把「当前状态」刷成躲藏中（面板下次打开会自己走 `settings:load` 拉最新值）。
+- 验证：`PET_TEST_HIDE=1 npm start` 2s 后模拟「贴右边缘 30px 松手」；再加 `PET_TEST_REVEAL=1` 会在 6s 注入一次原地点点击验证现身。`PET_TEST_HIDE=1 PET_TEST_SETTINGS_SHOT=/tmp/s.png` 可同时看面板的「躲藏中」与绿点位置。截图看探头效果用 `screencapture -x -R<x>,<y>,<w>,<h> /tmp/hide.png`（坐标取日志里的 bounds）。
+- 快速回归：`npm test` 里的 `tests/focus-edge.test.js`（勿扰断言/注册表解析、只在状态变化时回调、吸附与现身几何、躲藏中缩放重新吸附）。
 
 ## 宠物右键菜单（P3）
 
-右键小猫弹原生菜单：**抚摸 🐾（切 pet 帧，一次性动画）/ 关闭 ❌**，代码在 `src/main/pet-context-menu.js`。同 Swift 版，显隐、「设置… / 检查更新」都不在右键菜单，入口在菜单栏托盘。
+右键小猫弹原生菜单，分**三栏**：其他功能（**抚摸 🐾（切 pet 帧，一次性动画）/ 今日热点新闻 📰 / 查看天气 ☀️ / Todo 清单 📝 / 躲起来 👀（贴屏幕侧边探头）**）｜**设置…**｜**关闭 ❌**，代码在 `src/main/pet-context-menu.js`。同 Swift 版，右键宠物可直接进设置；显隐、检查更新只在菜单栏托盘（Windows 走 trayFallback 兜底补上）。未传 `hide` 回调时菜单里不会出现「躲起来」。
 
 - 触发链路：渲染层 `pet.js` 监听 `contextmenu` → IPC `pet:context-menu` → 主进程弹原生菜单。**不能再用 `-webkit-app-region: drag`**——drag 区会在原生层吞掉真实鼠标事件（含右键），页面收不到任何事件；拖拽改为主进程手动搬窗（`createDragController` + `pet:drag-start/move/end`）。⚠️ `webContents.sendInputEvent` 注入的模拟事件会绕过 drag 区直达渲染层，用它验证右键会得到**假阳性**，必须用真实鼠标（CGEvent）确认。
 - 日志：`[context-menu] 右键宠物窗，弹原生菜单`；抚摸是一次性动画（一圈 + hold 1.5s 自动回弹，对标 Swift playOneShot），日志形如 `[settings] petState -> pet` 紧跟 `[settings] petState -> focus`。
 - 测试钩子：`PET_TEST_CONTEXT_MENU=1 npm start` 2.5s 自动弹菜单验证。拖窗单测：`tests/pet-drag.test.js`。
-- 喂猫条、躲起来、背单词、新闻、天气、Todo、股票等 Swift 版高级项依赖 P4/P5，尚未移植。
+- 喂猫条、背单词、股票等仍依赖 P4/P5，尚未移植。
 
 ## 验证心跳与自动更新
 
@@ -179,11 +201,13 @@ DesktopPetElectron/
 ├── dist/                       # electron-builder 产物（.app/.dmg/.zip/exe，不入库）
 ├── src/main/
 │   ├── index.js                # 入口 + 生命周期 + IPC + 调度器装配 + 测试快捷键
-│   ├── pet-window.js           # 透明置顶悬浮窗（200×200）
+│   ├── pet-window.js           # 透明置顶悬浮窗（200×200）+ 躲藏中缩放重新吸附
+│   ├── focus-mode-monitor.js   # 系统勿扰/专注只读检测（mac 断言文件 / Windows 注册表）+ 轮询监听
+│   ├── edge-snap.js            # 贴边躲藏纯几何：吸附落点 / 现身收拢
 │   ├── reminder-window.js      # 喝水提醒独立弹窗（380×300 居中）
 │   ├── reminder-scheduler.js   # 提醒调度：对齐触发点 + 间隔重复 + 防叠加
 │   ├── tray.js                 # 菜单栏托盘：显示/隐藏 + 设置 + 检查更新 + 退出
-│   ├── pet-context-menu.js     # 宠物右键菜单（抚摸/关闭）
+│   ├── pet-context-menu.js     # 宠物右键菜单（抚摸/设置/关闭）
 │   ├── settings-window.js      # 设置面板窗口（无边框透明 + macOS vibrancy 毛玻璃，单例）
 │   ├── settings-service.js     # 设置业务逻辑：读间隔 / 校验写入 / 重启计时
 │   ├── heartbeat.js            # 心跳上报（1 分钟一次，移植 mac 版 HeartbeatService）
@@ -191,7 +215,7 @@ DesktopPetElectron/
 │   ├── app-info.js             # 版本号、设备 ID（IOPlatformUUID / MachineGuid）、宠物名
 │   └── config-store.js         # 极简 JSON 配置持久化（对标 UserDefaults）
 ├── src/renderer/
-│   ├── index.html / pet.css / pet.js         # 宠物窗：focus 帧循环（提醒触发时从头播放）
+│   ├── index.html / pet.css / pet.js         # 宠物窗：帧循环 + 躲藏锚边/镜像（提醒触发时从头播放）
 │   ├── preload.js              # petAPI（onDrinkWater）
 │   ├── reminder.html/.css/.js + reminder-preload.js   # 提醒卡 UI + close
 │   ├── settings.html/.css/.js  + settings-preload.js  # 设置面板（配色对齐 mac 版，见「设置面板」节）
@@ -237,5 +261,5 @@ DesktopPetElectron/
 
 ## 当前进度
 
-已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + 心跳上报 + 自动更新/检查更新 + P3 基础右键菜单 + P6 electron-builder 打包（mac/win 已配）**。路线图（每阶段可独立验收）：
-P1 完整动画状态机 → P2 拖拽/点击/托盘（托盘✅）→ P3 右键菜单（基础项✅，高级项随 P4/P5 补齐）→ P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。
+已完成 **P0 悬浮窗 + 喝水提醒 + 菜单栏托盘退出 + 心跳上报 + 自动更新/检查更新 + P3 基础右键菜单 + P6 electron-builder 打包（mac/win 已配）**，P1 状态机已上线**专注跟随**与**贴边躲藏**两个能力。路线图（每阶段可独立验收）：
+P1 完整动画状态机（专注跟随 ✅ / 贴边躲藏 ✅，空闲自动睡觉、主动搭话待补）→ P2 拖拽/点击/托盘（托盘✅）→ P3 右键菜单（✅）→ P4 新闻/天气/股票 → P5 Todo/背单词 → P6 `electron-builder` 打 Windows/macOS 安装包（✅）。

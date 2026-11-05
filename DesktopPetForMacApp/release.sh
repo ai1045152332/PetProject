@@ -83,7 +83,14 @@ if [ -f "$DMG_BG_SRC" ] && [ -f "$DMG_DSSTORE_SRC" ]; then
 else
     echo "   ⚠️  缺少 packaging/dmg-background.png 或 packaging/dmg.dsstore，dmg 退化为素窗口"
 fi
-hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$STAGE" -fs HFS+ -format UDRW -ov "$DMG_RW"
+# 首选 hdiutil create（标准 UDRW 可写镜像）；在沙箱/受限环境里 create 会报「操作不被允许」，
+# 退化为 makehybrid（纯用户态，不需要分配 /dev 设备）生成 HFS 镜像，后续 attach/convert 行为一致
+if ! hdiutil create -quiet -volname "$APP_NAME" -srcfolder "$STAGE" -fs HFS+ -format UDRW -ov "$DMG_RW" 2>/dev/null; then
+    echo "   ⚠️  hdiutil create 不可用（受限环境），改用 makehybrid 生成 dmg"
+    rm -f "$DMG_RW"
+    hdiutil makehybrid -quiet -o "$DMG_RW" -hfs -default-volume-name "$APP_NAME" "$STAGE" >/dev/null 2>&1 \
+        || { echo "❌ dmg 生成失败：makehybrid 也不可用"; exit 1; }
+fi
 # 实时应用一次 Finder 布局：背景图的 alias 绑定卷标识，直接复用旧 .DS_Store 会失效
 LAYOUT_SCRIPT="$PROJECT_DIR/packaging/dmg_window_layout.applescript"
 if [ -f "$LAYOUT_SCRIPT" ]; then
@@ -117,15 +124,34 @@ DMG_SIZE=$(stat -f%z "$DMG")
 printf '%s' "$DMG_SHA" > /tmp/release_digest_dmg.txt
 DMG_SIG=$(openssl pkeyutl -sign -rawin -inkey "$PRIVATE_KEY" -in /tmp/release_digest_dmg.txt | base64 | tr -d '\n')
 
-# ── 5. 生成 manifest ──
+# ── 5. 生成 manifest（合并写，绝不整体覆盖）──
 # file/sha256/signature/size 仍指向 zip：老客户端只认这几个字段，不能改语义
+# 合并原因：latest.json 同时承载三条发布通道（mac 原生 Swift 版 + Electron Windows/ macOS），
+# 若用「只含 mac 字段」的新文件整体覆盖，Electron 客户端的 win*/mac* 字段会被抹掉，自动更新直接断掉。
 echo "5/6 生成 latest.json…"
-python3 - "$DIST_LOCAL/latest.json" "$VERSION" "$ZIP_NAME" "$SHA" "$SIG" "$NOTES" "$SIZE" \
+PUBLIC_BASE="${CUTE_PET_SERVER:-http://101.96.248.75}"
+PREV_MANIFEST="$DIST_LOCAL/.latest-prev.json"
+curl -sf --max-time 8 "$PUBLIC_BASE/api/app/latest" \
+    | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("data") or {}))' \
+    > "$PREV_MANIFEST" 2>/dev/null || echo '{}' > "$PREV_MANIFEST"
+
+python3 - "$DIST_LOCAL/latest.json" "$PREV_MANIFEST" "$VERSION" "$ZIP_NAME" "$SHA" "$SIG" "$NOTES" "$SIZE" \
     "$DMG_NAME" "$DMG_SHA" "$DMG_SIG" "$DMG_SIZE" <<'PY'
 import json, sys, datetime
-(path, version, filename, sha, sig, notes, size,
- dmg_file, dmg_sha, dmg_sig, dmg_size) = sys.argv[1:12]
-json.dump({
+(path, prev_path, version, filename, sha, sig, notes, size,
+ dmg_file, dmg_sha, dmg_sig, dmg_size) = sys.argv[1:13]
+
+# 基线 = 服务器现有 manifest（可能含 Electron 的 win*/mac* 字段），读不到就空字典
+try:
+    merged = json.load(open(prev_path))
+    if not isinstance(merged, dict):
+        merged = {}
+except Exception:
+    merged = {}
+kept = {k: merged[k] for k in ("winVersion", "macVersion") if merged.get(k)}
+
+# 本次发布只覆盖 mac 原生版字段；其它平台字段原样保留
+merged.update({
     "version": version,
     "file": filename,
     "sha256": sha,
@@ -138,20 +164,29 @@ json.dump({
     "dmgSHA256": dmg_sha,
     "dmgSignature": dmg_sig,
     "dmgSize": int(dmg_size),
-}, open(path, "w"), ensure_ascii=False, indent=2)
+})
+json.dump(merged, open(path, "w"), ensure_ascii=False, indent=2)
+print("   保留的其它平台通道: " + (", ".join(f"{k}={v}" for k, v in kept.items()) or "（无）"))
 PY
+rm -f "$PREV_MANIFEST"
 
 # ── 6. 上传 ──
 echo "6/6 上传到服务器…"
-UPLOAD="$HOME/.cute-pet-release/scp_put.exp"
-[ -x "$UPLOAD" ] || { echo "❌ 缺少上传助手脚本: $UPLOAD"; exit 1; }
+# 远端执行/上传统一后端（expect 助手不可用时自动切 paramiko）
+REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck disable=SC1091
+source "$REPO_ROOT/skills/deploy-cute-pet/scripts/remote.sh"
+if [ ! -x "$HOME/.cute-pet-release/scp_put.exp" ]; then
+  echo "ℹ️ 无 expect 上传助手，将使用 paramiko（python3 + ~/.catpaw/pylibs）"
+fi
+echo "   远端后端: $(remote_backend)"
 
 # 确保服务器目录存在
-"$HOME/.cute-pet-release/ssh_run.exp" "mkdir -p /opt/petserver/dist" > /dev/null 2>&1
+remote_exec "mkdir -p /opt/petserver/dist" > /dev/null 2>&1 || { echo "❌ 远端创建目录失败"; exit 1; }
 
-"$UPLOAD" "$ZIP" "/opt/petserver/dist/$ZIP_NAME" > /dev/null 2>&1
-"$UPLOAD" "$DMG" "/opt/petserver/dist/$DMG_NAME" > /dev/null 2>&1
-"$UPLOAD" "$DIST_LOCAL/latest.json" "/opt/petserver/dist/latest.json" > /dev/null 2>&1
+remote_put "$ZIP" "/opt/petserver/dist/$ZIP_NAME" || { echo "❌ 上传 zip 失败"; exit 1; }
+remote_put "$DMG" "/opt/petserver/dist/$DMG_NAME" || { echo "❌ 上传 dmg 失败"; exit 1; }
+remote_put "$DIST_LOCAL/latest.json" "/opt/petserver/dist/latest.json" || { echo "❌ 上传 manifest 失败"; exit 1; }
 
 echo ""
 echo "✅ 发布完成: $VERSION"

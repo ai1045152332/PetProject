@@ -2,15 +2,16 @@
 // 菜单栏 / 系统托盘：提供可见图标 + 右键菜单（显示隐藏 / 检查更新 / 退出）
 // 解决悬浮小猫 skipTaskbar 后无退出入口的问题，并提供手动触发更新检查的入口
 //
-// 平台差异（这是「显示/隐藏不好用」的根因）：
-// - Windows：setContextMenu 会让「左键单击也弹菜单」，与 click 切换显隐撞在一起，
-//   所以 Windows 上不设 contextMenu，改为左键单击切换、右键 popUpContextMenu。
-// - macOS：菜单栏习惯是左键直接弹菜单，所以 click / right-click 都弹菜单，
-//   显隐走菜单项（避免「弹菜单 + 同时隐藏」的双触发）。
+// 平台差异：
+// - 统一行为：click / right-click 都弹菜单，显隐走菜单项「隐藏宠物/显示宠物」。
+//   （Windows 曾是左键单击直接切换显隐，容易误点「猫没了」，已改为与 mac 一致的弹菜单。）
+// - Windows 不预设 setContextMenu：显式走 popUpContextMenu，单击/右键都先经过
+//   onMenuOpen 让置顶守护让位，避免宠物窗压在菜单上面。
 'use strict';
 
 const path = require('path');
 const { Tray, Menu, app, nativeImage } = require('electron');
+const { MetricBarImage } = require('./metric-bar-image');
 
 // 菜单栏图标：所有托盘/菜单栏素材只存一份，统一放仓库根的 SharedAssets/
 // （DesktopPetElectron/assets/ 与 DesktopPetForMacApp/.../Resources/ 下全部是指向它的软链）
@@ -51,6 +52,29 @@ function trayIcon() {
   // 模板图：系统按菜单栏深浅色自动反色，与 Swift 版同一条渲染路径
   image.setTemplateImage(true);
   return image;
+}
+
+// mac 顶栏合成图（猫 + SF Symbol 瓦片 + 数字）：懒建，素材缺失/校验不过时 imageFor 返回 null
+let barImage = null;
+let barImageTried = false;
+let usingComposed = false; // 当前 setImage 是不是合成图（退回时要把猫图标换回去）
+
+/** 有 parts 才拼，拼不出（非 mac / 缺瓦片 / 缺字形）返回 null 走 Unicode 文字回落 */
+function composedTrayImage(parts) {
+  if (!parts || !parts.length) return null;
+  try {
+    if (!barImageTried) {
+      barImageTried = true;
+      barImage = new MetricBarImage({});
+    }
+    return barImage ? barImage.imageFor(parts) : null;
+  } catch (e) {
+    // 任何异常（如 electron 模块不完整）都不能影响顶栏，回到纯文字标题
+    console.warn('[tray] 顶栏合成图不可用:', e.message);
+    barImageTried = true;
+    barImage = null;
+    return null;
+  }
 }
 
 /** 默认 tooltip：带上版本号，宠物隐藏时额外标注，避免「宠物没了以为挂了」 */
@@ -94,10 +118,24 @@ function buildMenu() {
   return Menu.buildFromTemplate(buildMenuTemplate(deps || {}));
 }
 
-/** 刷新托盘图标旁的顶栏文字（勾选的系统指标；空串清除）。仅 mac 生效，
- *  Windows 通知区图标 setTitle 会把图标替换成文字，丢失可见入口 */
-function setTrayTitle(text) {
+/** 刷新托盘图标旁的顶栏指标（勾选的系统指标；空值清除）。仅 mac 生效，
+ *  Windows 通知区图标 setTitle 会把图标替换成文字，丢失可见入口。
+ *  优先把整条（猫 + 图标 + 数字）合成一张模板图走 setImage（对齐 Swift 的 SF Symbol 效果），
+ *  拼不出才退回 setTitle 纯文字（parts 缺失或瓦片素材不可用）。
+ *  退回纯文字时要先把 setImage 换回猫图标，否则上一次的合成图会一直留着。*/
+function setTrayTitle(text, parts) {
   if (!tray || process.platform !== 'darwin') return;
+  const composed = composedTrayImage(parts);
+  if (composed) {
+    tray.setImage(composed);
+    tray.setTitle('');
+    usingComposed = true;
+    return;
+  }
+  if (usingComposed) {
+    tray.setImage(trayIcon()); // 取消全部勾选或回落时：把猫图标换回来
+    usingComposed = false;
+  }
   tray.setTitle(text || '');
 }
 
@@ -125,7 +163,8 @@ function showWinTrayHintIfNeeded() {
     tray.displayBalloon({
       title: '桌面宠物已在系统托盘运行',
       content: 'Win11 会把托盘图标折进通知区的「^」溢出面板：点任务栏右下角 ^ 找到小猫图标，'
-        + '长按拖到任务栏即可固定。也可直接右键桌面上的宠物打开菜单。',
+        + '长按拖到任务栏即可固定。单击/右键图标都会打开菜单，显隐在菜单里选。'
+        + '也可直接右键桌面上的宠物打开菜单。',
       iconType: 'info',
     });
   } catch (e) {
@@ -137,7 +176,7 @@ function showWinTrayHintIfNeeded() {
 /**
  * 创建系统托盘。
  * @param {object} handlers
- * @param {() => void} handlers.togglePet     显示 / 隐藏宠物窗
+ * @param {() => void} handlers.togglePet     显示 / 隐藏宠物窗（菜单项 / 快捷键用）
  * @param {() => void} handlers.openSettings  打开设置面板
  * @param {() => void} handlers.checkUpdate   手动检查更新
  * @param {() => void} handlers.quit          退出应用
@@ -153,16 +192,13 @@ function createTray(handlers = {}) {
   tray = new Tray(trayIcon());
   tray.setToolTip(defaultTooltip());
 
+  // 左键 / 右键都弹菜单，显隐走菜单项（两平台统一；Windows 单击直接切换曾导致
+  // 「一点猫就没了」的误操作，不再保留）
+  tray.on('click', popUpMenu);
+  tray.on('right-click', popUpMenu);
   if (process.platform === 'win32') {
-    // Windows：左键单击切换显隐，右键弹菜单（setContextMenu 会让左键也弹菜单，禁用）
-    tray.on('click', () => deps.togglePet && deps.togglePet());
-    tray.on('right-click', popUpMenu);
     // Win11 托盘图标常被折进通知区溢出面板 → 首启弹一次气泡引导找回/固定
     showWinTrayHintIfNeeded();
-  } else {
-    // macOS：左键 / 右键都弹菜单，显隐走菜单项
-    tray.on('click', popUpMenu);
-    tray.on('right-click', popUpMenu);
   }
 
   // 菜单打开期间启动实时刷新（仅 Windows 需要：每秒重建并回设 contextMenu 让菜单内数值实时；

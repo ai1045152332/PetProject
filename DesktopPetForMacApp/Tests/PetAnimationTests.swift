@@ -83,11 +83,25 @@ final class PetAnimationTests: XCTestCase {
     /// 共享图（一次 AI 生成、无单状态选中）应展开覆盖全部 5 个状态。
     func testSharedImageSelectionExpandsToAllStates() throws {
         let sharedID = String(repeating: "c", count: 32)
-        let json = Data(#"{"currentId":"""# + sharedID + #"","images":[{"id":"""# + sharedID + #"","name":"shared","createdAt":"date","status":"ready"}]}"#.utf8)
+        let json = Data(#"{"currentId":""# + sharedID + #"","images":[{"id":""# + sharedID + #"","name":"shared","createdAt":"date","status":"ready"}]}"#.utf8)
         let library = try JSONDecoder().decode(PetImageLibrary.self, from: json)
         for state in CatAnimationState.allCases {
             XCTAssertEqual(library.selections[state.rawValue], sharedID, "Shared image must cover \(state.displayName)")
         }
+    }
+    
+    /// 升级回归：服务端逐状态选中记录里没有新状态（如旧批次没有 hide）时，
+    /// 客户端必须留空不碰，绝不能拿空 currentId 伪造成“恢复默认”抹掉用户选图。
+    func testAbsentStateInPerStateSelectionsIsNotFabricated() throws {
+        let focusID = String(repeating: "a", count: 32)
+        let idelID = String(repeating: "b", count: 32)
+        let json = Data((#"{"currentId":"","currentIds":{"focus":""# + focusID + #"","idel":""# + idelID + #"","hide":""},"selectionVersion":3,"images":[]}"#).utf8)
+        let library = try JSONDecoder().decode(PetImageLibrary.self, from: json)
+        XCTAssertEqual(library.selections["focus"], focusID)
+        XCTAssertNil(library.selections["sleep"], "A state the server never recorded must stay absent, not default")
+        XCTAssertNil(library.selections["pet"])
+        // 服务端显式写了空串（真正的恢复默认）则照常透传。
+        XCTAssertEqual(library.selections["hide"], "", "Explicit server-side reset still passes through")
     }
 
     /// 本地直传优先级最高：写入后覆盖云端/legacy 图，移除后按原顺序回退。

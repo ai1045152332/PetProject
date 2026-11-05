@@ -63,4 +63,12 @@ function isSettingsOpen() {
   return Boolean(settingsWin && !settingsWin.isDestroyed());
 }
 
-module.exports = { openSettingsWindow, closeSettingsWindow, isSettingsOpen };
+/**
+ * 面板开着时推一条事件（宠物形象被贴边躲藏 / 专注跟随 / 右键改掉，徽标要跟着变），
+ * 没开就静默丢弃：面板下次打开会走 settings:load 拉到最新值。
+ */
+function sendToSettingsWin(channel, payload) {
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send(channel, payload);
+}
+
+module.exports = { openSettingsWindow, closeSettingsWindow, isSettingsOpen, sendToSettingsWin };

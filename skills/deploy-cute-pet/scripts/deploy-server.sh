@@ -7,9 +7,12 @@ set -euo pipefail
 #   deploy-server.sh --check    # 只检查环境/连通性，不部署
 
 SCRIPT_REAL=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0")
-REPO_DEFAULT=$(cd "$(dirname "$SCRIPT_REAL")/../../.." && pwd)
+SCRIPTS_DIR=$(dirname "$SCRIPT_REAL")
+REPO_DEFAULT=$(cd "$SCRIPTS_DIR/../../.." && pwd)
 REPO="${CUTE_PET_REPO:-$REPO_DEFAULT}"
 SERVER_DIR="$REPO/PetServer"
+# 远端执行/上传统一后端（expect 助手不可用时自动切 paramiko）
+source "$SCRIPTS_DIR/remote.sh"
 KEY_DIR="${CUTE_PET_KEY_DIR:-$HOME/.cute-pet-release}"
 SERVER_HOST="${CUTE_PET_SSH_HOST:-root@101.96.248.75}"
 SERVER_HTTP="${CUTE_PET_SERVER:-http://101.96.248.75}"
@@ -25,21 +28,22 @@ fail() { say "❌ $*"; exit 1; }
 
 # ── 1. 环境检查 ──────────────────────────────────────────────
 [ -d "$SERVER_DIR" ] || fail "未找到服务端目录：$SERVER_DIR"
-[ -x "$SSH" ] && [ -x "$RSYNC" ] || fail "缺少上传助手：$KEY_DIR/{rsync_put,ssh_run}.exp"
+[ -x "$KEY_DIR/rsync_put.exp" ] || say "ℹ️ 无 expect 上传助手，将使用 paramiko（python3 + ~/.catpaw/pylibs）"
 
-say "检查 SSH 连通性…"
+say "检查 SSH 连通性（后端：$(remote_backend)）…"
 SSH_TMP="/tmp/cute_pet_deploy_check.log"
 CHECK_OK=0
+RAW=""
 for attempt in 1 2 3; do
-  SSH_OUT_FILE="$SSH_TMP" "$SSH" "systemctl is-active petserver; if test -f /opt/petserver/petserver.env; then echo ENV_YES; else echo ENV_NO; fi" >/dev/null 2>&1 || true
-  RAW=$(tr -d '\r' < "$SSH_TMP" 2>/dev/null || true)
-  if printf '%s\n' "$RAW" | grep -qx 'active'; then
-    CHECK_OK=1
-    break
+  if RAW=$(remote_exec "systemctl is-active petserver; if test -f /opt/petserver/petserver.env; then echo ENV_YES; else echo ENV_NO; fi"); then
+    if printf '%s\n' "$RAW" | grep -qx 'active'; then
+      CHECK_OK=1
+      break
+    fi
   fi
   [ "$attempt" -lt 3 ] && say "  连接未就绪，重试（${attempt}/3）…" && sleep 2
 done
-[ "$CHECK_OK" = "1" ] || fail "SSH 连接失败或无响应（检查 $SSH、服务器密码或网络）"
+[ "$CHECK_OK" = "1" ] || fail "SSH 连接失败或无响应（后端 $(remote_backend)，检查密钥/密码文件或网络）"
 
 STATE=active
 ENVOK=unknown
@@ -73,9 +77,8 @@ say ""
 say "上传并重启服务…"
 UPLOAD_OK=0
 for attempt in 1 2 3 4 5; do
-  if "$RSYNC" /tmp/petserver-deploy /opt/petserver/petserver.new >/dev/null 2>&1; then
-    SSH_OUT_FILE=/tmp/cute_pet_sha.log "$SSH" "sha256sum /opt/petserver/petserver.new" >/dev/null 2>&1
-    REMOTE_SHA=$(tr -d '\r' < /tmp/cute_pet_sha.log 2>/dev/null | awk '{print $1}' | grep -E '^[0-9a-f]{64}$' | head -1)
+  if remote_put /tmp/petserver-deploy /opt/petserver/petserver.new; then
+    REMOTE_SHA=$(remote_exec "sha256sum /opt/petserver/petserver.new" | tr -d '\r' | awk '{print $1}' | grep -E '^[0-9a-f]{64}$' | head -1)
     if [ "$REMOTE_SHA" = "$LOCAL_SHA" ]; then
       UPLOAD_OK=1
       say "  上传校验通过（第 ${attempt} 次尝试）"
@@ -89,9 +92,8 @@ for attempt in 1 2 3 4 5; do
 done
 [ "$UPLOAD_OK" = "1" ] || fail "上传校验失败；未改动线上服务（请检查网络后重试）"
 
-# 注意：expect 下 "&& if" 组合会挂起，统一用分号分隔；输出走文件读取
-SSH_OUT_FILE="/tmp/cute_pet_deploy_restart.log" "$SSH" "cp -f /opt/petserver/petserver /opt/petserver/petserver.bak; mv /opt/petserver/petserver.new /opt/petserver/petserver; chmod +x /opt/petserver/petserver; systemctl restart petserver; sleep 4; if curl -sf -m 5 http://127.0.0.1/api/ping >/dev/null; then echo DEPLOYED; else echo ROLLBACK; mv -f /opt/petserver/petserver.bak /opt/petserver/petserver; systemctl restart petserver; fi" >/dev/null 2>&1
-REMOTE_OUT=$(tr -d '\r' < /tmp/cute_pet_deploy_restart.log 2>/dev/null || true)
+# 注意：远端命令里 if/else 组合依赖 shell 正确解析；输出由 remote_exec 打到 stdout
+REMOTE_OUT=$(remote_exec "cp -f /opt/petserver/petserver /opt/petserver/petserver.bak; mv /opt/petserver/petserver.new /opt/petserver/petserver; chmod +x /opt/petserver/petserver; systemctl restart petserver; sleep 4; if curl -sf -m 5 http://127.0.0.1/api/ping >/dev/null; then echo DEPLOYED; else echo ROLLBACK; mv -f /opt/petserver/petserver.bak /opt/petserver/petserver; systemctl restart petserver; fi" || true)
 
 if printf '%s' "$REMOTE_OUT" | grep -q ROLLBACK; then
   fail "新版本健康检查失败，已自动回滚到上一版本（检查 systemctl status petserver）"

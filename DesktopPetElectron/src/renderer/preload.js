@@ -12,11 +12,11 @@ contextBridge.exposeInMainWorld('petAPI', {
   },
   // Todo 到期提醒：同样让专注动画从帧头重播（提醒卡由主进程另开窗口弹）
   onTodoReminder: (callback) => {
-    ipcRenderer.on('todo:remind', () => callback());
+    ipcRenderer.on('todo:remind', (event, payload) => callback(payload));
   },
-  // 设置面板切换形象（focus / idel / sleep / pet）→ 渲染层换帧目录
+  // 主进程状态机切换形象：{ state, facing }（focus / idel / sleep / pet / hide）→ 渲染层换帧目录
   onPetState: (callback) => {
-    ipcRenderer.on('pet:state', (event, state) => callback(state));
+    ipcRenderer.on('pet:state', (event, payload) => callback(payload));
   },
   // 自定义形象图：主进程推送 { state: fileURL | null }，有则静态显示该图，无则回退帧动画
   onPetSprite: (callback) => {
@@ -29,7 +29,10 @@ contextBridge.exposeInMainWorld('petAPI', {
   // 手动拖窗三件套：渲染层拿鼠标屏幕坐标，主进程按 offset 搬窗口（pet-window.js createDragController）
   dragStart: (x, y) => ipcRenderer.send('pet:drag-start', { x, y }),
   dragMove: (x, y) => ipcRenderer.send('pet:drag-move', { x, y }),
+  // 拖动过后的松手：主进程判定贴边吸附 / 拖出现身
   dragEnd: () => ipcRenderer.send('pet:drag-end'),
+  // 原地点松手（没拖动）当作单击：主进程据此现身或走专注唤起注意
+  notifyClick: () => ipcRenderer.send('pet:pet-click'),
   // 右键小猫 → 主进程弹原生右键菜单
   requestContextMenu: () => ipcRenderer.send('pet:context-menu'),
   // 双击小猫 → 主进程开 Todo 清单（对标 mac 版 CatView clickCount == 2）

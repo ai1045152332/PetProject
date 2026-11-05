@@ -8,7 +8,7 @@
 
 const path = require('path');
 const { fork } = require('child_process');
-const { SysInfoMonitor, platformReaders, METRICS, computeTrayTitle, stopCpuStream } = require('./system-monitor');
+const { SysInfoMonitor, platformReaders, METRICS, computeTrayTitle, computeTrayParts, stopCpuStream } = require('./system-monitor');
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -23,13 +23,17 @@ function buildWorkerMonitor(enabled, readers) {
   });
 }
 
+/** 顶栏一条消息：回落用的纯文字标题 + mac 合成图用的结构化 parts */
+function titleMessage(snap, isEnabled) {
+  return { type: 'enabled', title: computeTrayTitle(snap, isEnabled), parts: computeTrayParts(snap, isEnabled) };
+}
+
 /** 采集主循环：先建网络字节基线，之后每秒 refresh 并把 {type:'snapshot'} / {type:'enabled'} 发给主进程 */
 function runWorkerLoop(monitor, send, schedule = (fn, ms) => setTimeout(fn, ms)) {
   let stopped = false;
   const stoppedSend = (msg) => { if (!stopped) send(msg); };
   // 先喂 enabled，主进程首帧标题即可正确计算
-  const snap0 = monitor.snapshot();
-  stoppedSend({ type: 'enabled', title: computeTrayTitle(snap0, (m) => monitor.isEnabled(m)) });
+  stoppedSend(titleMessage(monitor.snapshot(), (m) => monitor.isEnabled(m)));
   schedule(function tick() {
     if (stopped) return;
     let snap = null;
@@ -40,7 +44,7 @@ function runWorkerLoop(monitor, send, schedule = (fn, ms) => setTimeout(fn, ms))
     }
     if (snap) {
       stoppedSend({ type: 'snapshot', snap });
-      stoppedSend({ type: 'enabled', title: computeTrayTitle(snap, (m) => monitor.isEnabled(m)) });
+      stoppedSend(titleMessage(snap, (m) => monitor.isEnabled(m)));
     }
     if (!stopped) schedule(tick, POLL_INTERVAL_MS);
   }, 0);
@@ -92,7 +96,7 @@ function createCacheOnlySnapshot() {
  * @param {object} deps
  * @param {(key: string) => any} deps.getOption     读勾选状态（发 init 与勾选变化时同步给 worker）
  * @param {(snap: object) => void} deps.onSnapshot  收到新快照（投喂只读缓存）
- * @param {(title: string) => void} deps.onTitle     收到算好的顶栏标题
+ * @param {(title: string, parts: Array) => void} deps.onTitle  收到算好的顶栏标题与结构化指标
  * @returns {{postEnabled: () => void, kill: () => void}}
  */
 function startWorker(deps) {
@@ -100,7 +104,7 @@ function startWorker(deps) {
   child.on('message', (msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'snapshot') deps.onSnapshot(msg.snap);
-    else if (msg.type === 'enabled') deps.onTitle(msg.title || '');
+    else if (msg.type === 'enabled') deps.onTitle(msg.title || '', msg.parts || []);
   });
   child.on('error', (e) => console.error('[sysinfo-worker] 通信异常:', e.message));
   child.on('exit', (code) => console.log(`[sysinfo-worker] 退出 code=${code}`));
@@ -132,4 +136,4 @@ function getOptionKey(metric) {
 // 作为子进程被 node 直接运行时进入采集循环；被 require 时只提供上述接口
 if (require.main === module) workerMain();
 
-module.exports = { startWorker, createCacheOnlySnapshot, buildWorkerMonitor, runWorkerLoop, workerMain, POLL_INTERVAL_MS };
+module.exports = { startWorker, createCacheOnlySnapshot, buildWorkerMonitor, runWorkerLoop, titleMessage, workerMain, POLL_INTERVAL_MS };

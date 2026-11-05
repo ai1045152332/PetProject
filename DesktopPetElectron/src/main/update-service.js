@@ -116,9 +116,13 @@ class UpdateService {
   /**
    * @param {object} [opts]
    * @param {(status: object) => void} [opts.onStatus] 状态回调（供托盘展示进度）
+   * @param {() => Promise<string>} [opts.revalidateAccess] 授权定时复核（对标 mac 版
+   *        UpdateService 顺带调 AccessControl.revalidate）：与版本检查同节奏，
+   *        返回 'revoked' 时弹「激活码已失效」提醒
    */
-  constructor({ onStatus } = {}) {
+  constructor({ onStatus, revalidateAccess } = {}) {
     this.onStatus = onStatus || (() => {});
+    this.revalidateAccess = revalidateAccess || null;
     this.firstTimer = null;
     this.repeatTimer = null;
     this.checking = false;
@@ -161,6 +165,18 @@ class UpdateService {
     }
     this.checking = true;
     this.onStatus({ phase: 'checking' });
+
+    // 顺带向服务端复核授权（与 mac 版同节奏）：仅当服务端明确判定失效才收回，
+    // 网络异常保留权限；收回后提醒一次，高级功能（天气等）随即回到置灰态
+    if (this.revalidateAccess) {
+      try {
+        if ((await this.revalidateAccess()) === 'revoked') {
+          this.alert('激活码已失效', '该激活码已过期或被停用，高级功能已锁定。\n如需继续使用，请联系客服获取新的激活码。');
+        }
+      } catch (e) {
+        console.warn('[update] 授权复核异常:', e.message);
+      }
+    }
 
     try {
       const res = await fetch(serverURL('/api/app/latest'), {

@@ -1,0 +1,96 @@
+{
+  "baselineFromTop" : 15.539999999999999,
+  "stripHeight" : 22,
+  "tiles" : {
+    "g-7" : {
+      "w" : 7,
+      "kind" : "glyph",
+      "char" : "7"
+    },
+    "g-9" : {
+      "char" : "9",
+      "w" : 8,
+      "kind" : "glyph"
+    },
+    "net" : {
+      "w" : 14,
+      "kind" : "symbol",
+      "symbol" : "arrow.up.arrow.down"
+    },
+    "g-K" : {
+      "char" : "K",
+      "w" : 8,
+      "kind" : "glyph"
+    },
+    "cpu" : {
+      "w" : 14,
+      "kind" : "symbol",
+      "symbol" : "cpu"
+    },
+    "g-space" : {
+      "kind" : "glyph",
+      "char" : " ",
+      "w" : 4
+    },
+    "g-8" : {
+      "char" : "8",
+      "w" : 8,
+      "kind" : "glyph"
+    },
+    "g-5" : {
+      "char" : "5",
+      "w" : 8,
+      "kind" : "glyph"
+    },
+    "disk" : {
+      "w" : 14,
+      "kind" : "symbol",
+      "symbol" : "internaldrive"
+    },
+    "g-0" : {
+      "kind" : "glyph",
+      "char" : "0",
+      "w" : 8
+    },
+    "g-1" : {
+      "kind" : "glyph",
+      "char" : "1",
+      "w" : 6
+    },
+    "g-2" : {
+      "kind" : "glyph",
+      "char" : "2",
+      "w" : 8
+    },
+    "g-slash" : {
+      "char" : "\/",
+      "kind" : "glyph",
+      "w" : 4
+    },
+    "mem" : {
+      "kind" : "symbol",
+      "symbol" : "memorychip",
+      "w" : 14
+    },
+    "g-4" : {
+      "char" : "4",
+      "w" : 8,
+      "kind" : "glyph"
+    },
+    "g-6" : {
+      "kind" : "glyph",
+      "w" : 8,
+      "char" : "6"
+    },
+    "g-pct" : {
+      "w" : 12,
+      "kind" : "glyph",
+      "char" : "%"
+    },
+    "g-3" : {
+      "char" : "3",
+      "kind" : "glyph",
+      "w" : 8
+    }
+  }
+}

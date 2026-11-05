@@ -67,6 +67,10 @@
 - 客户端必须同时通过「摘要比对」与「签名验证」，任一不过直接拒绝安装
 - `file`/`sha256`/`signature`/`size` **永远指向 zip**：客户端自动更新只认这四个字段，dmg 不影响它们
 - `dmgFile`/`dmgSHA256`/`dmgSignature`/`dmgSize` 是官网手动安装用的 dmg，`omitempty`。老版本服务端没有这些字段，官网会自动退回 zip 链接
+- `winVersion`/`winFile`/`winSHA256`/`winSignature`/`winNotes`/`winSize` 是 Electron Windows 通道，`omitempty`。Electron 客户端**只认这组字段**，绝不回落到无前缀的 `version`/`file`
+- `macVersion`/`macFile`/`macSHA256`/`macSignature`/`macNotes`/`macSize` 是 Electron macOS 通道（预留），同上
+
+> **一个文件装三条通道**：任何一次发布都必须「拉现状 → 只改自己那段 → 写回」。用单个平台的 manifest 整体覆盖会把其它通道的字段抹掉，对应平台的自动更新立即中断（客户端提示「服务端还没有发布该平台安装包」）。`release.sh`（mac 原生）与 `deploy-win.sh`（Electron Windows）都已内置合并逻辑。
 
 ### GET /download/<file>
 
@@ -207,7 +211,68 @@ hdiutil verify /tmp/dl.dmg  # 镜像本身完整性
 | 升级后需要重新输激活码 | 版本变化清除旧权限（设计如此） | 重新输入激活码即可 |
 | 客户端一直是最新版本但功能不对 | 客户端版本号与发布版本相同但内容不同 | **同一版本号不要重复发布不同内容**，必须递增版本号 |
 
-## 八、后续可选项
+## 八、Electron Windows 通道（本地打包与远程发布）
+
+mac 原生 Swift 版与 Electron Windows 版是**两条独立发布线**：各自的版本序列、各自的 manifest 字段、共用同一把签名私钥与同一个 `/download/` 接口。
+
+### 8.1 两个入口
+
+| 目标 | 命令 | 结果 |
+| --- | --- | --- |
+| 本地验证包 | `scripts/build-win-local.sh` | `DesktopPetElectron/dist/` 里的 exe，未签名、未上传 |
+| 线上发布 | `scripts/deploy-win.sh` | 官网可下载 + Windows 客户端自动更新 |
+
+### 8.2 产物选择
+
+`npm run dist:win` 产出两个 exe：
+
+| 产物 | 能否自动更新 | 说明 |
+| --- | --- | --- |
+| `DesktopPet Setup <ver>.exe`（NSIS） | ✅ | 客户端 `/S` 静默安装后自动拉起新版；**只有这个能发线上** |
+| `DesktopPet <ver>.exe`（portable） | ❌ | 跑在临时解包目录，无法自我替换；客户端会提示手动替换 |
+
+发布脚本会把安装版重命名为 `desktop-pet-win-<ver>-setup.exe` 再上传（去掉空格，避免 URL 与 shell 转义问题）。
+
+### 8.3 版本号与字段
+
+- 包内 `package.json` 的 `version` 是唯一来源（纯数字，如 `0.0.3`），打包前必须写好，否则产物同名覆盖
+- manifest 里的 `winVersion` 写成 `electron0.0.3`（带前缀），与客户端 `app-info.currentVersion()` 同形；比较时自动剥掉 `electron`/`v` 前缀
+- 两者不一致会表现为「装完还提示同一版本」的循环
+
+### 8.4 签名与上传
+
+```bash
+SHA=$(shasum -a 256 包.exe | awk '{print $1}')
+printf '%s' "$SHA" > digest.txt
+SIG=$(openssl pkeyutl -sign -rawin -inkey ~/.cute-pet-release/ed25519_private.pem -in digest.txt | base64 | tr -d '\n')
+# 把 winVersion/winFile/winSHA256/winSignature/winNotes/winSize 合并进服务器 dist/latest.json
+# 安装包放到 /opt/petserver/dist/ 下
+```
+
+上传顺序必须是**先传包、最后换 manifest**，否则会出现「清单指向还没上传完的文件」的窗口期。
+
+### 8.5 官网下载
+
+官网首页（`PetServer/internal/web/site/index.html`）拉 `/api/app/latest` 后：
+
+- `winFile` 存在 → 显示「下载 Windows 版」按钮 + 版本/体积文案，链接指向 `/download/<winFile>`
+- `winFile` 为空 → 按钮与 Windows 文案整体隐藏（不会把 mac 的 dmg 塞给 Windows 用户）
+
+页面是 `go:embed` 进二进制的，**改完必须重新部署 PetServer 才生效**。
+
+### 8.6 客户端升级路径（Windows）
+
+启动 30 秒后（顺带清理 `userData/updates/` 旧包）→ 每 24 小时 → 托盘「检查更新」。
+
+1. `GET /api/app/latest` → 取 `winVersion` 比对 `electron<x.y.z>`
+2. 有新版本 → 弹「立即更新 / 稍后」
+3. 流式下载到 `userData/updates/`，边下边算 sha256
+4. 摘要比对 + Ed25519 验签（任一不过直接拒绝）
+5. 弹「重启并更新」→ NSIS `/S` 静默安装 → 1.2 秒后 `app.quit()`，由安装器拉起新版
+
+未签名产物首次安装会弹 SmartScreen，属正常。
+
+## 九、后续可选项
 
 - **云端编译**：接 GitHub Actions（macOS runner），打 tag 自动编译+签名+上传，彻底免本地编译；私钥存为 CI Secret
 - **HTTPS**：加域名 + Caddy 自动证书，更新链路与后台登录一并加密
@@ -227,3 +292,16 @@ openssl pkey -in ed25519_private.pem -pubout -outform DER | tail -c 32 | base64
 生成后需将公钥写入
 `DesktopPetForMacApp/DesktopPetForMacApp/Services/UpdateService.swift` 的
 `releasePublicKeyBase64`，并重新打包发布一次，客户端才会认可后续更新。
+
+### 8.7 远端通道：expect 与 paramiko 双后端
+
+`skills/deploy-cute-pet/scripts/remote.sh` 统一封装远端执行与上传，`scripts/lib/remote.py` 是无 pty 的 paramiko 实现（`exec` / `put` / `check`）。
+
+| 后端 | 依赖 | 适用 |
+| --- | --- | --- |
+| expect（默认优先） | `~/.cute-pet-release/{ssh_run,rsync_put}.exp` + 可用 pty | 常规环境，rsync 支持断点续传 |
+| paramiko（自动回退） | `python3 -m pip install --target ~/.catpaw/pylibs paramiko` | pty 耗尽（`The system has no more ptys`）、expect 缺失 |
+
+- `CUTE_PET_REMOTE_BACKEND=paramiko|expect` 可强制指定；`remote_backend` 打印当前后端
+- 密码来源：环境变量 `CUTE_PET_SSH_PASSWORD` 或 `~/.cute-pet-release/ssh_password`（0600）
+- **paramiko 的 `put` 必须是整文件覆盖**：发布场景下远端是上一版旧文件，长度与新文件不同；若按远端大小续传，会把新旧内容拼接成损坏文件（曾导致 latest.json 损坏、`/api/app/latest` 500）。失败重试由调用方循环负责

@@ -1,7 +1,7 @@
 // tests/pet-context-menu.test.js
 // 宠物右键菜单回归测试：node 直接跑，不依赖 electron 运行时
-// 覆盖：菜单项构成（抚摸 / Todo 清单 / 关闭，其余未移植能力不出现）、抚摸触发状态切换、
-//       弹菜单前后让出/收回置顶层
+// 覆盖：菜单项构成（抚摸 / Todo 清单 / 躲起来 / 新闻 / 天气 / 设置 / 关闭）、权限置灰与解锁引导（对标 Swift fullOnly）、
+//       抚摸触发状态切换、弹菜单前后让出/收回置顶层
 'use strict';
 
 const path = require('path');
@@ -61,28 +61,112 @@ function check(name, condition) {
   let petted = 0;
   let quit = 0;
   let todoOpened = 0;
+  let newsOpened = 0;
+  let weatherOpened = 0;
+  let settingsOpened = 0;
   const template = buildTemplate({
     pet: () => { petted += 1; },
     quit: () => { quit += 1; },
     openTodo: () => { todoOpened += 1; },
+    openNews: () => { newsOpened += 1; },
+    openWeather: () => { weatherOpened += 1; },
+    openSettings: () => { settingsOpened += 1; },
   });
 
   const labels = template.map((t) => t.label).filter(Boolean);
   check('首项是「抚摸 🐾」（对标 Swift 版 petAction）', labels[0] === '抚摸 🐾');
-  check('仅含 抚摸 / Todo 清单 / 关闭 三项', labels.join('|') === '抚摸 🐾|Todo 清单 📝|关闭 ❌');
-  check('同 Swift 版不含显隐/设置/检查更新（入口都在菜单栏托盘）', [
-    '隐藏宠物', '显示宠物', '设置…',
+  check('含 抚摸 / Todo 清单 / 新闻 / 天气 / 设置 / 关闭（解锁态本地能力在前、高级功能在后，设置贴底）',
+    labels.join('|') === '抚摸 🐾|Todo 清单 📝|今日热点新闻 📰|查看天气 ☀️|设置…|关闭 ❌');
+  check('新闻在天气前（与 mac 版 ContextMenuPrefs.items 顺序对齐）',
+    labels.indexOf('今日热点新闻 📰') < labels.indexOf('查看天气 ☀️'));
+  check('不含显隐/检查更新（入口在菜单栏托盘，Windows 由 trayFallback 补）', [
+    '隐藏宠物', '显示宠物',
   ].every((l) => !labels.includes(l)) && !labels.some((l) => l.startsWith('检查更新')));
-  check('本版不含未移植能力（喂猫条/躲起来/背单词/新闻/天气/股票）', [
-    '喂猫条 🍡', '躲起来 👀', '背单词 📚', '今日热点新闻 📰', '查看天气 ☀️', '输入股票代码查询 📈',
+  check('「设置…」排在「关闭 ❌」之前', labels.indexOf('设置…') < labels.indexOf('关闭 ❌'));
+  check('未传 hide 回调时不出「躲起来」（能力未接线就不展示）', !labels.includes('躲起来 👀'));
+  check('本版不含未移植能力（喂猫条/背单词/股票）', [
+    '喂猫条 🍡', '背单词 📚', '输入股票代码查询 📈',
   ].every((l) => !labels.includes(l)));
 
   template.find((t) => t.label === '抚摸 🐾').click();
   check('点抚摸触发状态切换回调', petted === 1);
+  template.find((t) => t.label === '今日热点新闻 📰').click();
+  check('点今日热点新闻触发开新闻卡回调', newsOpened === 1);
+  template.find((t) => t.label === '查看天气 ☀️').click();
+  check('点查看天气触发开天气窗回调', weatherOpened === 1);
   template.find((t) => t.label === 'Todo 清单 📝').click();
   check('点 Todo 清单触发开清单回调', todoOpened === 1);
+  template.find((t) => t.label === '设置…').click();
+  check('点设置打开设置面板', settingsOpened === 1);
   template.find((t) => t.label === '关闭 ❌').click();
   check('点关闭触发退出', quit === 1);
+}
+
+// ── 三栏分组：其他功能 / 设置 / 关闭（栏间留分隔线）──
+{
+  const template = buildTemplate({
+    pet: () => {}, quit: () => {},
+    openTodo: () => {}, hide: () => {}, openNews: () => {}, openWeather: () => {},
+    openSettings: () => {},
+  });
+  const sepIndexes = template
+    .map((item, index) => (item.type === 'separator' ? index : -1))
+    .filter((index) => index >= 0);
+  const indexOf = (label) => template.findIndex((item) => item.label === label);
+  check('恰好两条分隔线，把菜单分成三栏', sepIndexes.length === 2);
+  check('第一条分隔线落在「其他功能」栏与「设置…」之间', sepIndexes[0] === indexOf('设置…') - 1);
+  check('第二条分隔线落在「设置…」与「关闭 ❌」之间', sepIndexes[1] === indexOf('关闭 ❌') - 1);
+  check('「设置…」位于第二栏中间（前后都是分隔线）',
+    template[indexOf('设置…') - 1].type === 'separator'
+      && template[indexOf('设置…') + 1].type === 'separator');
+}
+
+// ── 权限门控（对标 Swift rightMouseDown 的 fullOnly）：基础权限置灰 + 尾部解锁引导 ──
+{
+  let openedSettings = 0;
+  let petSettings = 0;
+  const template = buildTemplate({
+    pet: () => {}, quit: () => {},
+    openTodo: () => {}, openNews: () => {}, openWeather: () => {},
+    fullAccess: false,
+    openAccessSettings: () => { openedSettings += 1; },
+    openSettings: () => { petSettings += 1; },
+  });
+  const labels = template.map((t) => t.label).filter(Boolean);
+  const news = template.find((t) => t.label === '今日热点新闻 📰');
+  const weather = template.find((t) => t.label === '查看天气 ☀️');
+  check('基础权限：新闻/天气置灰（enabled=false，对齐 Swift fullOnly）',
+    news.enabled === false && weather.enabled === false);
+  check('基础权限：可用项在前，新闻/天气置灰；设置栏里「解锁更多功能」排在「设置…」之后',
+    labels.join('|') === '抚摸 🐾|Todo 清单 📝|今日热点新闻 📰|查看天气 ☀️|设置…|解锁更多功能 🔓|关闭 ❌');
+  template.find((t) => t.label === '解锁更多功能 🔓').click();
+  check('点「解锁更多功能」打开设置面板', openedSettings === 1);
+  check('基础权限下「设置…」仍可点（不受权限门控）', template.find((t) => t.label === '设置…').enabled !== false);
+  template.find((t) => t.label === '设置…').click();
+  check('基础权限下点「设置…」也能打开设置面板', petSettings === 1);
+
+  const unlocked = buildTemplate({
+    pet: () => {}, quit: () => {},
+    openTodo: () => {}, openNews: () => {}, openWeather: () => {},
+    fullAccess: true, openAccessSettings: () => {},
+  });
+  const uLabels = unlocked.map((t) => t.label).filter(Boolean);
+  check('已解锁：新闻/天气可点且不出现解锁引导',
+    unlocked.find((t) => t.label === '查看天气 ☀️').enabled === true
+      && !uLabels.includes('解锁更多功能 🔓'));
+}
+
+// ── 躲起来：接上主进程吸附回调后出现在菜单里（位置对齐 mac 版：Todo 之后）──
+{
+  let hidden = 0;
+  const template = buildTemplate({ hide: () => { hidden += 1; } });
+  const labels = template.map((t) => t.label).filter(Boolean);
+  check('传了 hide 回调则菜单含「躲起来 👀」', labels.includes('躲起来 👀'));
+  check('「躲起来」排在「Todo 清单」之后、「关闭」之前',
+    labels.indexOf('Todo 清单 📝') < labels.indexOf('躲起来 👀')
+      && labels.indexOf('躲起来 👀') < labels.indexOf('关闭 ❌'));
+  template.find((t) => t.label === '躲起来 👀').click();
+  check('点躲起来触发贴边吸附回调', hidden === 1);
 }
 
 // ── Windows 兜底（trayFallback）：托盘被 Win11 折进溢出面板时，右键菜单补上托盘入口 ──
@@ -115,6 +199,9 @@ function check(name, condition) {
   const events = [];
   const fakeWin = { id: 1 };
   const menu = popupPetContextMenu(fakeWin, {
+    pet: () => {},
+    openTodo: () => {},
+    quit: () => {},
     onMenuOpen: () => events.push('open'),
     onMenuClose: () => events.push('close'),
   });
@@ -167,6 +254,36 @@ function check(name, condition) {
   check('重复抚摸重设定时器（前一次已取消）', due !== first && due !== null);
   oneShot.cancel();
   check('cancel 后待回弹定时器被清掉', due !== null ? false : true);
+}
+
+// ── 躲藏中「抚摸」：播完回到躲藏，不把只探头的猫拉回屏内 ──
+{
+  let state = 'hide';
+  let due = null;
+  const oneShot = createPettingOneShot({
+    getState: () => state,
+    setState: (s) => { state = s; },
+    getRestoreState: () => 'hide',
+    setTimer: (fn, ms) => { due = { fn, ms }; return due; },
+    clearTimer: () => { due = null; },
+  });
+  oneShot.play();
+  check('躲藏中先切到 pet', state === 'pet');
+  due.fn();
+  check('抚完回到躲藏而不是基准态', state === 'hide');
+
+  // 未传 getRestoreState 时保持原有行为（回到进入前状态）
+  let plain = 'idel';
+  let plainDue = null;
+  const plainShot = createPettingOneShot({
+    getState: () => plain,
+    setState: (s) => { plain = s; },
+    setTimer: (fn) => { plainDue = { fn }; return fn; },
+    clearTimer: () => { plainDue = null; },
+  });
+  plainShot.play();
+  plainDue.fn();
+  check('不传 getRestoreState 仍回到进入前状态', plain === 'idel');
 }
 
 // ── 抚摸一圈时长必须跟真实帧数走（共用 mac 素材后 pet 是 24 帧）──

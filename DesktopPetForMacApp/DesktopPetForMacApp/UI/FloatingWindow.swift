@@ -1162,18 +1162,26 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
             menu.addItem(item)
         }
 
-        // 未解锁：尾部追加「解锁更多功能」引导（点击打开设置锚定权限栏；解锁成功后本项不再出现）
+        // ── 第 2 栏：设置（与托盘「设置」同一面板，右键宠物即可直接打开；解锁引导同栏排在后面）──
+        menu.addItem(NSMenuItem.separator())
+
+        let settingsItem = NSMenuItem(title: "设置…", action: #selector(settingsAction(_:)), keyEquivalent: "")
+        settingsItem.target = self
+        settingsItem.isEnabled = true  // 设置是最基础入口，任何权限下都可用
+        menu.addItem(settingsItem)
+
+        // 未解锁：同一栏追加「解锁更多功能」引导（点击打开设置并锚定权限栏；解锁成功后本项不再出现）
         if !fullAccess {
-            menu.addItem(NSMenuItem.separator())
             let unlockItem = NSMenuItem(title: "解锁更多功能 🔓", action: #selector(unlockMoreAction(_:)), keyEquivalent: "")
             unlockItem.target = self
             menu.addItem(unlockItem)
         }
 
+        // ── 第 3 栏：关闭 ──
+        menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "关闭 ❌", action: #selector(quitAction(_:)), keyEquivalent: "")
         quitItem.target = self
         quitItem.isEnabled = true  // 退出是最基础功能，任何权限下都允许
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
         // 使用事件中的窗口坐标直接转换到视图坐标，最可靠
@@ -1189,6 +1197,10 @@ catSay(byRightClick ? "为什么不喂我～" : "掉地上啦，不吃～")
     /// 「解锁更多功能」：通知 AppDelegate 打开设置面板并锚定闪烁「权限」栏
     @objc private func unlockMoreAction(_ sender: NSMenuItem) {
         NotificationCenter.default.post(name: .init("DesktopPet.ShowAccessSettings"), object: nil)
+    }
+    /// 「设置…」：通知 AppDelegate 打开设置面板（与菜单栏「设置」同一入口）
+    @objc private func settingsAction(_ sender: NSMenuItem) {
+        NotificationCenter.default.post(name: .init("DesktopPet.ShowSettings"), object: nil)
     }
     @objc private func wordLearningAction(_ sender: NSMenuItem) { viewModel?.startWordLearning() }
     @objc private func problemAction(_ sender: NSMenuItem) { showRandomProblem() }

@@ -1,0 +1,89 @@
+/* src/renderer/bubble.css */
+/* 宠物对话气泡：配色取自 mac 版 SpeechBubbleView 的素材色（左上近白粉 → 右下暖粉，暖棕描边，深棕文字）
+   这里走的是 mac 版的「矢量模式」画法（无 SpeechBubble.png 时的分支），两端观感一致 */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  /* 尾巴在气泡盒下方溢出，不能裁掉 */
+  overflow: visible;
+  user-select: none;
+}
+
+body {
+  padding: 4px;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.bubble {
+  position: relative;
+  max-width: 232px;
+  padding: 20px 18px;
+  border: 2px solid #8b6e5c;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff7f5, #fae0dc);
+  box-shadow: 0 2px 8px rgba(90, 60, 40, 0.18);
+  color: #6b4f40;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  word-break: break-word;
+  transform-origin: 50% 100%;
+  cursor: pointer;
+  /* 弹入（锚定尾巴尖，70% → 100% 带回弹）+ 悬浮期轻微上下浮动（mac 版 ±2pt 呼吸） */
+  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    bob 1.8s ease-in-out 0.3s infinite;
+}
+
+/* 尾巴：指向小猫头顶（外层三角形是描边，内层是同色填充） */
+.bubble-tail {
+  position: absolute;
+  left: 50%;
+  bottom: -13px;
+  margin-left: -9px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 13px solid #8b6e5c;
+}
+
+.bubble-tail::after {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: -15px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #fbe7e3;
+}
+
+.bubble.leaving {
+  animation: none;
+  transition: opacity 1s ease-in;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}

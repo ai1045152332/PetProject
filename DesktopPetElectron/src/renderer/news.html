@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>今日热点新闻</title>
+  <!-- 复用提醒卡底板（.card / .header / .close），本功能只补热榜列表排版 -->
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./news.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title" id="title">今日热点新闻 Top10 📰</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="body news-body">
+      <div class="news-list" id="newsList"></div>
+      <div class="news-empty" id="newsEmpty"></div>
+    </div>
+  </div>
+  <script src="./news.js"></script>
+</body>
+</html>

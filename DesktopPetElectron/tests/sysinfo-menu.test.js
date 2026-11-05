@@ -196,6 +196,8 @@ function makeMonitor(overrides = {}) {
   try {
     loop = runWorkerLoop(fakeMonitor, (m) => sent.push(m), global.setTimeout);
     check('worker 首帧先发 enabled（带基线算好的标题）', sent[0].type === 'enabled' && sent[0].title === `${METRIC_ICONS.cpu}40%`);
+    check('enabled 消息同时带结构化 parts（mac 合成图输入，不传函数只传数据）',
+      JSON.stringify(sent[0].parts) === JSON.stringify([{ metric: 'cpu', symbol: 'cpu', text: '40%' }]));
     timers.shift()(); // 跑第一次 tick
     check('worker 每 tick 回传 snapshot + enabled', sent[1].type === 'snapshot' && sent[1].snap.cpu.percent === 50
       && sent[2].type === 'enabled' && sent[2].title === `${METRIC_ICONS.cpu}50%`);
@@ -260,11 +262,12 @@ function makeMonitor(overrides = {}) {
   ].join('\n')) === null);
 }
 
-// ── tray 接线：mac setTitle / win 不 setTitle / win 菜单打开期间每秒重建 ──
+// ── tray 接线：mac 合成图优先 setImage、拼不出回落 setTitle / win 不 setTitle / win 菜单打开期间每秒重建 ──
 const trayInstances = [];
 class FakeTray {
   constructor(image) {
     this.image = image;
+    this.images = [image];
     this.handlers = new Map();
     this.tooltips = [];
     this.contextMenus = [];
@@ -276,6 +279,7 @@ class FakeTray {
   setContextMenu(menu) { this.contextMenus.push(menu); }
   popUpContextMenu(menu) { this.poppedMenus.push(menu); }
   setTitle(text) { this.titles.push(text); }
+  setImage(image) { this.images.push(image); this.image = image; }
   on(event, fn) {
     if (!this.handlers.has(event)) this.handlers.set(event, []);
     this.handlers.get(event).push(fn);
@@ -308,6 +312,18 @@ Module._load = function (request) {
 };
 
 const ORIGINAL_PLATFORM = process.platform;
+// 顶栏合成图桩：tray 只关心「拿到图 / 拿到 null」，真实拼图与落盘由 metric-bar-image.test.js 覆盖
+const BAR_PATH = path.join(SRC, 'metric-bar-image.js');
+let barAvailable = true;
+require.cache[BAR_PATH] = {
+  id: BAR_PATH, filename: BAR_PATH, loaded: true, children: [], paths: [],
+  exports: {
+    MetricBarImage: class {
+      imageFor(parts) { return barAvailable ? { label: 'composed', parts } : null; }
+    },
+  },
+};
+
 function loadTray(platform) {
   Object.defineProperty(process, 'platform', { value: platform, configurable: true });
   delete require.cache[require.resolve(TRAY_PATH)];
@@ -327,6 +343,21 @@ function loadTray(platform) {
   check('mac 顶栏 setTitle 生效', tray.titles[tray.titles.length - 1] === 'CPU 23%');
   trayModule.setTrayTitle('');
   check('mac 取消全部勾选后清除顶栏文字', tray.titles[tray.titles.length - 1] === '');
+
+  // mac 顶栏合成图（对齐 Swift 的 SF Symbol 效果）优先于纯文字标题
+  const parts = [{ metric: 'cpu', symbol: 'cpu', text: '23%' }];
+  trayModule.setTrayTitle(`${METRIC_ICONS.cpu}23%`, parts);
+  const composedImg = tray.images[tray.images.length - 1];
+  check('mac 拿到 parts 时走 setImage 合成整条（猫+SF Symbol+数字）', composedImg.label === 'composed' && composedImg.parts === parts);
+  check('合成图接管后 setTitle 置空（不能图里已有数字、标题又出一份）', tray.titles[tray.titles.length - 1] === '');
+  barAvailable = false;
+  trayModule.setTrayTitle(`${METRIC_ICONS.cpu}23%`, parts);
+  check('瓦片不可用时回落纯文字标题（不比原生更差）', tray.titles[tray.titles.length - 1] === `${METRIC_ICONS.cpu}23%`);
+  const restored = tray.images[tray.images.length - 1];
+  check('回落时把猫图标换回 setImage（否则合成图一直挂着）', restored !== composedImg && restored.isTemplate === true);
+  barAvailable = true;
+  trayModule.setTrayTitle('', []);
+  check('无指标不合成图，顶栏只剩猫图且文字清空', tray.titles[tray.titles.length - 1] === '');
   const tpl = trayModule.buildMenuTemplate({
     isPetVisible: () => true,
     version: '0.0.1',

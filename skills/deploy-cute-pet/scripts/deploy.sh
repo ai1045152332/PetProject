@@ -28,8 +28,8 @@ fail() { say "❌ $*"; exit 1; }
 [ -d "$APP_DIR" ] || fail "未找到 App 目录：$APP_DIR（可用 CUTE_PET_REPO 指定仓库路径）"
 [ -x "$APP_DIR/release.sh" ] || fail "未找到可执行 release.sh：$APP_DIR/release.sh"
 [ -f "$KEY_DIR/ed25519_private.pem" ] || fail "缺少发布签名私钥：$KEY_DIR/ed25519_private.pem"
-if [ ! -x "$KEY_DIR/scp_put.exp" ] || [ ! -x "$KEY_DIR/ssh_run.exp" ]; then
-  fail "缺少上传助手脚本：$KEY_DIR/{scp_put,ssh_run}.exp"
+if [ ! -x "$KEY_DIR/scp_put.exp" ]; then
+  say "ℹ️ 无 expect 上传助手，将使用 paramiko（python3 + ~/.catpaw/pylibs）"
 fi
 curl -sf --max-time 8 "$SERVER/api/ping" >/dev/null || fail "服务器不可达：$SERVER/api/ping"
 
@@ -130,6 +130,10 @@ if data.get("dmgFile"):
     dmg_note = data["dmgFile"]
 
 print(f"✅ 发布验证通过：{data['version']} | zip {data['file']} | dmg {dmg_note} | {data['sha256'][:16]}…")
+
+# Windows 通道不能被这次 mac 发布挤掉（latest.json 是三条通道共用的一个文件）
+win_note = data.get("winVersion") or "（尚未发布 Windows 版）"
+print(f"   Windows 通道：{win_note}")
 PY
 
 # ── 5. 可选：提交并推送 git ─────────────────────────────────

@@ -1,11 +1,11 @@
 {
   "name": "desktop-pet-electron",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "跨平台桌面宠物（Electron 版）— P0 悬浮窗",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
-    "test": "node tests/update-heartbeat.test.js && node tests/settings-panel.test.js && node tests/custom-sprite.test.js && node tests/on-top-guard.test.js && node tests/tray-interaction.test.js && node tests/sysinfo-menu.test.js && node tests/pet-context-menu.test.js && node tests/sprite-frames.test.js && node tests/pet-drag.test.js && node tests/todo.test.js",
+    "test": "node tests/update-heartbeat.test.js && node tests/settings-panel.test.js && node tests/custom-sprite.test.js && node tests/on-top-guard.test.js && node tests/tray-interaction.test.js && node tests/sysinfo-menu.test.js && node tests/metric-bar-image.test.js && node tests/pet-context-menu.test.js && node tests/sprite-frames.test.js && node tests/pet-drag.test.js && node tests/focus-edge.test.js && node tests/todo.test.js && node tests/news-weather.test.js && node tests/access-weather-reminder.test.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64",
@@ -20,6 +20,10 @@
   "build": {
     "appId": "com.petproject.desktoppet",
     "productName": "DesktopPet",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "directories": {
       "buildResources": "packaging",
       "output": "dist"
@@ -39,8 +43,7 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ]
     },
     "nsis": {

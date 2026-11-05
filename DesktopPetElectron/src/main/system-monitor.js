@@ -12,7 +12,10 @@
 // - 网络：物理接口（mac en* / Win 以太网）收发字节差值 ÷ 时间窗 → KB/s，1s 缓存
 // 原生菜单放不了 AppKit 的环形图自定义 view，环形图数据以「展示行」文本呈现；
 // 顶栏指标图标：Swift 用 SF Symbol（cpu/memorychip/internaldrive/arrow.up.arrow.down），
-// Electron 的 tray.setTitle 只收纯字符串（无富文本/attachment API），用单色 Unicode 字形等价替代。
+// Electron 的 tray.setTitle 只收纯字符串（无富文本/attachment API），所以两条路：
+// - 首选：mac 下由 metric-bar-image 把同一套 SF Symbol 导出的瓦片与数字拼成整条模板图走 setImage；
+//   worker 回传的结构化 parts（{metric, symbol, text}）就是它的输入，口径与 Swift 的 parts 一致；
+// - 回落：瓦片素材缺失/系统版本对不上时，用单色 Unicode 字形（METRIC_ICONS）继续 setTitle。
 // 「一键清理内存」依赖 macOS 专属 purge 与解锁权限（AccessControl），Electron 跨平台版暂不移植。
 // 顶栏标题不在本类定时刷新：由 sysinfo-worker 每秒算好回传（主进程零采集零阻塞）。
 'use strict';
@@ -34,6 +37,8 @@ const DEFAULT_CACHE_S = { cpu: 1, mem: 2, disk: 10, net: 1 };
 // 顶栏图标（对齐 Swift refreshMenuBarMetrics 的 SF Symbol 顺序）：▣ cpu  ▤ memorychip  ◉ internaldrive  ⇅ arrow.up.arrow.down
 // 这四个字形菜单栏字体本身不含，但系统会回退到 AppleSymbols/HiraKaku 等（已用 CTFontCreateForString 逐个验证）
 const METRIC_ICONS = { cpu: '\u25a3', mem: '\u25a4', disk: '\u25c9', net: '\u21c5' };
+// 指标 → Swift 侧用的 SF Symbol 名（写进 parts 供文档与素材对照，瓦片键用 metric）
+const METRIC_SYMBOLS = { cpu: 'cpu', mem: 'memorychip', disk: 'internaldrive', net: 'arrow.up.arrow.down' };
 const GB = 1e9;
 
 const clampPct = (v) => Math.min(Math.max(v, 0), 100);
@@ -468,27 +473,46 @@ class SysInfoMonitor {
   trayTitle(snap = this.snapshotCached()) {
     return computeTrayTitle(snap, (m) => this.isEnabled(m));
   }
+
+  /** 顶栏结构化指标（mac 合成图用；与 trayTitle 同一份数据，不会出现两种口径） */
+  trayParts(snap = this.snapshotCached()) {
+    return computeTrayParts(snap, (m) => this.isEnabled(m));
+  }
 }
 
-/** 纯函数版顶栏标题（worker 子进程与主进程共用，isEnabled 由调用方注入）
+/** 纯函数版顶栏指标（worker 子进程与主进程共用，isEnabled 由调用方注入）
+ *  与 Swift refreshMenuBarMetrics 逐项对齐：勾选且采到值才出一项，数值取整 */
+function computeTrayParts(snap, isEnabled) {
+  const parts = [];
+  if (isEnabled('cpu') && snap.cpu) parts.push({ metric: 'cpu', symbol: METRIC_SYMBOLS.cpu, text: `${Math.round(snap.cpu.percent)}%` });
+  if (isEnabled('mem') && snap.mem) parts.push({ metric: 'mem', symbol: METRIC_SYMBOLS.mem, text: `${Math.round(snap.mem.percent)}%` });
+  if (isEnabled('disk') && snap.disk) parts.push({ metric: 'disk', symbol: METRIC_SYMBOLS.disk, text: `${Math.round(snap.disk.percent)}%` });
+  if (isEnabled('net') && snap.net) {
+    parts.push({
+      metric: 'net',
+      symbol: METRIC_SYMBOLS.net,
+      text: `${Math.round(snap.net.downKBps)}K/${Math.round(snap.net.upKBps)}K`,
+    });
+  }
+  return parts;
+}
+
+/** 纯函数版回落标题（无合成图素材时用）
  *  格式对齐 Swift：图标紧跟数值，指标之间两个空格（无勾选返回空串） */
 function computeTrayTitle(snap, isEnabled) {
   if (!METRICS.some(isEnabled)) return '';
-  const parts = [];
-  if (isEnabled('cpu') && snap.cpu) parts.push(`${METRIC_ICONS.cpu}${Math.round(snap.cpu.percent)}%`);
-  if (isEnabled('mem') && snap.mem) parts.push(`${METRIC_ICONS.mem}${Math.round(snap.mem.percent)}%`);
-  if (isEnabled('disk') && snap.disk) parts.push(`${METRIC_ICONS.disk}${Math.round(snap.disk.percent)}%`);
-  if (isEnabled('net') && snap.net) parts.push(`${METRIC_ICONS.net}${Math.round(snap.net.downKBps)}K/${Math.round(snap.net.upKBps)}K`);
-  return parts.join('  ');
+  return computeTrayParts(snap, isEnabled).map((p) => `${METRIC_ICONS[p.metric]}${p.text}`).join('  ');
 }
 
 module.exports = {
   SysInfoMonitor,
   METRICS,
   METRIC_ICONS,
+  METRIC_SYMBOLS,
   PREF_KEYS,
   platformReaders,
   computeTrayTitle,
+  computeTrayParts,
   parseCpuTop,
   parseCpuTopLine,
   ensureCpuStream,

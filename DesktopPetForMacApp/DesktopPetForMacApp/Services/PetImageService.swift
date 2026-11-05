@@ -32,8 +32,13 @@ struct PetImageLibrary: Decodable {
 
     var selections: [String: String] {
         // States absent from the server are left untouched, preserving existing local uploads.
+        // 仅老“单张共享图”协议（服务端没记逐状态 currentIds、只有共享 currentId）才展开：
+        // 把共享图铺到每个状态（含升级后新增的 hide）。
         var result = currentIds ?? [:]
-        if !currentId.isEmpty || (selectionVersion ?? 0) > 0 {
+        // 逐状态选中时代（currentIds 已存在）里缺某个状态 = 服务端从没记录过它（如旧批次没有 hide）；
+        // 绝不能拿空的 currentId 伪造成“恢复默认”，否则升级会抹掉用户该状态的选图。
+        // 服务端真正的“显式恢复默认”会把状态写成空串留在 currentIds 里，照常透传。
+        if currentIds == nil, !currentId.isEmpty {
             for state in CatAnimationState.allCases where result[state.rawValue] == nil {
                 result[state.rawValue] = currentId
             }

@@ -6,6 +6,7 @@
 
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
+const { snapToEdgeForHiding } = require('./edge-snap');
 
 const BASE_SIZE = 200;   // 精灵图原始尺寸（assets/Sprites/*/frame_00.png 均为 200×200）
 const EDGE_MARGIN = 40;  // 初始位置距屏幕右下角的距离
@@ -132,6 +133,8 @@ function createPetWindow({ scale = 1 } = {}) {
 /**
  * 调整宠物大小：以右下角为锚点缩放，避免小猫"跳"到别处；
  * 缩放后若超出所在显示器工作区，就贴边显示（防止放大到 2x 时被挡住看不见）。
+ * 躲藏中改大小（对齐 mac 版 resizeWindow 的重新吸附）：保持原来贴的那条边，
+ * 按新尺寸重新吸附，别让半个身子跑到屏外或整只回到屏内。
  * @param {BrowserWindow} win
  * @param {number} scale 0.5~2.0
  */
@@ -144,10 +147,27 @@ function applyPetScale(win, scale) {
   let nextY = y + h - size;
 
   const area = screen.getDisplayMatching({ x: nextX, y: nextY, width: size, height: size }).workArea;
+  const current = { x: nextX, y: nextY, width: size, height: size };
+  // 缩放前已经整边贴在工作区左/右边 = 躲藏态（贴边吸附就是把窗口推到边上）
+  const flushLeft = Math.abs(nextX - area.x) < 2;
+  const flushRight = Math.abs(nextX + size - (area.x + area.width)) < 2;
+  if (flushLeft || flushRight) {
+    const snapped = snapToEdgeForHiding({
+      bounds: current,
+      area,
+      requiresNearEdge: false,
+    });
+    if (snapped) {
+      win.setBounds(snapped.bounds);
+      return snapped;
+    }
+  }
+
   nextX = Math.min(Math.max(nextX, area.x), area.x + area.width - size);
   nextY = Math.min(Math.max(nextY, area.y), area.y + area.height - size);
 
   win.setBounds({ x: nextX, y: nextY, width: size, height: size });
+  return null;
 }
 
 /**

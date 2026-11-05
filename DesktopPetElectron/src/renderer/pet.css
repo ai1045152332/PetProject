@@ -25,3 +25,15 @@ html, body {
   image-rendering: auto;
   -webkit-user-drag: none;
 }
+
+/* 贴边躲藏：主进程已把窗口整边对齐到屏幕侧边，这里把画面钉在同一条边，
+   让躲藏素材的裁切边（左侧）正好落在屏幕边上，看起来像身体被屏幕挡住；
+   贴右边时镜像（与 mac 版 facing == .right 用 flippedFrames 一致） */
+#cat.hide-left {
+  left: 0;
+}
+
+#cat.hide-right {
+  right: 0;
+  transform: scaleX(-1);
+}

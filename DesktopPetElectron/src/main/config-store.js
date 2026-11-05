@@ -18,6 +18,14 @@ const DEFAULTS = {
   lastUpdateCheckAt: 0, // 上次检查更新的时间戳（毫秒）
   winTrayHintShown: false, // Windows 是否已弹过「托盘图标被折进通知区」的引导气泡（只弹一次）
   todoReminderRepeatMinutes: 5, // 同一条 Todo 到期后重复提醒的间隔（分钟，对标 mac 版 settings.todoReminder.repeatMinutes）
+  // 权限控制（对标 mac 版 AccessControl：settings.accessLevel / settings.accessCode）
+  accessLevel: '', // 'full' = 校验码解锁全部功能；空 = 基础权限
+  accessCode: '', // 解锁时用的服务端激活码（本地后门码不记录，供定时复核）
+  // 每日天气提醒（对标 mac 版 WeatherReminderService，需解锁后才能开启）
+  weatherReminderEnabled: false,
+  weatherReminderHour: 8, // 0~23
+  weatherReminderMinute: 0, // 0~59
+  weatherReminderCity: '', // 留空按 IP 定位
   // 托盘「系统信息」勾选：指标是否显示在顶栏（键名对齐 mac 原生版 UserDefaults 的 menuBar.show*）
   'menuBar.showCPU': false,
   'menuBar.showMemory': false,
@@ -57,4 +65,11 @@ function set(key, value) {
   save(data);
 }
 
-module.exports = { load, save, get, set, DEFAULTS };
+/** 删除一个键（权限清除时用，避免留残留值） */
+function remove(key) {
+  const data = load();
+  delete data[key];
+  save(data);
+}
+
+module.exports = { load, save, get, set, remove, DEFAULTS };

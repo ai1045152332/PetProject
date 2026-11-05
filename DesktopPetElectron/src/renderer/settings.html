@@ -43,7 +43,7 @@
 
           <div class="card">
             <div class="card-title">形象</div>
-            <div class="card-desc">点缩略图切换当前动画，再为选中的状态上传你自己的小猫图；图片存本地，App 更新后依然保留</div>
+            <div class="card-desc">点缩略图切换当前动画，再为选中的状态上传你自己的小猫图；图片存本地，App 更新后依然保留。「躲藏」（虚线格）是拖到屏幕侧边或右键「躲起来」时的探头形象，可以换图但不能手动切换</div>
             <div class="sprite-grid" id="sprite-grid"></div>
             <div class="sprite-actions" id="sprite-actions"></div>
             <div class="hint" id="sprite-hint"></div>
@@ -88,9 +88,21 @@
             </div>
           </div>
 
-          <div class="card todo">
-            <div class="card-title">权限（本期不做）</div>
-            <div class="card-desc">mac 版用校验码解锁天气、AI 生成等付费能力</div>
+          <!-- 权限（对标 mac 版通用设置 > 权限：校验码解锁天气/新闻等按量付费能力） -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">权限</div>
+                <div class="card-desc">输入校验码解锁全部功能；如需获取校验码，请添加微信：Ideal2020life</div>
+              </div>
+              <span class="value" id="access-status">基础权限</span>
+            </div>
+            <div class="row" id="access-row">
+              <input id="access-code" class="text-input" type="password" maxlength="32" placeholder="输入校验码" autocomplete="off" />
+              <button class="primary" id="unlock-access" type="button">解锁</button>
+              <button class="ghost push-right" id="clear-access" type="button" hidden>清除权限</button>
+            </div>
+            <div class="hint" id="access-hint"></div>
           </div>
         </section>
 
@@ -125,9 +137,22 @@
             <div class="hint" id="hint">可填 1～120 分钟，回车或点「应用」生效</div>
           </div>
 
-          <div class="card todo">
-            <div class="card-title">天气提醒（本期不做）</div>
-            <div class="card-desc">每天定时播报天气，mac 版需校验码解锁（天气接口按量付费）</div>
+          <!-- 每日天气提醒（对标 mac 版天气提醒卡片：需解锁后才能开，天气接口按量付费） -->
+          <div class="card" id="weather-rem-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">天气提醒</div>
+                <div class="card-desc" id="weather-rem-desc">打开开关后，每天在你选择的时间提醒今天的天气</div>
+              </div>
+              <button class="switch" id="weather-rem-toggle" type="button" aria-pressed="false"><span></span></button>
+            </div>
+            <div class="row">
+              <input id="weather-rem-time" class="text-input weather-time" type="time" value="08:00" />
+              <span class="unit">每天提醒时间（24 小时制）</span>
+              <input id="weather-rem-city" class="text-input" type="text" maxlength="40" placeholder="城市（留空按定位）" autocomplete="off" />
+              <button class="ghost" id="weather-rem-preview" type="button">预览</button>
+            </div>
+            <div class="hint" id="weather-rem-hint"></div>
           </div>
 
           <div class="card todo">
@@ -140,12 +165,14 @@
         <section class="section" data-section="menu">
           <div class="section-head">
             <div class="section-title">🖱️ 菜单设置</div>
-            <div class="section-desc">宠物右键菜单展示项</div>
+            <div class="section-desc">勾选宠物右键菜单中展示的功能项，取消勾选后菜单不再显示</div>
           </div>
-          <div class="card todo">
-            <div class="card-title">右键菜单（本期不做）</div>
-            <div class="card-desc">mac 版可勾选右键菜单里要展示的功能项；本版宠物窗还没有右键菜单（路线图 P3）</div>
+          <div class="card">
+            <!-- 菜单项复选框两列排布（对齐 mac 版 fillMenuSettingsSection）-->
+            <div class="menu-grid" id="menu-grid"></div>
           </div>
+          <div class="hint" id="menu-hint"></div>
+          <div class="form-note">注：「关闭 ❌」与「解锁更多功能 🔓」为固定项，始终展示</div>
         </section>
 
         <!-- ── 好友消息 ───────────────────────────── -->

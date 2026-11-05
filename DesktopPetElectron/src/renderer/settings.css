@@ -291,9 +291,11 @@ body {
 }
 
 /* ── 形象（缩略图网格 + 选中态操作条）───────── */
+/* 形象格：四个可切换态 + 躲藏态，共 5 格；
+   用 auto-fit 而不是固定 4 列，避免多出一格孤零零掉到第二行 */
 .sprite-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 10px;
   margin-top: 12px;
 }
@@ -350,6 +352,28 @@ body {
   background: var(--accent);
 }
 
+/* 宠物此刻正在播的形象：左上角绿点（与右上的自定义圆点错开）。
+   选中框只表示「上传/恢复默认针对这一格」，两者在躲藏格上会不一致 */
+.sprite-tile.playing::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--switch-on);
+}
+
+/* 躲藏态：能预览、能换图，但只能由贴边吸附 / 右键「躲起来」触发，
+   用虚线框与普通态区分（仍可点击选中，所以不用 disabled） */
+.sprite-tile.locked {
+  border-style: dashed;
+  background: transparent;
+}
+
+.sprite-tile.locked .sprite-thumb { opacity: 0.72; }
+
 .sprite-actions {
   display: flex;
   align-items: center;
@@ -402,6 +426,24 @@ body {
 .text-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-18);
+}
+
+/* 锁定时置灰不可编辑（对齐 mac 版 refreshWeatherControls 的控件禁用态） */
+.text-input:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* 天气提醒：时间输入按文本宽度收缩，剩余给城市输入框 */
+.weather-time {
+  flex: 0 0 auto;
+  width: 96px;
+}
+
+/* 需解锁提示：橙色警示（对齐 mac 版 systemOrange 描述文案） */
+.card-desc.locked {
+  color: #e8a33d;
 }
 
 .custom {
@@ -599,6 +641,39 @@ html.dark .preset {
 html.dark .preset:hover { background: rgba(255, 255, 255, 0.14); }
 
 html.dark .slider::-webkit-slider-runnable-track { background: rgba(255, 255, 255, 0.2); }
+
+/* ── 菜单设置：右键菜单项复选框 ─────────────── */
+/* mac 版把开关项排成两列（card 内 rowH=34），这里用 grid 复现：窄屏退成一列 */
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.menu-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--label);
+  cursor: pointer;
+}
+
+.menu-check input {
+  /* 勾选框跟随系统强调色，与 mac 版 NSButton(checkboxWithTitle:) 一致 */
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* 分区底部的固定说明（与可变的 .hint 反馈行分开，对应 mac 版 noteLbl） */
+.form-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--label-tertiary);
+}
 
 /* ── 开关 ─────────────────────────────────── */
 /* mac 版 ToggleSwitch：开 = systemGreen，关 = systemGray，白钮带阴影 */

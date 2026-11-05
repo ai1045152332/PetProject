@@ -155,6 +155,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.settingsPanel?.showGeneralAndFlashAccess()
             }
         }
+
+        // 10.1 宠物右键「设置…」：与菜单栏「设置」共用同一面板入口
+        NotificationCenter.default.addObserver(
+            forName: .init("DesktopPet.ShowSettings"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.showSettings(nil)
+            }
+        }
     }
     
     // MARK: - 菜单栏

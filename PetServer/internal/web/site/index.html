@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>cute pet · macOS 桌面宠物</title>
-  <meta name="description" content="cute pet —— 一只住在 macOS 桌面最上层的虚拟宠物。精灵动画、鼠标互动、喝水提醒、天气股票新闻 Todo、背单词与 LeetCode 热题，一只能在桌面上陪你工作的宠物。" />
+  <title>cute pet · macOS &amp; Windows 桌面宠物</title>
+  <meta name="description" content="cute pet —— 一只住在 macOS / Windows 桌面最上层的虚拟宠物。精灵动画、鼠标互动、喝水提醒、天气股票新闻 Todo、背单词与 LeetCode 热题，一只能在桌面上陪你工作的宠物。Windows 版支持应用内自动更新。" />
   <style>
     :root {
       --bg: #0f1020;
@@ -72,6 +72,14 @@
     }
     .btn-dl:hover { transform: translateY(-2px); box-shadow: 0 20px 44px rgba(255, 138, 107, .44); }
     .btn-dl svg { width: 22px; height: 22px; }
+    /* Windows 版按钮：次级样式，服务端下发 winFile 后由脚本显示 */
+    .btn-dl.secondary {
+      background: rgba(255, 255, 255, .07); color: var(--text);
+      border: 1px solid rgba(255, 255, 255, .18);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, .28);
+    }
+    .btn-dl.secondary:hover { box-shadow: 0 16px 34px rgba(0, 0, 0, .36); }
+    [data-win][hidden] { display: none !important; }
     .btn-ghost { color: var(--muted); font-size: 15px; padding: 14px 4px; }
     .btn-ghost:hover { color: var(--text); }
     .meta { margin-top: 16px; color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -189,7 +197,7 @@
 
   <header class="wrap hero">
     <div>
-      <span class="eyebrow">🐾 macOS 桌面虚拟宠物 · 纯 Swift 打造</span>
+      <span class="eyebrow">🐾 macOS &amp; Windows 桌面虚拟宠物</span>
       <h1>一只住在桌面上的<br><span class="grad">宠物伙伴</span></h1>
       <p class="lead">cute pet 悬浮在桌面最上层，会呼吸、能抚摸、可喂猫条，还会主动凑过来搭句话。喝水提醒、天气、股票、新闻、Todo 随手可得，背单词和 LeetCode 热题陪你摸鱼充电，加上宠物好友还能互发消息——工作之余，它一直在你身边。</p>
       <div class="cta-row">
@@ -197,12 +205,17 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
           下载 macOS 版
         </a>
+        <a class="btn-dl secondary" href="#" data-download-win data-win hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          下载 Windows 版
+        </a>
         <a class="btn-ghost" href="#features">了解更多 ↓</a>
       </div>
       <div class="meta">
         <span id="verLabel">正在获取最新版本…</span>
-        <span class="dot"></span><span>需 macOS 13.0+</span>
+        <span class="dot"></span><span>macOS 13.0+ / Windows 10/11</span>
         <span class="dot"></span><span id="sizeLabel">约 4.1 MB</span>
+        <span class="dot" data-win hidden></span><span data-win hidden id="winMetaLabel"></span>
       </div>
     </div>
     <div class="hero-art">
@@ -221,11 +234,11 @@
       <div class="card"><div class="ico">🎬</div><h3>精灵图动画</h3><p>专注 / 休闲 / 睡觉 / 抚摸 / 躲藏 5 种形象，帧循环驱动 + 渲染层呼吸效果；喝水提醒时复用专注形象，看着就治愈。</p></div>
       <div class="card"><div class="ico">🐾</div><h3>摸摸 & 喂猫条</h3><p>点一下就提醒，右键抚摸；「喂猫条」让宠物追着你的光标走，互动感拉满。</p></div>
       <div class="card"><div class="ico">💧</div><h3>喝水提醒</h3><p>按设定间隔（15 / 30 / 45 / 60 分钟，或自己填）自动弹窗提醒，同时播一段专注动画，久坐党记得抬头喝口水。</p></div>
-      <div class="card"><div class="ico">📊</div><h3>菜单栏系统监控</h3><p>CPU / 内存 / 磁盘 / 网络实时可见，还能一键清理内存，给 Mac 减减负。</p></div>
+      <div class="card"><div class="ico">📊</div><h3>菜单栏系统监控</h3><p>CPU / 内存 / 磁盘 / 网络实时可见，还能一键清理内存，给电脑减减负。</p></div>
       <div class="card"><div class="ico">🔄</div><h3>自动更新</h3><p>内置 Ed25519 验签的静默更新，新版本自动下载校验替换，宠物无缝回来。</p></div>
       <div class="card"><div class="ico">💬</div><h3>主动搭话</h3><p>按你定的间隔主动开口：随机播报一条今日热搜，或提醒还没做完的待办；你开勿扰、它睡着或躲起来时自动闭嘴。</p></div>
       <div class="card"><div class="ico">👫</div><h3>宠物好友互发消息</h3><p>每只宠物都有一个专属宠物号，互加好友就能留言。对方发来的消息会变成桌面上的常驻卡片，不点关闭它就一直陪着。</p></div>
-      <div class="card"><div class="ico">🎧</div><h3>专注跟随 &amp; 自动打盹</h3><p>只读检测 macOS 勿扰 / 专注模式：你一专注，它也换成专注形象安静陪着；半小时没有动静，就自己睡着。</p></div>
+      <div class="card"><div class="ico">🎧</div><h3>专注跟随 &amp; 自动打盹</h3><p>只读检测系统勿扰 / 专注模式：你一专注，它也换成专注形象安静陪着；半小时没有动静，就自己睡着。</p></div>
     </div>
   </section>
 
@@ -284,20 +297,23 @@
 
   <section id="install" class="wrap">
     <div class="sec-head">
-      <h2>三步把宠物接回家</h2>
-      <p>纯 Swift 开发，无第三方依赖，下载安装即用。</p>
+      <h2>三步把宠物接回家（macOS）</h2>
+      <p>macOS 版纯 Swift 开发，无第三方依赖；Windows 版基于 Electron，两端功能一致，下载安装即用。</p>
     </div>
     <div class="steps">
       <div class="step"><div class="num">1</div><h3>下载 dmg</h3><p>点上面的「下载 macOS 版」，会得到一个 <code>cute-pet-*.dmg</code> 文件。</p></div>
       <div class="step"><div class="num">2</div><h3>拖到「应用程序」</h3><p>双击打开 dmg，把左边的 <code>cute pet</code> 图标拖到右边的 <code>Applications</code> 文件夹上松手——和装其他 Mac 软件一样。</p></div>
       <div class="step"><div class="num">3</div><h3>打开宠物</h3><p>到「启动台」或「应用程序」里双击 <code>cute pet</code>。若提示「无法验证开发者」，右键点图标 → 选「打开」即可。</p></div>
     </div>
+    <p class="win-tip" data-win hidden style="margin-top:26px;color:var(--muted);font-size:15px;line-height:1.8;">
+      🪟 <strong>Windows 用户</strong>：点上方「下载 Windows 版」得到一个 <code>desktop-pet-win-*-setup.exe</code>，双击安装即可（需 Windows 10/11 x64）。安装版内置自动更新，新版本会自动提示升级；未签名的安装包首次启动可能弹 SmartScreen 提醒，选「更多信息 → 仍要运行」即可。
+    </p>
   </section>
 
   <section class="wrap">
     <div class="final">
       <h2>让宠物住进你的桌面 🐈</h2>
-      <p>免费、开源、纯本地运行。下载开始，你的第一只 macOS 桌面宠物。</p>
+      <p>免费、开源、纯本地运行。下载开始，你的第一只桌面宠物。</p>
       <a class="btn-dl" href="#" data-download>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
         下载最新版 <span id="verBtn"></span>
@@ -313,7 +329,7 @@
         <a href="#install">安装</a>
         <a href="https://github.com/ai1045152332/PetProject" target="_blank" rel="noopener">GitHub</a>
       </div>
-      <div>© 2026 cute pet · MIT License · 支持 macOS 13.0+（Ventura 及以上）</div>
+      <div>© 2026 cute pet · MIT License · 支持 macOS 13.0+（Ventura 及以上）与 Windows 10/11</div>
     </div>
   </footer>
 
@@ -344,6 +360,25 @@
       if (sizeLabel && size) sizeLabel.textContent = fmtSize(size);
       var verBtn = document.getElementById("verBtn");
       if (verBtn) verBtn.textContent = info.version;
+
+      // Windows 通道：服务端下发了 winFile 才显示按钮/文案，否则全部隐藏（不误导用户）
+      var winNodes = document.querySelectorAll("[data-win]");
+      if (info.winFile) {
+        var winURL = API_BASE + "/download/" + encodeURIComponent(info.winFile);
+        document.querySelectorAll("[data-download-win]").forEach(function (a) {
+          a.setAttribute("href", winURL);
+          a.setAttribute("download", info.winFile);
+          a.removeAttribute("hidden");
+        });
+        winNodes.forEach(function (n) { n.removeAttribute("hidden"); });
+        var winMeta = document.getElementById("winMetaLabel");
+        if (winMeta) {
+          var wv = String(info.winVersion || "").replace(/^electron/i, "");
+          winMeta.textContent = "Windows 版 " + wv + (info.winSize ? " · " + fmtSize(info.winSize) : "");
+        }
+      } else {
+        winNodes.forEach(function (n) { n.setAttribute("hidden", ""); });
+      }
     }
 
     // 先设兜底链接，保证即使接口失败下载按钮也可用
@@ -354,8 +389,11 @@
       .then(function (r) { return r.ok ? r.json() : Promise.reject("http " + r.status); })
       .then(function (j) {
         if (j && j.code === 0 && j.data && j.data.file) {
-          applyRelease({ version: j.data.version, file: j.data.file, size: j.data.size,
-                         dmgFile: j.data.dmgFile, dmgSize: j.data.dmgSize });
+          applyRelease({
+            version: j.data.version, file: j.data.file, size: j.data.size,
+            dmgFile: j.data.dmgFile, dmgSize: j.data.dmgSize,
+            winVersion: j.data.winVersion, winFile: j.data.winFile, winSize: j.data.winSize
+          });
         }
       })
       .catch(function () {

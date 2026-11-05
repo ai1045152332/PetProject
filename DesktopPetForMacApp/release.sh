@@ -175,7 +175,7 @@ echo "6/6 上传到服务器…"
 # 远端执行/上传统一后端（expect 助手不可用时自动切 paramiko）
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck disable=SC1091
-source "$REPO_ROOT/skills/deploy-cute-pet/scripts/remote.sh"
+source "$REPO_ROOT/skills/cute-pet-deploy/scripts/remote.sh"
 if [ ! -x "$HOME/.cute-pet-release/scp_put.exp" ]; then
   echo "ℹ️ 无 expect 上传助手，将使用 paramiko（python3 + ~/.catpaw/pylibs）"
 fi

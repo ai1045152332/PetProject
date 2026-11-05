@@ -41,12 +41,22 @@ npm start
 
 ### macOS 打包
 
+**推荐走脚本**（清旧产物 → 物化图标 → 打包，一步出 dmg）：
+
 ```bash
-# 本机无开发者证书时跳过签名，避免构建中断
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
+../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh        # → dist/DesktopPet-<版本>-arm64.dmg
+../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh --open # 打完自动挂载
 ```
 
-> 打出的 `.app` 未签名，首次打开需在「系统设置 → 隐私与安全性」里点「仍要打开」，或用 `xattr -dr com.apple.quarantine DesktopPet.app` 去隔离。
+手工跑 `npm run dist:mac` 时要带真实图标路径，否则 dmg 阶段会报
+`xattr.Set … .VolumeIcon.icns … no such file or directory`（`packaging/icon.icns` 是软链，electron-builder 不跟随）：
+
+```bash
+cp -L packaging/icon.icns /tmp/icon.icns
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac -- -c.dmg.icon=/tmp/icon.icns
+```
+
+> 打出的 `.app` 未签名（ad-hoc），首次打开需在「系统设置 → 隐私与安全性」里点「仍要打开」，或用 `xattr -dr com.apple.quarantine DesktopPet.app` 去隔离。
 
 ### Windows 打包
 
@@ -199,11 +209,11 @@ DesktopPetElectron/
 
 | 一级菜单 | 本版状态 | 内容 |
 |----------|----------|------|
-| 🐱 宠物信息 | 部分可用 | 形象网格 5 格（专注/休闲/睡觉/抚摸点击即时切帧 + 躲藏只读展示）✅、每格可上传自定义小猫图（存 userData，更新不丢）✅、宠物名称 ✅、宠物号展示 ✅ |
+| 🐱 宠物信息 | 可用 | 形象网格 5 格（专注/休闲/睡觉/抚摸点击即时切帧 + 躲藏只读展示）✅、每格可「直接上传」自定义小猫图（存本机，更新不丢）✅、「AI 生成所有状态图片」✅（需服务端激活码，一张照片逐状态各生成一张、整批扣 1 次配额，面板显示剩余次数）✅、「查看历史图片」窗 ✅（本机图与失败记录列表，应用/删除/重试）、宠物名称 ✅、宠物号展示 ✅ |
 | ⚙️ 通用设置 | 部分可用 | 开机自启 ✅、宠物大小 0.5x～2.0x ✅、版本号 + 检查更新 ✅、权限校验码解锁 ✅ |
-| 🔔 提醒设置 | 部分可用 | 喝水提醒 ✅（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）、每日天气提醒 ✅（需解锁，含时间/城市/预览）；主动搭话（本期不做） |
-| 🖱️ 菜单设置 | 本期不做 | 宠物右键菜单展示项（右键菜单已有基础项，展示配置过滤待做） |
-| 👫 好友消息 | 本期不做 | 宠物号展示 ✅；添加好友 / 消息列表待接入（服务端接口已就绪） |
+| 🔔 提醒设置 | 可用 | 喝水提醒 ✅（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）、每日天气提醒 ✅（需解锁，含时间/城市/预览）、主动搭话 ✅（开关 + 15/30/60 分钟预设，宠物头顶冒气泡） |
+| 🖱️ 菜单设置 | 可用 | 勾选宠物右键菜单要展示的功能项（抚摸 / Todo / 躲起来 / 新闻 / 天气），写盘即生效，下次弹菜单就应用 |
+| 👫 好友消息 | 可用 | 宠物号展示 + 复制 ✅、按宠物号发好友申请 ✅、待处理申请同意/拒绝 ✅、好友列表（聊天 / 删除）✅、会话聊天窗 ✅；新申请与新留言由心跳下发自动弹卡 |
 
 入口：
 
@@ -226,10 +236,26 @@ DesktopPetElectron/
 
 「宠物信息 → 形象」固定展示 5 格（`settings-service.panelPetStates()`）：四个可切换态 + `hide`。
 
-- 躲藏格（虚线框）能预览、能上传/恢复默认 `local-hide.png`，但点它不会切换形象：`settings:set-pet-state` 会用 `isSwitchablePetState` 拒掉 hide，因为窗口没吸附就切过去等于把半个身子留在屏外；进入躲藏只能拖到屏幕侧边或右键「躲起来」。
+- 躲藏格（虚线框）能预览、能上传/恢复默认 `local-hide.img`，但点它不会切换形象：`settings:set-pet-state` 会用 `isSwitchablePetState` 拒掉 hide，因为窗口没吸附就切过去等于把半个身子留在屏外；进入躲藏只能拖到屏幕侧边或右键「躲起来」。
 - 格子上两个圆点：左上绿点 = 宠物此刻正在播这一格，右上蓝点 = 这一格已上传自定义图；选中框只表示上传/恢复默认针对哪一格（因此躲藏格上三者会不一致）。
 - 面板开着时主进程会推 `settings:pet-state`，因此贴边躲藏 / 专注跟随 / 右键抚摸都会实时把「当前状态」刷成「躲藏中」。
 - 躲藏中从面板切其他形象会先调 `revealFromHiding` 把窗口收回屏内，再切帧目录。
+
+### 自定义状态图片（直接上传 / AI 生成 / 历史图片）
+
+与 mac 版同一套三层拆法（网络 / 编排 / 窗口各一层，互不引用）：
+
+| 文件 | 职责 |
+|------|------|
+| `src/main/pet-image-service.js` | 只负责 `/api/pet-images/*`：加密信封 `{code,deviceId,id,state}`、multipart 上传、生成轮询（单张 200 轮 / 整批 400 轮，间隔 3s） |
+| `src/main/pet-image-flow.js` | 业务编排与内存态：busy / 配额 / 阶段文案 / 历史图片快照，落盘一律交给 `custom-sprite-store.js` |
+| `src/main/pet-image-history-window.js` + `pet-history.*` | 820×580 单例历史窗：按状态筛选、左缩略图右详情，失败记录也是一张卡片 |
+| `src/main/image-meta.js` | 不装第三方图像库，直接按字节魔数解析 PNG/JPEG/GIF 宽高与帧数（上传与落盘两处共用同一门槛） |
+
+- 图片都存在 `CustomSprites` 目录（与 mac 版 App 共用，升级不丢）：`local-<state>.img` 直传图 + `cloud-<id>.img` AI 生成图，配 `local-selections.json` / `cloud-selections.json` 两份选中清单（空串 = 显式恢复默认）；优先级 local > cloud > legacy。
+- 归属与选中分开存：`cloud-states.json` 记「这张图是哪个状态生成的」（只记首次），换图 / 删除后历史图片仍按状态归类；`sprite-failures.json` 记各状态最近一次失败与服务端任务 ID，历史窗据此弹重试卡。
+- 直接上传、恢复默认、历史切图全部不依赖激活码；只有 AI 生成与重试需要服务端激活码（本地快捷码 456 不绑码，拿不到配额）。
+- `/api/pet-images/*` 的业务失败走 HTTP 400/403/429/503 + `{code,msg}`（与 social 接口一律 200 不同），因此非 200 也要先解 `msg`，“生成次数已用完”这类服务端文案才能原样显示在面板上。
 
 ## 自动更新 / 检查更新
 
@@ -266,8 +292,8 @@ Electron 版**只认带平台前缀的字段**，避免把 mac 原生 Swift 版�
 **推荐走脚本**（自动递增版本、只挑 NSIS 安装版、签名自检、合并写 manifest、上传后回读验证）：
 
 ```bash
-../skills/deploy-cute-pet/scripts/build-win-local.sh   # 只本地打包，自己试
-../skills/deploy-cute-pet/scripts/deploy-win.sh        # 发线上（官网可下载 + 客户端自动更新）
+../skills/cute-pet-deploy/scripts/build-win-local.sh   # 只本地打包，自己试
+../skills/cute-pet-deploy/scripts/deploy-win.sh        # 发线上（官网可下载 + 客户端自动更新）
 ```
 
 以下是手工等价做法，仅供理解流程（**手动改 latest.json 时必须合并，不能整体覆盖**，否则会挤掉 mac 原生版的更新通道）：
@@ -329,4 +355,4 @@ npm test          # tests/ 下 14 个用例文件依次跑（node 直跑、mock 
 
 - 资源（Sprites）从 `DesktopPetForMacApp` 拷贝而来，后续词库 / 题库接入方式相同。
 - 服务端 `PetServer`（Go）跨平台，心跳 / 版本接口与 mac 版共用（Electron 发布字段见上文「跨平台发布字段」）。
-- 设置面板已移植：喝水提醒、权限（校验码解锁）、每日天气提醒（需解锁，含时间/城市/预览）；主动搭话尚未移植。
+- 设置面板已移植：喝水提醒、主动搭话、菜单设置、每日天气提醒（需解锁）、权限（校验码解锁）、好友消息与聊天、自定义状态图片（直接上传 / AI 生成 / 历史图片）。

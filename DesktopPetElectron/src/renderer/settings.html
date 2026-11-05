@@ -42,10 +42,20 @@
           </div>
 
           <div class="card">
-            <div class="card-title">形象</div>
-            <div class="card-desc">点缩略图切换当前动画，再为选中的状态上传你自己的小猫图；图片存本地，App 更新后依然保留。「躲藏」（虚线格）是拖到屏幕侧边或右键「躲起来」时的探头形象，可以换图但不能手动切换</div>
+            <div class="card-head">
+              <div>
+                <div class="card-title">自定义状态图片</div>
+                <div class="card-desc" id="sprite-desc">直接上传：本机即时生效；AI 生成：上传一次，逐状态各生成一张 · 最大 10 MB</div>
+              </div>
+              <button class="ghost" id="pet-history" type="button">🗂 查看历史图片</button>
+            </div>
             <div class="sprite-grid" id="sprite-grid"></div>
             <div class="sprite-actions" id="sprite-actions"></div>
+            <!-- 底部工具条：AI 生成全部状态（左）+ 剩余次数/进度（右），对齐 mac 版 spriteRow 底部 -->
+            <div class="row ai-row">
+              <button class="primary" id="ai-generate" type="button">🪄 AI 生成所有状态图片</button>
+              <span class="value ai-status" id="ai-status"></span>
+            </div>
             <div class="hint" id="sprite-hint"></div>
           </div>
         </section>
@@ -110,7 +120,7 @@
         <section class="section" data-section="reminder">
           <div class="section-head">
             <div class="section-title">🔔 提醒设置</div>
-            <div class="section-desc">喝水提醒</div>
+            <div class="section-desc">喝水、天气提醒与主动搭话</div>
           </div>
 
           <div class="card">
@@ -155,9 +165,20 @@
             <div class="hint" id="weather-rem-hint"></div>
           </div>
 
-          <div class="card todo">
-            <div class="card-title">主动搭话（本期不做）</div>
-            <div class="card-desc">结合新闻 / Todo 定时冒泡陪伴，mac 版已支持间隔设置</div>
+          <!-- 主动搭话（对标 mac 版提醒设置卡片 3：开关 + 15/30/60 分钟预设，描述随开关联动） -->
+          <div class="card" id="chat-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">主动搭话</div>
+                <div class="card-desc" id="chat-desc">宠物会适时冒泡，结合热搜与你的 Todo 打个招呼（勿扰/睡觉时不打扰）</div>
+              </div>
+              <button class="switch" id="chat-toggle" type="button" aria-pressed="true"><span></span></button>
+            </div>
+            <div class="row">
+              <div class="presets" id="chat-presets"></div>
+              <span class="unit">分钟 / 次</span>
+            </div>
+            <div class="hint" id="chat-hint"></div>
           </div>
         </section>
 
@@ -179,19 +200,35 @@
         <section class="section" data-section="social">
           <div class="section-head">
             <div class="section-title">👫 好友消息</div>
-            <div class="section-desc">宠物号与好友互动</div>
+            <div class="section-desc">每只宠物都有一个专属宠物号。发好友申请需对方同意，同意后就能给对方留言</div>
           </div>
+
+          <!-- 卡片 1：我的宠物号（复制给别家宠物，对方发申请后互为好友） -->
           <div class="card">
             <div class="card-head">
               <span class="card-title">我的宠物号</span>
-              <span class="value strong" id="pet-no-social">未分配</span>
+              <div class="social-btns">
+                <button class="ghost" id="copy-pet-no" type="button">复制</button>
+                <button class="ghost" id="refresh-social" type="button">刷新</button>
+              </div>
             </div>
-            <div class="card-desc">把宠物号发给好友，就能互相串门、发消息</div>
+            <div class="value strong" id="pet-no-social">尚未分配</div>
           </div>
-          <div class="card todo">
-            <div class="card-title">好友与消息（本期不做）</div>
-            <div class="card-desc">添加好友、处理申请、互发消息，mac 版已支持；服务端接口已就绪，本版待接入</div>
+
+          <!-- 卡片 2：加好友（输入对方宠物号发申请） -->
+          <div class="card">
+            <div class="row inline">
+              <span class="card-title add-title">加好友</span>
+              <input id="add-friend-no" class="text-input" type="text" inputmode="numeric"
+                     maxlength="12" placeholder="输入对方宠物号" autocomplete="off" />
+              <button class="primary" id="add-friend" type="button">发申请</button>
+            </div>
           </div>
+
+          <!-- 好友与待处理申请列表：申请靠上（同意/拒绝），好友在下（聊天/删除） -->
+          <div class="list-title">好友与申请</div>
+          <div class="friends-list" id="friends-list"></div>
+          <div class="hint" id="social-hint"></div>
         </section>
 
       </div>

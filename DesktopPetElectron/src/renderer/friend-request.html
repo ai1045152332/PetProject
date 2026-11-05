@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>好友申请</title>
+  <!-- 复用提醒卡底板样式（.card / .header / .body），本功能只补申请行的排版差异 -->
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./friend-request.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title" id="title">好友申请 🐾</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="body">
+      <div class="icon">🐾</div>
+      <div class="text" id="text"></div>
+      <!-- 同意 / 拒绝：做出选择才建立（或取消）双向好友关系，只点 ✕ 表示本次先不处理 -->
+      <div class="actions">
+        <button type="button" class="accept-btn" id="acceptBtn">同意 ✅</button>
+        <button type="button" class="reject-btn" id="rejectBtn">拒绝 ✕</button>
+      </div>
+      <div class="tips">同意后你们互为好友，TA 才能给你发消息</div>
+    </div>
+  </div>
+  <script src="./friend-request.js"></script>
+</body>
+</html>

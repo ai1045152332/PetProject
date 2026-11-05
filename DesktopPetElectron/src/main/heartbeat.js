@@ -19,10 +19,13 @@ class HeartbeatService {
   /**
    * @param {object} [opts]
    * @param {() => string} [opts.getState] 返回宠物当前状态（focus/idel/sleep/pet/hide）
+   * @param {(data: object) => void} [opts.onDelivery] 心跳响应下发内容回调（宠物号 / 好友消息 / 好友申请）
    * @param {boolean} [opts.debug] 打印每次收发细节（HEARTBEAT_DEBUG=1 也可开启）
    */
-  constructor({ getState, debug = process.env.HEARTBEAT_DEBUG === '1' } = {}) {
+  constructor({ getState, onDelivery = null, debug = process.env.HEARTBEAT_DEBUG === '1' } = {}) {
     this.getState = getState || (() => 'idel');
+    // 下发内容交给外部处理（index.js 接 social-service），这里只负责「把 data 交出去」
+    this.onDelivery = onDelivery;
     this.timer = null;
     this.sending = false;
     this.sendStartedAt = 0;
@@ -116,10 +119,19 @@ class HeartbeatService {
       }
       // 响应里可能带宠物号（带 deviceId 首跳时服务端自动分配），先缓存下来供后续好友功能使用
       const json = await res.json().catch(() => null);
-      const petNo = json && json.data && json.data.petNo;
+      const data = json && json.data;
+      const petNo = data && data.petNo;
       if (Number.isInteger(petNo) && petNo > 0 && petNo !== config.get('petNo')) {
         config.set('petNo', petNo);
         console.log(`[heartbeat] 宠物号已分配: #${petNo}`);
+      }
+      // 服务端顺带回传待处理好友申请与好友留言（对齐 mac 版 HeartbeatService.consume）
+      if (this.onDelivery && data) {
+        try {
+          this.onDelivery(data);
+        } catch (e) {
+          console.warn(`[heartbeat] 下发内容处理失败: ${e.message}`);
+        }
       }
     } catch (e) {
       this.recordFailure(`上报失败: ${e.message}`);

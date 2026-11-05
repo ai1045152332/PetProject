@@ -1,9 +1,9 @@
 // src/main/index.js
 // DesktopPetElectron — 主进程入口
-// 职责：应用生命周期 + 创建宠物窗口 + 喝水提醒调度 + Todo 待办与到期提醒 + 心跳上报 + 自动更新 + 权限校验码 + 每日天气提醒 + IPC
+// 职责：应用生命周期 + 创建宠物窗口 + 喝水提醒调度 + Todo 待办与到期提醒 + 心跳上报 + 自动更新 + 权限校验码 + 每日天气提醒 + 主动搭话气泡 + IPC
 'use strict';
 
-const { app, BrowserWindow, Menu, ipcMain, globalShortcut, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, globalShortcut, dialog, shell, screen, clipboard } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { createPetWindow, applyPetScale, startOnTopGuard, createDragController } = require('./pet-window');
@@ -15,6 +15,7 @@ const {
   currentPetName,
   isValidPetState,
   isSwitchablePetState,
+  panelPetStates,
   HIDE_STATE,
 } = require('./settings-service');
 const { ReminderScheduler } = require('./reminder-scheduler');
@@ -32,6 +33,8 @@ const { SysInfoMonitor } = require('./system-monitor');
 const { startWorker, createCacheOnlySnapshot } = require('./sysinfo-worker');
 const { popupPetContextMenu, createPettingOneShot } = require('./pet-context-menu');
 const contextMenuPrefs = require('./context-menu-prefs');
+const { createSpeechBubble } = require('./speech-bubble');
+const { createProactiveChat } = require('./proactive-chat');
 const { startFocusModeMonitor, detectFocusMode, petStateForFocusMode } = require('./focus-mode-monitor');
 const { snapToEdgeForHiding, revealFromEdge } = require('./edge-snap');
 const { createCardWindow } = require('./card-window');
@@ -41,6 +44,26 @@ const access = require('./access-service');
 const { createWeatherReminder } = require('./weather-reminder');
 const { HeartbeatService } = require('./heartbeat');
 const { UpdateService } = require('./update-service');
+const { createSocialService } = require('./social-service');
+const {
+  setFriendChatAPI,
+  openFriendChat,
+  presentFriendMessages,
+  closeFriendChat,
+} = require('./friend-chat-window');
+const {
+  setFriendRequestHandlers,
+  openFriendRequestCard,
+  closeFriendRequestWindow,
+} = require('./friend-request-window');
+const { createPetImageService } = require('./pet-image-service');
+const { createPetImageFlow, unlockNotice } = require('./pet-image-flow');
+const {
+  setPetImageHistoryAPI,
+  openPetImageHistory,
+  closePetImageHistory,
+  refreshPetImageHistory,
+} = require('./pet-image-history-window');
 const info = require('./app-info');
 const config = require('./config-store');
 const customSprites = require('./custom-sprite-store');
@@ -55,6 +78,12 @@ let heartbeat = null;
 let updater = null;
 let settings = null;
 let weatherReminder = null; // 每日天气提醒调度（对标 mac 版 WeatherReminderService，需解锁）
+let bubble = null;      // 宠物头顶气泡窗（对标 mac 版 showFeedBubble / catSay）
+let chat = null;        // 主动搭话调度器（对标 mac 版 startProactiveChat）
+let social = null;      // 好友与宠物消息客户端（对标 mac 版 FriendService）
+let petImages = null;   // 自定义状态图片流程（对标 mac 版 PetImageService + 面板图片区的 busy/配额/状态文案）
+// 已推给面板的宠物号（面板开着才推得动，变化去重避免心跳每分钟重推同一个号）
+let pushedPetNo = 0;
 let sysinfo = null;  // 托盘「系统信息」监控（对标 Swift startSysInfoMonitoring / startMenuBarMonitoring）
 let sysinfoCache = null; // worker 投喂的只读快照源
 let sysinfoWorker = null; // 采集子进程句柄（退出时必须 kill，fork 的 Node 进程不随 app 回收）
@@ -217,6 +246,9 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+// 状态 id → 中文名（图片对话框标题与各态文案统一用它，与面板形象区同一份字典）
+const spriteStateLabels = Object.fromEntries(panelPetStates().map((s) => [s.id, s.label]));
+
 // 各状态自定义形象图 → file:// URL 映射（无自定义为 null，渲染层据此回退内置帧动画）。
 // 存储不在安装包内（mac 与 mac 版 App 共用 Application Support 目录，Win 在 userData），
 // 升级/换版本都不会碰它；渲染层用 file: 读（pet/index.html CSP 已放行 img-src file:）。
@@ -234,10 +266,64 @@ function sendSpriteSnapshot() {
   sendToRenderer('pet:sprite', spriteUrlMap());
 }
 
+/** 宠物号变化时推给开着的面板（没开就静默丢弃，下次打开走 settings:load 兜底） */
+function broadcastPetNo(petNo) {
+  const value = Number(petNo) || 0;
+  if (value <= 0 || value === pushedPetNo) return;
+  pushedPetNo = value;
+  sendToSettingsWin('settings:pet-no', { petNo: value });
+}
+
+/**
+ * 申请卡上的「同意 / 拒绝」：主进程直接打服务端，结果推给停在好友区的面板对齐列表
+ * （面板不必自己再拉一次网络，只按回传的好友列表与待移除的申请 ID 重排）。
+ */
+async function decideFriendRequestFromCard(action, req) {
+  if (!social || !req) return;
+  const res = await social.decideRequest(action, req.fromPetNo).catch(() => null);
+  if (!res || !res.ok) {
+    console.warn(`[social] 申请卡 ${action} #${req.fromPetNo} ✗ ${(res && res.error) || '未知错误'}`);
+    return;
+  }
+  console.log(`[social] 申请卡 ${action} #${req.fromPetNo} ✓`);
+  sendToSettingsWin('settings:social-changed', {
+    friends: res.friends || [],
+    removeRequestId: req.id || '',
+    notice: action === 'accept'
+      ? `已同意 ${req.display} 的申请，你们互为好友了`
+      : `已拒绝 ${req.display} 的申请`,
+  });
+}
+
+/**
+ * 心跳下发内容统一入口（对标 mac 版 HeartbeatService.consume）：
+ * 宠物号先缓存，同一条好友申请在用户做出选择前会被持续下发，靠本地「已弹过 ID」去重只弹一次；
+ * 留言整批交给常驻会话窗展示（未确认已读前服务端会重投，所以弹不完也不会丢）。
+ */
+function handleHeartbeatDelivery(data) {
+  if (!social) return;
+  const petNo = Number(data.petNo) || 0;
+  if (petNo > 0) {
+    social.setMyPetNo(petNo);
+    broadcastPetNo(petNo);
+  }
+  const delivery = social.parseDelivery(data);
+  for (const req of social.markRequestsShown(delivery.requests)) {
+    console.log(`[social] 收到好友申请 #${req.fromPetNo} ${req.fromName}`);
+    yieldTopTo(openFriendRequestCard(req));
+  }
+  if (delivery.messages.length) {
+    console.log(`[social] 收到好友消息 ${delivery.messages.length} 条`);
+    yieldTopTo(presentFriendMessages(delivery.messages));
+  }
+}
+
 // 切换宠物窗显示 / 隐藏（托盘 / 右键菜单 / 快捷键用）
 function togglePet() {
   const win = ensurePetWindow();
   if (win.isVisible()) {
+    // 收起气泡：气泡浮在一只看不见的猫头顶没意义（立即关，不等淡出）
+    if (bubble) bubble.dismiss();
     win.hide();
   } else {
     // 躲藏中走「显示宠物」：半截身子在屏外，直接显示会看着像只残猫，先现身
@@ -496,6 +582,8 @@ app.whenReady().then(() => {
       autoLaunch: isAutoLaunchEnabled,
       heartbeat: () => (heartbeat ? heartbeat.getStatus() : null),
       isFullAccess: access.isFullAccess,
+      // 图片区快照：flow 在 app ready 后才建，面板首次 load 时必定已就绪（闭包里现取）
+      petImages: () => (petImages ? petImages.snapshot() : {}),
     },
   });
 
@@ -509,11 +597,78 @@ app.whenReady().then(() => {
   });
   weatherReminder.start();
 
+  // 宠物头顶气泡（对标 mac 版 FloatingWindow.catSay / showFeedBubble）：所有「小猫说话」都从这里出
+  bubble = createSpeechBubble({ getPetWindow: () => petWindow });
+
+  // 主动搭话（对标 mac 版 startProactiveChat）：启动 20 秒后一句时段问候，
+  // 之后按面板设的间隔在热搜 / Todo 之间轮换冒泡；勿扰、睡觉、躲藏、抚摸中都不打扰
+  chat = createProactiveChat({
+    say: (text) => (bubble ? bubble.say(text) : false),
+    // 热搜源与新闻卡共用同一份抓取链路（后台只存标题做缓存，失败保留旧缓存）
+    fetchHeadlines: () => newsService.fetchHotNews(),
+    todoCount: () => todoStore.load().length,
+    isSystemFocusActive: () => focusModeActive,
+    getPetState: () => petState,
+    isPlayingOneShot: () => petting.isPlaying(),
+  });
+  // 回填给设置面板：改开关 / 间隔后按新节奏立即重挂周期定时器
+  settings.proactiveChat = chat;
+  chat.start();
+
+  // 好友与宠物消息（对标 mac 版 FriendService）：取宠物号、好友与申请、留言收发都走加密信封打服务端
+  social = createSocialService({
+    // 宠物号变化（register / 心跳下发）时同步推给开着的面板
+    onPetNo: (petNo) => broadcastPetNo(petNo),
+    petName: () => info.petName(),
+  });
+
+  // 会话窗能力注入：本模块只管窗口与排版，网络全部回到 social 这一条链路
+  setFriendChatAPI({
+    history: (petNo) => social.conversationHistory(petNo),
+    send: (petNo, text) => social.sendMessage(petNo, text),
+    confirmRead: (ids) => social.confirmRead(ids),
+    myPetNo: () => social.myPetNo(),
+    petName: () => info.petName(),
+  });
+
+  // 申请卡：用户做出选择才服务端建立（或取消）双向好友关系
+  setFriendRequestHandlers({
+    onAccept: (req) => decideFriendRequestFromCard('accept', req),
+    onReject: (req) => decideFriendRequestFromCard('reject', req),
+  });
+
+  // 自定义状态图片（对标 mac 版 PetImageService + CustomSpriteStore）：
+  // AI 生成 / 重试走 pet-image-service（加密信封打 /api/pet-images），落盘与历史走 custom-sprite-store，
+  // 本处只把两侧变化扇出去：宠物窗立刻换图、面板与历史窗拿同一份快照
+  petImages = createPetImageFlow({
+    service: createPetImageService(),
+    sprites: customSprites,
+    onSpritesChanged: () => {
+      sendSpriteSnapshot();
+      refreshPetImageHistory();
+    },
+    onSnapshot: (snapshot) => {
+      sendToSettingsWin('settings:pet-images', snapshot);
+      refreshPetImageHistory();
+    },
+  });
+
+  // 历史图片窗能力注入：本模块只管窗口与排版，判定与网络都回到 flow 这一条链路
+  setPetImageHistoryAPI({
+    snapshot: () => petImages.snapshot(),
+    applyImage: (key, state) => petImages.applyHistoryImage(key, state),
+    deleteImage: (key) => petImages.deleteHistoryImage(key),
+    retry: (state) => petImages.retryGeneration(state),
+    clearFailure: (state) => petImages.clearHistoryFailure(state),
+    setHistoryVisible: (visible) => petImages.setHistoryVisible(visible),
+  });
+
   // 应用菜单：mac 上提供「设置…」与 Cmd+,（保留编辑菜单，设置面板的输入框才支持复制粘贴）
   buildAppMenu();
 
   // 心跳上报：启动即报一次，之后每 1 分钟一次（与 mac 版同节奏、同上报体）
-  heartbeat = new HeartbeatService({ getState: () => petState });
+  // 响应顺带回传宠物号 / 好友申请 / 好友留言，统一交给 handleHeartbeatDelivery
+  heartbeat = new HeartbeatService({ getState: () => petState, onDelivery: handleHeartbeatDelivery });
   heartbeat.start();
 
   // 自动更新：启动 30 秒后首次检查，之后每 24 小时一次；托盘菜单可手动触发
@@ -588,6 +743,19 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  // ── 气泡窗 IPC（台词由主进程推，渲染层只排版）──
+  // 窗刚加载完主动拉一次当前台词：避开「先 send 后挂监听」丢第一句
+  ipcMain.handle('bubble:payload', () => ({ text: bubble ? bubble.currentText() : '' }));
+  // 渲染层量完文字尺寸回报：主进程据此改盒大小、贴到猫头顶并显形
+  ipcMain.on('bubble:resize', (event, payload) => {
+    const p = payload || {};
+    if (bubble) bubble.handleResize(p.width, p.height);
+  });
+  // 点一下气泡：播淡出动画收起（与 mac 版 bubbleView.onClick 一致）
+  ipcMain.on('bubble:dismiss', () => {
+    if (bubble) bubble.fadeOut();
+  });
+
   // ── 设置面板 IPC（对应 mac 版 SettingsPanel 的喝水提醒分区）──
   // 读：当前间隔 + 预设 + 合法区间
   ipcMain.handle('settings:load', () => settings.load());
@@ -610,7 +778,42 @@ app.whenReady().then(() => {
     return result;
   });
 
+  // 主动搭话：写开关 / 间隔（主进程收敛 1~720 分钟）→ 立即按新节奏重建周期搭话
+  ipcMain.handle('settings:set-proactive-chat', (event, patch) => {
+    const result = settings.setProactiveChat(patch);
+    console.log(`[settings] proactiveChat -> ${JSON.stringify(patch)} ${result.ok ? '✓' : `✗ ${result.error}`}`);
+    return result;
+  });
+
   ipcMain.on('settings:close', () => closeSettingsWindow());
+
+  // ── 好友消息 IPC（对应 mac 版 SettingsPanel 好友分区 + FriendChatWindow）──
+  // 一次拉齐宠物号 + 好友列表 + 待处理申请（服务端不可用时只回 error，面板保留现有列表）
+  ipcMain.handle('social:sync', () => social.syncAll());
+
+  // 复制宠物号：渲染层读不到系统剪贴板，统一在主进程写（没号时给明确提示）
+  ipcMain.handle('social:copy-pet-no', () => {
+    const petNo = social.myPetNo();
+    if (petNo <= 0) return { ok: false, error: '宠物号尚未分配，先点「刷新」获取' };
+    clipboard.writeText(String(petNo));
+    return { ok: true, petNo };
+  });
+
+  ipcMain.handle('social:add', (event, payload) => social.addFriend((payload || {}).petNo));
+
+  ipcMain.handle('social:decide', (event, payload) => {
+    const p = payload || {};
+    return social.decideRequest(p.action === 'reject' ? 'reject' : 'accept', p.fromPetNo);
+  });
+
+  ipcMain.handle('social:remove', (event, payload) => social.removeFriend((payload || {}).petNo));
+
+  // 打开会话窗（已开着同一位好友时只并入消息并前置，不重开）
+  ipcMain.handle('social:open-chat', (event, payload) => {
+    const p = payload || {};
+    yieldTopTo(openFriendChat({ petNo: p.petNo, display: p.display }));
+    return { ok: true };
+  });
 
   // ── 宠物信息：名称 / 形象 ──
   ipcMain.handle('settings:set-pet-name', (event, name) => {
@@ -636,37 +839,67 @@ app.whenReady().then(() => {
     return applyPetState(state);
   });
 
-  // ── 自定义形象图（上传自己的小猫，落 userData，App 更新后保留）──
-  // 面板预览：返回各状态当前自定义图的 file:// URL（无自定义为 null），
+  // ── 自定义状态图片（直接上传 / 恢复默认，存本机 CustomSprites 目录，App 更新不丢）──
+  // 面板预览：返回各状态当前生效图的 file:// URL（无自定义为 null），
   // 渲染层据此显示自定义图，为 null 时回落到内置 frame_00 预览
   ipcMain.handle('settings:list-custom-sprite', () => spriteUrlMap());
 
-  // 选图 → 拷贝进 userData → 推快照给宠物窗
+  // 直接上传：原图（含 GIF 动图）只存本机，不需要激活码、不占生成配额、即时生效
   ipcMain.handle('settings:pick-custom-sprite', async (event, state) => {
     if (!isValidPetState(state)) return { ok: false, error: '不支持的形象' };
+    if (petImages.isBusy()) return { ok: false, error: '正在处理图片，请稍候' };
     const win = BrowserWindow.fromWebContents(event.sender);
+    const label = spriteStateLabels[state] || state;
     const res = await dialog.showOpenDialog(win, {
-      title: '选择宠物形象图片',
+      title: `选择${label}状态图片`,
+      message: `PNG/JPEG/GIF，最大 10 MB；原图直接作为${label}状态图片，仅保存在本机`,
       properties: ['openFile'],
-      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }],
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif'] }],
     });
     if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
-    const result = customSprites.installLocalImage(state, res.filePaths[0]);
-    if (result.ok) {
-      console.log(`[custom-sprite] ${state} <- ${result.file}`);
-      sendSpriteSnapshot();
-    }
+    const result = petImages.uploadLocal(state, res.filePaths[0]);
+    // 快照与宠物窗换图都由 flow 的回调统一扇出，这里不再重复推
+    console.log(`[custom-sprite] ${state} 直接上传 ${result.ok ? '✓' : `✗ ${result.error}`}`);
     return result;
   });
 
-  // 恢复默认：删掉该状态的自定义图，推快照让宠物窗回到内置帧动画
+  // 恢复默认：完全本地——清掉该状态的直传图与选中标识，不改动服务端
   ipcMain.handle('settings:clear-custom-sprite', (event, state) => {
-    const result = customSprites.clearLocalImage(state);
-    if (result.ok) {
-      console.log(`[custom-sprite] ${state} 已恢复默认`);
-      sendSpriteSnapshot();
-    }
+    if (!isValidPetState(state)) return { ok: false, error: '不支持的形象' };
+    const result = petImages.restoreDefault(state);
+    console.log(`[custom-sprite] ${state} 恢复默认 ${result.ok ? '✓' : `✗ ${result.error}`}`);
     return result;
+  });
+
+  // ── 云端形象图：配额 / AI 生成 / 历史图片窗（对标 mac 版 generateAllStatesWithAI + showPetImageHistory）──
+  // 面板停在图片区时刷一次剩余生成次数（无码 / 生成中由 flow 自己回落，不报错不打扰）
+  ipcMain.handle('pet-image:refresh', () => petImages.refreshQuota());
+
+  // AI 生成所有状态：一张照片 → 服务端逐状态各生成一张 → 全部落本机并生效
+  ipcMain.handle('pet-image:generate-all', async (event) => {
+    // 面板已拦一道，这里再兜一次：无码时不该让用户白选一张照片
+    if (!access.serverActivationCode()) return { ok: false, error: unlockNotice() };
+    if (petImages.isBusy()) return { ok: false, error: '正在处理图片，请稍候' };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+      title: '选择宠物照片',
+      message: 'PNG/JPEG，最大 10 MB；照片将为全部 5 个状态各生成一张图片（姿态按状态区分），整批仅消耗 1 次生成配额',
+      properties: ['openFile'],
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg'] }],
+    });
+    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    const result = await petImages.generateAllStates(res.filePaths[0]);
+    console.log(`[pet-image] AI 生成 ${result.ok ? `✓ 应用 ${result.applied} 个/失败 ${result.failed} 个` : `✗ ${result.error}`}`);
+    return result;
+  });
+
+  // 打开历史图片窗（已开着就前置复用）：按当前形象定位，开完后台补一次旧图归属
+  ipcMain.handle('pet-image:open-history', (event, payload) => {
+    const raw = String((payload || {}).state || petState);
+    const state = isValidPetState(raw) ? raw : '';
+    yieldTopTo(openPetImageHistory({ state }));
+    petImages.backfillOwnership();
+    return { ok: true };
   });
 
   // 宠物窗刚加载完主动拉一次当前自定义形象（上传/清除期间再通过 pet:sprite 推送增量）
@@ -983,6 +1216,33 @@ app.whenReady().then(() => {
     }, 2000);
   }
 
+  // 仅调试用：PET_TEST_SAY="台词" 时启动 2 秒后让猫冒一句气泡（验排版与跟随，不必等搭话周期）
+  // 可选 PET_TEST_SAY_SHOT=/path.png：气泡显形后截图落盘，完成后自退
+  if (process.env.PET_TEST_SAY) {
+    setTimeout(() => {
+      bubble && bubble.say(process.env.PET_TEST_SAY);
+      const shot = process.env.PET_TEST_SAY_SHOT;
+      if (!shot) return;
+      setTimeout(async () => {
+        const w = bubble && bubble.getWindow();
+        try {
+          if (!w) throw new Error('气泡窗未打开');
+          const image = await w.webContents.capturePage();
+          require('fs').writeFileSync(shot, image.toPNG());
+          console.log('[bubble-shot] 已保存', shot);
+        } catch (err) {
+          console.error('[bubble-shot] 失败', err);
+        }
+        app.quit();
+      }, 900);
+    }, 2000);
+  }
+
+  // 仅调试用：PET_TEST_CHAT=1 时启动 1.5 秒后立刻跑一次搭话逻辑（跳过 20 秒首句与周期等待）
+  if (process.env.PET_TEST_CHAT === '1') {
+    setTimeout(() => chat && chat.performProactiveChat(), 1500);
+  }
+
   // 仅测试用：PET_TEST_TRAY_MENU=1 时启动 2.5 秒后自动弹一次托盘菜单（验证系统信息二级菜单）
   if (process.env.PET_TEST_TRAY_MENU === '1') {
     setTimeout(() => popUpTrayMenu(), 2500);
@@ -1055,6 +1315,13 @@ app.on('will-quit', () => {
   if (scheduler) scheduler.stop();
   if (todoReminder) todoReminder.stop();
   if (weatherReminder) weatherReminder.stop();
+  if (chat) chat.stop();
+  if (bubble) bubble.stop();
+  // 会话窗直接关卡（不走 ✕）：没看完的消息不标已读，服务端到点会重投
+  closeFriendChat();
+  closeFriendRequestWindow();
+  // 历史图片窗里的待完成生成不因为关窗而取消（flow 自己跑完并落盘），退出时直接关窗
+  closePetImageHistory();
   if (heartbeat) heartbeat.stop();
   if (updater) updater.stop();
   if (sysinfoWorker) sysinfoWorker.kill();

@@ -136,6 +136,8 @@ class SettingsService {
       autoLaunch: () => false,
       heartbeat: () => null,
       isFullAccess: () => false,
+      // 自定义状态图片快照（index.js 用 pet-image-flow 回填）：没接上时给空对象，面板按「什么都没有」渲染
+      petImages: () => ({}),
       ...providers,
     };
   }
@@ -184,6 +186,8 @@ class SettingsService {
         min: proactiveChat.MIN_CHAT_INTERVAL,
         max: proactiveChat.MAX_CHAT_INTERVAL,
       },
+      // 自定义状态图片（宠物信息分区）：busy / 配额 / 各状态可用性，纯本机 + 缓存，打开面板不走网络
+      petImages: this.providers.petImages(),
     };
   }
 

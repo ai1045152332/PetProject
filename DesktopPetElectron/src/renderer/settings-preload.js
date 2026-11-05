@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   // 菜单设置：宠物右键菜单项展示开关（主进程写盘，下次弹菜单即应用）
   setMenuItem: (key, visible) => ipcRenderer.invoke('settings:set-menu-item', { key, visible }),
 
+  // 提醒设置：主动搭话开关与间隔（主进程收敛间隔并立即重挂周期定时器）
+  setProactiveChat: (patch) => ipcRenderer.invoke('settings:set-proactive-chat', patch),
+
   // 宠物信息：名称 / 形象
   setPetName: (name) => ipcRenderer.invoke('settings:set-pet-name', name),
   setPetState: (state) => ipcRenderer.invoke('settings:set-pet-state', state),
@@ -47,6 +50,16 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   listCustomSprites: () => ipcRenderer.invoke('settings:list-custom-sprite'),
   pickCustomSprite: (state) => ipcRenderer.invoke('settings:pick-custom-sprite', state),
   clearCustomSprite: (state) => ipcRenderer.invoke('settings:clear-custom-sprite', state),
+
+  // 自定义状态图片（对标 mac 版 PetImageService + 历史图片窗）：
+  // 网络与落盘都在主进程，面板只拿快照画配额/可用性，拿 ok+error 画结果
+  petImageRefresh: () => ipcRenderer.invoke('pet-image:refresh'),
+  petImageGenerateAll: () => ipcRenderer.invoke('pet-image:generate-all'),
+  petImageOpenHistory: (state) => ipcRenderer.invoke('pet-image:open-history', { state }),
+  // 生成阶段文案 / 配额 / 本机图片变化时主进程推整包快照（历史窗开着时随带列表数据）
+  onPetImages: (callback) => {
+    ipcRenderer.on('settings:pet-images', (event, snapshot) => callback(snapshot));
+  },
 
   // 通用设置：宠物大小 / 开机自启 / 检查更新
   setPetScale: (scale) => ipcRenderer.invoke('settings:set-pet-scale', scale),
@@ -64,6 +77,23 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   // 每日天气提醒：写配置 + 预览（未解锁时主进程拒改/拒推）
   setWeatherReminder: (patch) => ipcRenderer.invoke('settings:set-weather-reminder', patch),
   previewWeather: () => ipcRenderer.invoke('settings:preview-weather'),
+
+  // 好友消息：一次拉齐宠物号/好友/申请，以及加好友、同意/拒绝、删除、开会话窗
+  // 网络调用全在主进程（加密信封 + 服务端文案），渲染层只判 ok 并展示 error
+  socialSync: () => ipcRenderer.invoke('social:sync'),
+  socialCopyPetNo: () => ipcRenderer.invoke('social:copy-pet-no'),
+  socialAdd: (petNo) => ipcRenderer.invoke('social:add', { petNo }),
+  socialDecide: (action, fromPetNo) => ipcRenderer.invoke('social:decide', { action, fromPetNo }),
+  socialRemove: (petNo) => ipcRenderer.invoke('social:remove', { petNo }),
+  socialOpenChat: (petNo, display) => ipcRenderer.invoke('social:open-chat', { petNo, display }),
+  // 心跳拿到/刷新了宠物号时主进程推一次（面板开着才能收到；下次打开走 load 兜底）
+  onPetNo: (callback) => {
+    ipcRenderer.on('settings:pet-no', (event, payload) => callback(payload));
+  },
+  // 在申请卡上同意了申请：主进程直接把最新好友列表推回来，面板不必再跑一次网络
+  onSocialChanged: (callback) => {
+    ipcRenderer.on('settings:social-changed', (event, payload) => callback(payload));
+  },
 
   close: () => ipcRenderer.send('settings:close'),
 });

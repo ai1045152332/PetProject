@@ -59,7 +59,7 @@ python3 scripts/cut_sprite.py <输入图> <输出.png> --align center --height 1
 
 ## 与其他 skill 的关系
 
-- 素材放到位后如何打包 → `deploy-cute-pet`
+- 素材放到位后如何打包 → `cute-pet`
 
 ## 完整 prompt 存档
 

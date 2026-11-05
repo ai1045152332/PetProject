@@ -295,7 +295,7 @@ openssl pkey -in ed25519_private.pem -pubout -outform DER | tail -c 32 | base64
 
 ### 8.7 远端通道：expect 与 paramiko 双后端
 
-`skills/deploy-cute-pet/scripts/remote.sh` 统一封装远端执行与上传，`scripts/lib/remote.py` 是无 pty 的 paramiko 实现（`exec` / `put` / `check`）。
+`skills/cute-pet-deploy/scripts/remote.sh` 统一封装远端执行与上传，`scripts/lib/remote.py` 是无 pty 的 paramiko 实现（`exec` / `put` / `check`）。
 
 | 后端 | 依赖 | 适用 |
 | --- | --- | --- |

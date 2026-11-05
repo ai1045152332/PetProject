@@ -1,0 +1,284 @@
+/* src/renderer/pet-history.css — 本机图片历史窗（深色底板沿用 reminder.css，与 mac 版同色系） */
+
+/* 底板是 reminder.css 的 .card（整卡可拖），列表与按钮要能点，逐个放开 no-drag */
+.filter-bar,
+.grid,
+.detail,
+.footer {
+  -webkit-app-region: no-drag;
+}
+
+/* ── 顶部：状态筛选（一屏只看一个状态，不给「全部」总览） ── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 16px 8px;
+  flex-shrink: 0;
+}
+
+.filter {
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #c7c9e0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.seg:hover { background: rgba(255, 255, 255, 0.12); }
+
+.seg.selected {
+  color: #ffffff;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-color: transparent;
+}
+
+.count {
+  font-size: 11px;
+  color: #8a90b8;
+  white-space: nowrap;
+}
+
+/* ── 中部：左缩略图网格 + 右详情栏 ── */
+.middle {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  padding: 0 16px;
+  min-height: 0;
+}
+
+.grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-content: start;
+  gap: 10px;
+  padding: 2px 4px 8px 2px;
+}
+
+.tile {
+  position: relative;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 6px 7px;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: center;
+}
+
+.tile:hover { background: rgba(255, 255, 255, 0.09); }
+
+.tile.selected {
+  background: rgba(102, 126, 234, 0.16);
+  border-color: rgba(102, 126, 234, 0.6);
+}
+
+.thumb {
+  width: 100%;
+  height: 104px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* 失败卡片没有图，用一个占位符号占住同样的图片位 */
+.placeholder {
+  width: 100%;
+  height: 104px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  color: #8a90b8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tile-title {
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #f0f0f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-sub {
+  font-size: 9.5px;
+  color: #7d82a8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  align-self: center;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #7d82a8;
+  text-align: center;
+  white-space: pre-line;
+  padding: 24px 12px;
+}
+
+/* ── 右侧详情 ── */
+.detail {
+  width: 232px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  overflow-y: auto;
+}
+
+.preview {
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  visibility: hidden;
+}
+
+.preview img.shown { visibility: visible; }
+
+.detail-info {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8a90b8;
+  white-space: pre-line;
+  word-break: break-all;
+  flex-shrink: 0;
+}
+
+.target-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a90b8;
+  flex-shrink: 0;
+}
+
+.target {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #f0f0f5;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+
+.target:disabled { opacity: 0.5; }
+
+/* 下拉列表由系统绘制：不显式给浅色底深色字，深色底板上会糊成一片看不见 */
+.target option {
+  color: #1e1e2e;
+  background: #ffffff;
+}
+
+.primary-btn,
+.ghost-btn,
+.done-btn {
+  font-family: inherit;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #ffffff;
+  border: none;
+}
+
+.primary-btn {
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  flex-shrink: 0;
+}
+
+.ghost-btn {
+  padding: 6px 10px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d7d9ee;
+  flex: 1;
+}
+
+.ghost-btn.small { font-size: 10px; }
+
+.primary-btn:hover,
+.ghost-btn:hover,
+.done-btn:hover { filter: brightness(1.1); }
+
+.primary-btn:disabled,
+.ghost-btn:disabled,
+.done-btn:disabled,
+.seg:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+
+.detail-row {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── 底部：操作提示 + 状态 + 完成 ── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 12px;
+  flex-shrink: 0;
+}
+
+.footer .hint {
+  font-size: 11px;
+  color: #7d82a8;
+  white-space: nowrap;
+}
+
+.status {
+  flex: 1;
+  font-size: 11px;
+  color: #a0a8e0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.done-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}

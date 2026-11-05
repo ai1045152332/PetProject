@@ -405,6 +405,29 @@ body {
 /* 上传 / 恢复默认靠右 */
 .sprite-actions .primary { margin-left: auto; }
 
+/* ── AI 生成整批状态图片（与 mac 版 sprite 卡底部的 aiButton + aiStatusLabel 同构）── */
+.ai-row {
+  margin-top: 12px;
+}
+
+/* 右侧生成阶段 / 配额文案：比通用 .value 小一档，长句要能换行不撑宽面板 */
+.ai-status {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--label-secondary);
+  white-space: normal;
+}
+
+/* 生成中：橙色进度文案（对齐 mac 版 aiStatusLabel 的阶段提示） */
+.ai-status.working {
+  color: #e8a33d;
+}
+
+/* 未输服务端激活码时的图片区描述：橙色警示（与天气提醒的 .card-desc.locked 同色系） */
+.card-desc.warn {
+  color: #e8a33d;
+}
+
 /* ── 输入框 / 按钮 ────────────────────────── */
 .text-input {
   -webkit-app-region: no-drag;
@@ -550,6 +573,16 @@ body {
   background: var(--accent-14);
   border-color: var(--accent);
 }
+
+/* 主动搭话关闭时，间隔预设置灰不可点（对齐 mac 版 chatIntervalButtons 的 alphaValue 0.4） */
+.preset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.preset:disabled:hover { background: #ffffff; }
+
+html.dark .preset:disabled:hover { background: rgba(255, 255, 255, 0.08); }
 
 .unit {
   font-size: 11px;
@@ -736,3 +769,109 @@ html.dark .slider::-webkit-slider-runnable-track { background: rgba(255, 255, 25
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }
+
+/* ── 好友消息 ─────────────────────────────── */
+/* 宠物号右侧的「复制 / 刷新」（对应 mac 版 card1 的两个 rounded 按钮） */
+.social-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* 加好友：标题、输入框、按钮同排（mac 版 card2 高 52，控件居中） */
+.row.inline { margin-top: 0; }
+
+.add-title { flex-shrink: 0; }
+
+.list-title {
+  margin: 14px 2px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label);
+}
+
+/* 好友与申请列表：对应 mac 版带边框的竖向滚动容器（内容多于视口时内部滚动） */
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 120px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+}
+
+.friends-list::-webkit-scrollbar { width: 6px; }
+
+.list-empty {
+  margin: auto;
+  padding: 12px 10px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--label-tertiary);
+}
+
+.list-group {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--label-tertiary);
+  padding: 2px 4px;
+}
+
+/* 单行 40px：申请人/好友名 + 右侧动作按钮 */
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* 待处理申请用强调色淡底，和好友行拉开层级（mac 版 controlAccentColor 0.08） */
+.friend-row.request { background: var(--accent-08); }
+
+.friend-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 行内小按钮：对应 NSButton(controlSize: .small) */
+.tiny {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--label);
+  background: linear-gradient(#ffffff, #f0f0f0);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tiny:hover { background: linear-gradient(#ffffff, #e8e8e8); }
+.tiny:disabled { opacity: 0.4; cursor: default; }
+
+html.dark .friend-row { background: rgba(255, 255, 255, 0.06); }
+
+html.dark .tiny {
+  color: var(--label);
+  background: linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .tiny:hover { background: rgba(255, 255, 255, 0.22); }

@@ -1,13 +1,9 @@
----
-name: run-electron-pet
-description: 安装并启动跨平台桌面宠物 Electron 版（DesktopPetElectron），当前含 P0 透明置顶悬浮小猫 + 喝水提醒弹窗。当用户说「跑起来/启动/运行 Electron 宠物」「安装 electron pet」「测试喝水提醒/提醒弹窗」时使用。仅涉及 Electron 工程，不影响 macOS 原生版。
-metadata:
-  short-description: Install & run the Electron desktop pet
----
+# 运行与调试 Electron 版
 
-# 安装启动 Electron 桌面宠物
+> 本文件是 [../SKILL.md](../SKILL.md) 的运行篇：依赖安装、启动、设置面板、状态机、右键菜单、心跳/更新自测与排障。
+> 要**打包给别人装**或**发版上线** → 看 [release.md](release.md) 的通道 C/D，不要照本文档手工发。
 
-`DesktopPetElectron/` 是 macOS 原生版（`DesktopPetForMacApp`）的跨平台重写，目标是同时覆盖 Windows / macOS。本 skill 只管**这个 Electron 工程的依赖安装、启动与提醒功能验证**。
+`DesktopPetElectron/` 是 macOS 原生版（`DesktopPetForMacApp`）的跨平台重写，目标是同时覆盖 Windows / macOS。本文只讲**这个 Electron 工程的依赖安装、启动、功能验收与调试**。
 
 ## 环境要求
 
@@ -153,34 +149,33 @@ PET_TEST_UPDATE=1 npm start      # 启动 3 秒后立即走一遍检查更新（
 
 也可点菜单栏托盘 →「检查更新（当前 electron0.0.1）」手动触发（无更新/失败都会弹提示，自动检查则静默）。
 
-判定要点：
-- 服务端 `latest.json` 里没有 `winVersion/winFile/winSHA256/winSignature`（Windows）或 `macVersion/...`（macOS）时，提示「服务端还没有发布 XX 版安装包」——**这是预期行为**，说明平台字段没配或服务端不是新版。
-- 客户端只认平台前缀字段，**不会**拿 mac 原生版的 `version/file` 更新自己；版本比较用本机 `package.json` 的 `version`。
-- 客户端自身版本形如 `electron0.0.1`（`electron` 前缀专用于区分 mac 原生版的 `v1.0.031`）；`winVersion`/`macVersion` 必须写成同样的 `electron` 形式，比较时会自动剥前缀。
+判定要点（字段契约见 [release.md](release.md) §manifest 契约）：
+- 提示「服务端还没有发布 XX 版安装包」= `latest.json` 缺该平台的 `win*` / `mac*` 字段，**属预期**，不是客户端 bug。
+- 客户端自身版本形如 `electron0.0.1`，只认带 `electron` 前缀的同平台字段；**不会**拿 mac 原生版的 `version/file` 更新自己。
 - 下载走 `GET /download/<文件名>`，落盘在 `userData/updates/`，先比 sha256 再验 Ed25519 签名，任一不过就删包并提示失败。
 
 快速回归（不启 GUI）：`npm test`（update-heartbeat 32 项 + settings-panel 若干项，均 mock 掉 electron）。
 
-## 打包桌面 App（electron-builder）
+## 本地打包（不是发布）
 
-已配 `electron-builder`，`package.json` 的 `build` 段声明了 appId / productName / mac+win target。产物输出到 `dist/`，图标资源在 `packaging/`（`icon.icns` + 1024² `icon.png`，Windows 的 `icon.ico` 由 electron-builder 据 png 自动生成）。
-
-> ⚠️ 打包资源目录故意命名为 `packaging/` 而非默认的 `build/`：根 `.gitignore` 有全局 `build/` 规则（Xcode 用），会把图标一起忽略掉。
+想要一个能双击安装的包（dmg）就用通道 E，它会清旧 mac 产物、物化图标、跑 `electron-builder --mac`：
 
 ```bash
-npm run dist:mac     # macOS：dist/*.dmg + *.zip（内含 DesktopPet.app）
-npm run dist:win     # Windows：dist/*-setup.exe（NSIS）+ *.portable.exe
-npm run dist         # 按当前系统自动打对应包
+./skills/cute-pet-deploy/scripts/build-mac-electron-local.sh          # → dist/DesktopPet-<版本>-<arch>.dmg
+./skills/cute-pet-deploy/scripts/build-mac-electron-local.sh --open   # 打完顺便挂载
 ```
 
-实测产物（arm64，version 0.0.1）：`dist/DesktopPet-0.0.1-arm64.dmg`、`dist/DesktopPet-0.0.1-arm64-mac.zip`、解包 bundle 在 `dist/mac-arm64/DesktopPet.app`。本机未配证书时为 ad-hoc 签名（`codesign -dv` 显示 `Identifier=Electron`），故需下面的去隔离处理。
+只想确认「能打出包」、几十秒看结果，可以退一步用 `--dir`（只出解包 `.app`，不打 dmg）：
 
-**macOS**：本机无开发者证书时加 `CSC_IDENTITY_AUTO_DISCOVERY=false` 跳过签名，否则构建中断。产物未签名，首次打开需在「隐私与安全性」点「仍要打开」或 `xattr -dr com.apple.quarantine DesktopPet.app`。
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --dir
+```
 
-**Windows**：
-- **推荐在 Windows 机器上** `npm run dist:win`，最稳妥。
-- 在 macOS/Linux **交叉打** Windows 包：`nsis` 目标可能需要 **Wine**（`brew install --cask wine-stable`）；`portable` 目标一般无需 Wine 可直接产出。
-- 只想快速验证 `--dir`：`CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --dir`（只出解包 .app，不打 dmg，快）。
+- 产物在 `dist/mac-arm64/DesktopPet.app`（约 237 MB），本机未配证书时是 ad-hoc 签名（`codesign -dv` 显示 `Identifier=Electron`），首次打开需右键「打开」或 `xattr -dr com.apple.quarantine`。
+- `packaging/` 是打包图标目录，**故意不叫 `build/`**：根 `.gitignore` 有全局 `build/` 规则（Xcode 用），会把图标一起忽略。
+- **坑**：`packaging/icon.icns` 是软链（指向 `SharedAssets/AppIcon.icns`），直接 `npm run dist:mac` 会在 dmg 阶段报 `xattr.Set … .VolumeIcon.icns … no such file or directory`。通道 E 的脚本用 `cp -L` 物化图标绕开；手工打包时记得带 `-c.dmg.icon=<真实 icns 路径>`。
+
+> 要发线上走 [release.md](release.md)：通道 B（Swift 原生，mac 自动更新）、D（Windows）。不要手工 `npm run dist:*` 后自行上传，manifest 覆盖会挤掉别的通道。
 
 ## 配置
 
@@ -247,17 +242,18 @@ DesktopPetElectron/
 | 顶栏/菜单里「网络 0K/0K」一直为零 | `netstat -ibn` 的列序是 `Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll`：第 2 列是 **Mtu**（所有接口都是 1500），拿它去重就只会统计到排在最前的零流量 `en*`；而 `cols[7]` 是 **Opkts（包数）**不是字节。正确做法见 `parseNetstatIb`：只取 `<Link#N>` 链路行、按接口名过滤 `en\d`、计数从**行尾**定位（无 Address 的行会整体左移一列） |
 | 换了菜单栏图标但 Windows 没变 | Windows 用的是另一张静态图 `SharedAssets/WindowsTray.png`（+@2x，`assets/` 下是软链，仓库内不留生成脚本），改完 `SharedAssets/MenuBarIcon.png` 要手动重导这两张 |
 | Windows 托盘图标描边断裂 / 猫成白面团 | 不要在小尺寸上直接跑形态学（腐蚀会把细胡须删成孤立碎块，回填又把五官抹平）。正确做法：先 4x 超采样，取原画像素作猫身（保留五官不填洞），描边用 `MaxFilter` 环带，两层各自高斯模糊后缩回目标尺寸 |
+| `npm run dist:mac` 报 `xattr.Set … .VolumeIcon.icns … no such file or directory` | `packaging/icon.icns` 是软链，electron-builder 写 dmg 卷图标时不跟随。用 `./skills/cute-pet-deploy/scripts/build-mac-electron-local.sh`（内部 `cp -L` 物化后 `-c.dmg.icon=` 传入），别直接 `npm run dist:mac` |
 | 首次安装卡在下载 | 设 `ELECTRON_MIRROR` 镜像后重跑 `npm install` |
 | 托盘「检查更新」提示「服务端还没有发布 Windows 版安装包」 | 服务端 `dist/latest.json` 缺 `win*` 字段（或 PetServer 未部署支持平台字段的新版），属预期提示 |
 | 更新一直反复提示同一版本 | `winVersion`/`macVersion` 与包内 `package.json` 的 `version` 不一致（注意带 `electron` 前缀），改到一致再发 |
 | 设置面板底板发灰 / 看不到毛玻璃 | macOS 上窗口已开 `vibrancy`，`html.macos:not(.dark) .panel` 必须保持 `background: transparent`，再叠一层半透明白就会发灰；`capturePage` 截不到系统模糊层，别拿它判断毛玻璃好坏 |
 | 想确认心跳是否真的上报成功 | 先看设置面板「通用设置 → 心跳上报」；或 `curl -s http://101.96.248.75/api/devices` 找自己的 `deviceId` 看 `version`。注意同一台机器上 mac 原生版与 Electron 版共用 deviceId，记录会被交替覆盖（看到 `v1.0.031` 是原生版刚报的）。本地起 PetServer 则看 `data/heartbeats.jsonl` |
 
-## 与其他 skill / 工程的关系
+## 与其他文档 / 工程的关系
 
-- 素材来源与抠图规范 → `meijing-pet-prompts`
-- macOS 原生版发版（与本 Electron 工程无关）→ `deploy-cute-pet`
-- 服务端 `PetServer`（Go，跨平台）：心跳 `/api/heartbeat`、版本 `/api/app/latest` 与 mac 版共用；Electron 发布用 `win*` / `mac*` 平台字段（需部署支持这些字段的新版服务端，见该工程 README）
+- 素材来源与抠图规范 → `../../meijing-pet-prompts/SKILL.md`
+- 发布（本地/远程 × Swift/Electron）与服务端部署 → [../SKILL.md](../SKILL.md) 与 [release.md](release.md)
+- 服务端 `PetServer`（Go，跨平台）：心跳 `/api/heartbeat`、版本 `/api/app/latest` 与 mac 版共用；Electron 发布用 `win*` / `mac*` 平台字段（需部署支持这些字段的新版服务端）
 
 ## 当前进度
 

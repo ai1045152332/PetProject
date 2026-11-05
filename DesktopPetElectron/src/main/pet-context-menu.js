@@ -80,7 +80,7 @@ function popupPetContextMenu(win, deps = {}) {
  * @param {number} [deps.holdMs] 播完后保持时长（mac 版 playOneShot hold = 1500ms）
  * @param {Function} [deps.setTimer] 可注入定时器（单测用）
  * @param {Function} [deps.clearTimer] 可注入取消定时器（单测用）
- * @returns {{play: () => void, cancel: () => void}}
+ * @returns {{play: () => void, cancel: () => void, isPlaying: () => boolean}}
  */
 function createPettingOneShot({ getState, setState, getRestoreState, frames = 8, fps = 12, holdMs = 1500, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let timer = null;
@@ -104,6 +104,8 @@ function createPettingOneShot({ getState, setState, getRestoreState, frames = 8,
         timer = null;
       }
     },
+    // 一次性动画是否在播（主动搭话据此避让：抚摸中途再冒气泡会打断节奏）
+    isPlaying: () => timer !== null,
   };
 }
 

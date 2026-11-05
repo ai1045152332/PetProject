@@ -115,4 +115,4 @@ done
 say ""
 say "✅ 本地 Windows 包已就绪（未签名、未上传、未发远程）"
 say "   本机试用：把 exe 拷到 Windows 机器双击安装即可"
-say "   正式发布：./skills/deploy-cute-pet/scripts/deploy-win.sh \"$TARGET_VERSION\" \"用户看得懂的更新说明\""
+say "   正式发布：./skills/cute-pet-deploy/scripts/deploy-win.sh \"$TARGET_VERSION\" \"用户看得懂的更新说明\""

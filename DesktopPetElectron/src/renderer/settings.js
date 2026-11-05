@@ -46,6 +46,11 @@ function selectSection(id) {
   for (const btn of navItems) btn.classList.toggle('active', btn.dataset.section === id);
   for (const sec of sections) sec.classList.toggle('active', sec.dataset.section === id);
   $('content').scrollTop = 0;
+  // 每次点进「好友消息」都重拉一次：面板是复用实例，不重建就不会知道对方刚同意了申请
+  if (id === 'social') loadSocial(false);
+  // 停在宠物信息区时刷一次剩余生成次数（有码才会真发请求，没码主进程直接回落）
+  if (id === 'pet' && api.petImageRefresh) api.petImageRefresh();
+  syncSocialAutoRefresh();
 }
 
 for (const btn of navItems) {
@@ -66,6 +71,13 @@ const HIDE_STATE_ID = 'hide';
 function findState(id) {
   return petStateList.find((s) => s.id === id) || null;
 }
+
+// 自定义状态图片（对标 mac 版 refreshSpriteAccessUI）：有码与否决定描述文案与 AI 按钮可用性，
+// busy 期间（正在生成 / 重试）不让人再改同一批图
+const SPRITE_DESC_FULL = '直接上传：本机即时生效；AI 生成：上传一次，逐状态各生成一张 · 最大 10 MB';
+const SPRITE_DESC_NO_CODE = '直接上传与本机历史随时可用；AI 生成需服务端激活码';
+const AI_TOOLTIP = '上传一张照片，AI 为全部 5 个状态各生成一张图片（姿态按状态区分）并自动应用；整批仅消耗该激活码的 1 次生成配额';
+let petImages = { hasCode: false, busy: false, quotaLimit: 0, quotaRemaining: 0, status: '', availability: {} };
 
 /** 「当前状态」文案：躲藏是贴边探头状态，带「中」表示正在进行 */
 function badgeText(id) {
@@ -119,6 +131,7 @@ function renderActions() {
   box.textContent = '';
   const item = findState(selectedState) || { id: selectedState, label: '' };
   const has = Boolean(spriteStatus[item.id]);
+  const avail = (petImages.availability || {})[item.id] || {};
 
   const info = document.createElement('span');
   info.className = 'sprite-current';
@@ -129,23 +142,27 @@ function renderActions() {
   tag.textContent = has ? '已自定义' : '内置动画';
   info.append(name, tag);
 
+  // 直传图存不存在用「●」前标出来（与 mac 版同样只靠按钮文案区分直传 / 云端）
   const upload = document.createElement('button');
   upload.type = 'button';
   upload.className = 'primary';
-  upload.textContent = '上传图片';
+  upload.textContent = avail.hasLocal ? '● 直接上传' : '直接上传';
+  upload.title = `原图（含 GIF 动图）直接作为${item.label}状态图片，仅保存在本机`;
+  upload.disabled = Boolean(petImages.busy);
   upload.addEventListener('click', async () => {
     upload.disabled = true;
     upload.textContent = '选择中…';
     const res = await api.pickCustomSprite(item.id);
-    upload.disabled = false;
-    upload.textContent = '上传图片';
+    upload.textContent = avail.hasLocal ? '● 直接上传' : '直接上传';
     if (res && res.ok) {
       setHint('sprite-hint', `已为「${item.label}」上传形象`, 'ok');
       await refreshSpriteStatus();
     } else if (res && res.canceled) {
       // 用户取消，不打扰
+      renderActions();
     } else {
       setHint('sprite-hint', (res && res.error) || '上传失败', 'error');
+      renderActions();
     }
   });
 
@@ -153,7 +170,9 @@ function renderActions() {
   reset.type = 'button';
   reset.className = 'ghost';
   reset.textContent = '恢复默认';
-  reset.disabled = !has;
+  reset.title = `清除${item.label}状态的图片，恢复内置默认图`;
+  // mac 版：本机关过直传图、或当前正生效着任意自定义图，才允许恢复默认
+  reset.disabled = Boolean(petImages.busy) || !(avail.hasLocal || avail.hasCustom);
   reset.addEventListener('click', async () => {
     const res = await api.clearCustomSprite(item.id);
     if (res && res.ok) {
@@ -166,6 +185,64 @@ function renderActions() {
 
   box.append(info, upload, reset);
 }
+
+/**
+ * 刷新「自定义状态图片」卡的右侧：描述 / AI 按钮可用性 / 配额与进度文案。
+ * 逐条对齐 mac 版 refreshSpriteAccessUI。
+ */
+function renderPetImages(snapshot) {
+  if (snapshot) petImages = snapshot;
+  const desc = $('sprite-desc');
+  const aiBtn = $('ai-generate');
+  const status = $('ai-status');
+  const historyBtn = $('pet-history');
+  if (!desc || !aiBtn || !status) return;
+
+  const { hasCode, busy, quotaLimit, quotaRemaining } = petImages;
+  const quotaExhausted = Boolean(hasCode) && Number(quotaRemaining) === 0 && Number(quotaLimit) > 0;
+
+  if (hasCode) {
+    desc.textContent = SPRITE_DESC_FULL;
+    desc.classList.remove('warn');
+    if (!busy && Number(quotaLimit) > 0) {
+      status.textContent = quotaExhausted
+        ? `AI 生成次数已用完（${quotaLimit}/${quotaLimit}）`
+        : `剩余 AI 生成次数：${quotaRemaining}/${quotaLimit}`;
+    }
+  } else {
+    desc.textContent = SPRITE_DESC_NO_CODE;
+    desc.classList.add('warn');
+    status.textContent = '';
+  }
+  // 生成中的阶段文案（「正在生成宠物动画帧…」这类）优先占着右侧，不让配额把它盖掉
+  if (petImages.status) status.textContent = petImages.status;
+  if (busy) status.classList.add('working');
+  else status.classList.remove('working');
+
+  aiBtn.disabled = !hasCode || busy || quotaExhausted;
+  aiBtn.title = hasCode ? AI_TOOLTIP : 'AI 生成需要有效的服务端激活码（本地快捷码不占生成配额）';
+  if (historyBtn) historyBtn.disabled = busy;
+}
+
+/** AI 生成所有状态：选一张照片 → 上传 → 等逐状态生成 → 自动应用（整批扣 1 次配额） */
+async function generateAllStatesWithAI() {
+  if (!petImages.hasCode) {
+    setHint('sprite-hint', '该功能需要解锁：请在「通用设置 → 权限」输入有效的服务端激活码；直接上传、本机历史与本地切图不受影响', 'error');
+    return;
+  }
+  const res = await api.petImageGenerateAll().catch(() => null);
+  if (res && res.canceled) return;
+  if (!res || !res.ok) setHint('sprite-hint', (res && res.error) || 'AI 生成失败', 'error');
+  else await refreshSpriteStatus();
+}
+
+$('ai-generate').addEventListener('click', generateAllStatesWithAI);
+
+// 历史图片完全读本机文件，不需要网络（服务端只负责生成与存储）
+$('pet-history').addEventListener('click', async () => {
+  const res = await api.petImageOpenHistory(currentState).catch(() => null);
+  if (!res || !res.ok) setHint('sprite-hint', (res && res.error) || '打开历史图片失败', 'error');
+});
 
 async function refreshSpriteStatus() {
   spriteStatus = (await api.listCustomSprites()) || {};
@@ -448,6 +525,61 @@ wrPreview.addEventListener('click', async () => {
   setHint('weather-rem-hint', (res && res.ok) ? '已推送今日天气，请看天气窗' : ((res && res.error) || '预览失败'), (res && res.ok) ? 'ok' : 'error');
 });
 
+// ── 提醒设置：主动搭话（对齐 mac 版 refreshChatControls）──
+// 开关决定是否冒泡，间隔预设只在开启时可点（关闭时整组置灰，与 mac 版 alphaValue 0.4 一致）
+const chatToggle = $('chat-toggle');
+const chatDesc = $('chat-desc');
+const chatPresetBox = $('chat-presets');
+
+const CHAT_DESC_ON = '宠物会适时冒泡，结合热搜与你的 Todo 打个招呼（勿扰/睡觉时不打扰）';
+const CHAT_DESC_OFF = '关闭后宠物不会主动搭话（喝水、天气提醒不受影响）';
+
+let chatState = { enabled: true, minutes: 30, presets: [] };
+
+/** 预设按钮只在初始化时建一次（预设不会运行期变），选中态/置灰态交给 render 刷 */
+function renderChatPresets() {
+  if (!chatPresetBox) return;
+  chatPresetBox.textContent = '';
+  for (const minutes of chatState.presets || []) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'preset chat-preset';
+    btn.dataset.minutes = String(minutes);
+    btn.textContent = String(minutes);
+    btn.addEventListener('click', () => setProactiveChat({ intervalMinutes: minutes }));
+    chatPresetBox.append(btn);
+  }
+}
+
+function renderChatControls() {
+  if (!chatToggle) return;
+  chatToggle.setAttribute('aria-pressed', String(Boolean(chatState.enabled)));
+  chatDesc.textContent = chatState.enabled ? CHAT_DESC_ON : CHAT_DESC_OFF;
+  for (const btn of chatPresetBox.querySelectorAll('.chat-preset')) {
+    btn.classList.toggle('selected', Number(btn.dataset.minutes) === chatState.minutes);
+    btn.disabled = !chatState.enabled;
+  }
+}
+
+async function setProactiveChat(patch) {
+  const res = await api.setProactiveChat(patch);
+  if (res && res.ok) {
+    chatState = res.chat || chatState;
+    renderChatControls();
+    setHint('chat-hint', patch.intervalMinutes === undefined
+      ? (chatState.enabled ? '已开启主动搭话' : '已关闭主动搭话')
+      : `已设为每 ${chatState.minutes} 分钟搭话一次，已重新计时`, 'ok');
+    return;
+  }
+  if (res && res.chat) chatState = res.chat;
+  renderChatControls();
+  setHint('chat-hint', (res && res.error) || '保存失败，请重试', 'error');
+}
+
+chatToggle.addEventListener('click', () => {
+  setProactiveChat({ enabled: chatToggle.getAttribute('aria-pressed') !== 'true' });
+});
+
 // ── 菜单设置：右键菜单项展示开关（对齐 mac 版 fillMenuSettingsSection）──
 // 勾 / 取消直接写盘，下次弹出宠物右键菜单就应用（mac 版 contextMenuToggle 同节奏）
 let menuItems = [];
@@ -484,6 +616,240 @@ function renderMenuGrid() {
   }
 }
 
+// ── 好友消息（对齐 mac 版 fillSocialSection / loadSocial / 好友行与申请行）──
+// 数据一律走主进程 social-service（加密信封），这里只管渲染与交互节奏：
+//   · 停在好友区且面板可见时每 60s 静默同步一次（不抢用户看到的操作反馈）
+//   · 静默同步失败不打扰用户（网络瞬断下个周期会重来），手动刷新才回错误文案
+const socialListBox = $('friends-list');
+const socialRefreshBtn = $('refresh-social');
+const socialAddInput = $('add-friend-no');
+const socialAddBtn = $('add-friend');
+
+const EMPTY_HINT = '还没有好友，输入对方宠物号点「发申请」，对方同意后你们就互为好友了';
+const SHORT_EMPTY_HINT = '还没有好友，输入对方宠物号点「发申请」';
+const SOCIAL_AUTO_REFRESH_MS = 60 * 1000;
+
+let socialFriends = [];
+let socialRequests = [];
+let socialLoading = false;
+let socialTimer = null;
+
+function setSocialStatus(text, kind) {
+  setHint('social-hint', text || '', kind);
+}
+
+function renderPetNoValue(petNo) {
+  const el = $('pet-no-social');
+  if (el) el.textContent = petNo > 0 ? `#${petNo}` : '尚未获取，稍后会自动出现';
+}
+
+function socialTiny(label, handler) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tiny';
+  btn.textContent = label;
+  btn.addEventListener('click', handler);
+  return btn;
+}
+
+function socialRow(name, buttons, isRequest) {
+  const row = document.createElement('div');
+  row.className = isRequest ? 'friend-row request' : 'friend-row';
+  const label = document.createElement('span');
+  label.className = 'friend-name';
+  label.textContent = name;
+  row.append(label, ...buttons);
+  return row;
+}
+
+function socialGroup(title) {
+  const el = document.createElement('div');
+  el.className = 'list-group';
+  el.textContent = title;
+  return el;
+}
+
+/** 重建「好友与申请」列表：待处理申请靠上（避开被好友顶到看不见），下面才是好友 */
+function renderSocialList(emptyHint) {
+  if (!socialListBox) return;
+  socialListBox.textContent = '';
+  if (!socialFriends.length && !socialRequests.length) {
+    const hint = document.createElement('div');
+    hint.className = 'list-empty';
+    hint.textContent = emptyHint || EMPTY_HINT;
+    socialListBox.append(hint);
+    return;
+  }
+  if (socialRequests.length) {
+    socialListBox.append(socialGroup('收到的申请（同意后才互为好友）'));
+    for (const req of socialRequests) {
+      socialListBox.append(socialRow(`${req.display} 申请加你为好友`, [
+        socialTiny('同意', () => decideFriendRequest('accept', req)),
+        socialTiny('拒绝', () => decideFriendRequest('reject', req)),
+      ], true));
+    }
+  }
+  if (socialFriends.length) {
+    socialListBox.append(socialGroup('我的好友'));
+    for (const friend of socialFriends) {
+      socialListBox.append(socialRow(friend.display, [
+        socialTiny('聊天', () => openFriendChatWith(friend)),
+        socialTiny('删除', () => removeFriend(friend)),
+      ], false));
+    }
+  }
+}
+
+function socialChanged(friends, requests) {
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  return !same(friends, socialFriends) || !same(requests, socialRequests);
+}
+
+/** 列表底部状态文案（逐条对齐 mac 版 applySocialStatus） */
+function applySocialStatus(pending, changed, silent) {
+  const pendingText = `有 ${socialRequests.length} 条好友申请等你处理`;
+  if (!silent) {
+    setSocialStatus(pending ? pendingText : '');
+    return;
+  }
+  // 原本就在提示待处理申请时，静默同步才能接着改这一行（不抢用户刚看到的操作反馈）
+  const el = $('social-hint');
+  const wasPendingHint = /条好友申请等你处理$/.test((el && el.textContent) || '');
+  if (pending) setSocialStatus(pendingText);
+  else if (wasPendingHint) setSocialStatus(changed ? '好友与申请已同步到最新' : '');
+}
+
+/**
+ * 拉好友与申请。silent=true 为后台静默同步（面板可见期间的定时触发）：
+ * 不抢「刷新中…」与「正在加载…」这些可见反馈，只在数据确实变了时重排列表。
+ */
+async function loadSocial(silent) {
+  if (socialLoading) return;
+  socialLoading = true;
+  if (!silent) {
+    socialRefreshBtn.textContent = '刷新中…';
+    setSocialStatus('正在加载…');
+  }
+  let res = null;
+  try {
+    res = await api.socialSync();
+  } finally {
+    socialLoading = false;
+    if (!silent) socialRefreshBtn.textContent = '刷新';
+  }
+  if (!res || !res.ok) {
+    if (!silent) setSocialStatus(`加载失败：${(res && res.error) || '未知错误'}`, 'error');
+    return;
+  }
+  renderPetNoValue(Number(res.petNo) || 0);
+  const changed = socialChanged(res.friends || [], res.requests || []);
+  socialFriends = res.friends || [];
+  socialRequests = res.requests || [];
+  if (changed || !silent) renderSocialList(EMPTY_HINT);
+  applySocialStatus(Boolean(socialRequests.length), changed, silent);
+}
+
+/** 根据「当前分区是好友区 + 面板可见」开/关静默同步计时 */
+function syncSocialAutoRefresh() {
+  const onSocial = document.querySelector('.section[data-section="social"]').classList.contains('active');
+  if (onSocial && document.visibilityState === 'visible') {
+    if (socialTimer) return;
+    socialTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadSocial(true);
+    }, SOCIAL_AUTO_REFRESH_MS);
+    return;
+  }
+  if (socialTimer) {
+    clearInterval(socialTimer);
+    socialTimer = null;
+  }
+}
+
+socialRefreshBtn.addEventListener('click', () => loadSocial(false));
+
+document.getElementById('copy-pet-no').addEventListener('click', async () => {
+  const res = await api.socialCopyPetNo();
+  if (res && res.ok) setSocialStatus(`已复制你的宠物号 #${res.petNo}，把它告诉朋友，对方发申请、你同意后就是好友`);
+  else setSocialStatus((res && res.error) || '复制失败', 'error');
+});
+
+async function addFriend() {
+  const raw = (socialAddInput.value || '').trim();
+  if (!/^[1-9]\d*$/.test(raw)) {
+    setSocialStatus('请输入正确的宠物号（纯数字）', 'error');
+    return;
+  }
+  if (socialLoading) return;
+  socialLoading = true;
+  setSocialStatus('正在发送申请…');
+  socialAddBtn.disabled = true;
+  let res = null;
+  try {
+    res = await api.socialAdd(Number(raw));
+  } finally {
+    socialLoading = false;
+    socialAddBtn.disabled = false;
+  }
+  if (!res || !res.ok) {
+    setSocialStatus(`申请失败：${(res && res.error) || '未知错误'}`, 'error');
+    return;
+  }
+  socialFriends = res.friends || [];
+  socialAddInput.value = '';
+  socialAddInput.blur();
+  renderSocialList(SHORT_EMPTY_HINT);
+  setSocialStatus(`#${raw}：${res.notice}`);
+}
+
+socialAddBtn.addEventListener('click', addFriend);
+socialAddInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    addFriend();
+  }
+});
+
+/** 同意/拒绝的共用处理：处理后从待处理列表移除并刷新列表 */
+async function decideFriendRequest(action, req) {
+  if (socialLoading) return;
+  socialLoading = true;
+  setSocialStatus(action === 'accept' ? '正在同意…' : '正在拒绝…');
+  const res = await api.socialDecide(action, req.fromPetNo).catch(() => null);
+  socialLoading = false;
+  if (!res || !res.ok) {
+    setSocialStatus(`处理失败：${(res && res.error) || '未知错误'}`, 'error');
+    return;
+  }
+  socialFriends = res.friends || [];
+  socialRequests = socialRequests.filter((item) => item.id !== req.id);
+  renderSocialList(SHORT_EMPTY_HINT);
+  setSocialStatus(action === 'accept'
+    ? `已同意 ${req.display} 的申请，你们互为好友了`
+    : `已拒绝 ${req.display} 的申请`);
+}
+
+async function removeFriend(friend) {
+  if (socialLoading) return;
+  socialLoading = true;
+  setSocialStatus('正在删除…');
+  const res = await api.socialRemove(friend.petNo).catch(() => null);
+  socialLoading = false;
+  if (!res || !res.ok) {
+    setSocialStatus(`删除失败：${(res && res.error) || '未知错误'}`, 'error');
+    return;
+  }
+  socialFriends = res.friends || [];
+  renderSocialList('还没有好友');
+  setSocialStatus(`已删除好友 ${friend.display}（双方同时解除）`);
+}
+
+/** 打开与这位好友的会话窗（主进程 FriendChatWindow 同能力：可回看记录、可直接回复） */
+async function openFriendChatWith(friend) {
+  const res = await api.socialOpenChat(friend.petNo, friend.display).catch(() => null);
+  if (res && res.ok) setSocialStatus(`已打开与 ${friend.display} 的会话窗`);
+  else setSocialStatus((res && res.error) || '打开会话失败', 'error');
+}
+
 // ── 关闭 ─────────────────────────────────────
 $('close').addEventListener('click', () => api.close());
 
@@ -492,10 +858,6 @@ document.addEventListener('keydown', (event) => {
 });
 
 // ── 初始化 ───────────────────────────────────
-function formatPetNo(petNo) {
-  return petNo ? `#${petNo}` : '未分配';
-}
-
 api.load().then((state) => {
   if (!state) return;
 
@@ -503,12 +865,15 @@ api.load().then((state) => {
   const pet = state.pet || {};
   $('pet-name').value = pet.name || '';
   $('pet-name').placeholder = pet.name || '毛豆';
-  $('pet-no-social').textContent = formatPetNo(pet.petNo);
+  renderPetNoValue(Number(pet.petNo) || 0);
   petStateList = pet.states || [];
   currentState = pet.state || 'focus';
   selectedState = findState(currentState) ? currentState : 'focus';
   stateBadge.textContent = badgeText(currentState);
+  renderPetImages(state.petImages || null);
   refreshSpriteStatus();
+  // 剩余生成次数拉一次（无码 / 生成中都会在主进程里直接回落，不必这里再判权限）
+  if (api.petImageRefresh) api.petImageRefresh();
 
   // 通用设置
   const general = state.general || {};
@@ -530,6 +895,15 @@ api.load().then((state) => {
   menuItems = (state.menu && state.menu.items) || [];
   renderMenuGrid();
 
+  // 提醒设置：主动搭话
+  chatState = state.proactiveChat || chatState;
+  renderChatPresets();
+  renderChatControls();
+
+  // 好友消息：先给空态，停在好友区时顺手拉一次（面板复用实例，切分区时也会重拉）
+  renderSocialList(EMPTY_HINT);
+  syncSocialAutoRefresh();
+
   // 提醒设置
   const reminder = state.reminder || {};
   if (reminder.min && reminder.max) range = { min: reminder.min, max: reminder.max };
@@ -542,3 +916,32 @@ api.load().then((state) => {
 if (api.onPetState) {
   api.onPetState((payload) => markState((payload && payload.state) || payload));
 }
+
+// 图片生成进度 / 配额 / 本机图片变化：主进程推整包快照，面板重绘右侧文案与按钮可用性
+// （busy 一解除，「直接上传」的圆点与「恢复默认」可用态也要跟着重算，所以连操作条一起重画）
+if (api.onPetImages) {
+  api.onPetImages((snapshot) => {
+    renderPetImages(snapshot);
+    renderActions();
+    refreshSpriteStatus();
+  });
+}
+
+// 心跳拿到/刷新了宠物号（首次联网、换号）时跟着改展示
+if (api.onPetNo) {
+  api.onPetNo((payload) => renderPetNoValue(Number(payload && payload.petNo) || 0));
+}
+
+// 在申请卡上同意/拒绝了申请：按主进程回传的最新好友列表重排，面板不重跑网络
+if (api.onSocialChanged) {
+  api.onSocialChanged((payload) => {
+    const p = payload || {};
+    if (Array.isArray(p.friends)) socialFriends = p.friends;
+    if (p.removeRequestId) socialRequests = socialRequests.filter((item) => item.id !== p.removeRequestId);
+    renderSocialList(EMPTY_HINT);
+    if (p.notice) setSocialStatus(p.notice);
+  });
+}
+
+// 面板被遮到别的 Space / 最小化时停掉静默同步，回来再开（mac 版靠 isVisible）
+document.addEventListener('visibilitychange', syncSocialAutoRefresh);

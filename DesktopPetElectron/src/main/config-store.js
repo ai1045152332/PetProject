@@ -14,7 +14,8 @@ const DEFAULTS = {
   petName: '', // 宠物名称，随心跳上报；留空表示尚未取名，首次启动随机取一个
   autoLaunchInitialized: false, // 是否已执行过「默认开启开机自启」的一次性初始化（用户之后可手动关）
   deviceId: '', // 设备唯一标识，首次启动由 app-info 解析后写回
-  petNo: 0, // 服务端分配的宠物号，心跳响应回填
+  petNo: 0, // 服务端分配的宠物号，心跳响应或 /api/social/register 回填
+  shownFriendRequestIDs: [], // 已弹过卡的好友申请 ID（心跳每分钟重投，靠它去重只弹一次）
   lastUpdateCheckAt: 0, // 上次检查更新的时间戳（毫秒）
   winTrayHintShown: false, // Windows 是否已弹过「托盘图标被折进通知区」的引导气泡（只弹一次）
   todoReminderRepeatMinutes: 5, // 同一条 Todo 到期后重复提醒的间隔（分钟，对标 mac 版 settings.todoReminder.repeatMinutes）

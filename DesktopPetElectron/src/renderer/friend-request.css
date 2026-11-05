@@ -1,0 +1,58 @@
+/* src/renderer/friend-request.css — 好友申请卡相对喝水提醒的排版差异（底板样式复用 reminder.css） */
+
+/* 申请人展示名可能较长：字号收一档并允许换行，不撑破卡片 */
+.card .body .text {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.card .body {
+  /* 底部留白：说明行不被卡片底边裁掉 */
+  padding-bottom: 14px;
+}
+
+.card .body .icon { font-size: 30px; }
+
+/* 同意 / 拒绝并排：与 mac 版申请卡同布局（两键等宽、中间留缝） */
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.actions button {
+  /* 卡片整体是 drag 区，按钮必须显式 no-drag 才能点（否则只拖窗不触发点击） */
+  -webkit-app-region: no-drag;
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 18px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.accept-btn {
+  border: 1px solid rgba(47, 179, 110, 0.5);
+  background: rgba(47, 179, 110, 0.18);
+  color: #7de2b0;
+}
+
+.accept-btn:hover {
+  background: rgba(47, 179, 110, 0.3);
+  color: #a5f0c8;
+}
+
+.reject-btn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #c0c0d0;
+}
+
+.reject-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6e6f0;
+}

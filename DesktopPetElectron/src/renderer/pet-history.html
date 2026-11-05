@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <!-- 缩略图读本机 .img（内容是 PNG/GIF 字节），必须放行 file: -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file:; style-src 'self'; script-src 'self'" />
+  <title>图片历史</title>
+  <!-- 复用提醒卡底板样式（.card / .header / .title / .close），网格与详情栏另起一套 -->
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./pet-history.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title">🗂 图片历史</span>
+      <span class="close" id="close">×</span>
+    </div>
+
+    <div class="filter-bar">
+      <div class="filter" id="filter"></div>
+      <span class="count" id="count">—</span>
+    </div>
+
+    <div class="middle">
+      <div class="grid" id="grid">
+        <div class="empty" id="empty">这一栏暂时没有图片。<br />用「直接上传」或「AI 生成」添加后，历史都会保存在本机。</div>
+      </div>
+      <div class="detail">
+        <div class="preview"><img id="preview" alt="" /></div>
+        <div class="detail-info" id="info"></div>
+        <div class="target-title">应用目标</div>
+        <select id="target" class="target"></select>
+        <button type="button" class="primary-btn" id="applyBtn">应用</button>
+        <div class="detail-row">
+          <button type="button" class="ghost-btn" id="deleteBtn">删除</button>
+          <button type="button" class="ghost-btn small" id="revealBtn">在文件夹中显示</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span class="hint">单击选中看大图 · 双击直接应用</span>
+      <span class="status" id="status"></span>
+      <button type="button" class="done-btn" id="doneBtn">完成</button>
+    </div>
+  </div>
+  <script src="./pet-history.js"></script>
+</body>
+</html>

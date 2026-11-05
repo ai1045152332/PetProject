@@ -8,7 +8,7 @@ set -euo pipefail
 #   deploy.sh --check                # 只检查环境与下一个版本号，不发布
 #   COMMIT=1 deploy.sh ...           # 发布后顺带提交并推送 git
 
-# 仓库根目录：默认从脚本真实位置推断（skills/deploy-cute-pet/scripts → 上三级），
+# 仓库根目录：默认从脚本真实位置推断（skills/cute-pet-deploy/scripts → 上三级），
 # 同时兼容通过 ~/.codex/skills 的符号链接调用
 SCRIPT_REAL=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0")
 REPO_DEFAULT=$(cd "$(dirname "$SCRIPT_REAL")/../../.." && pwd)

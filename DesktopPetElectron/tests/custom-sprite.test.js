@@ -43,10 +43,18 @@ function writeJson(file, obj) {
 }
 
 // 造一张“源图”：写到存储目录之外的临时文件
+// 图片扩展名给真的 1×1 PNG 字节：存储层对齐 mac 版 decodeAnimation，按字节魔数与尺寸验图，
+// 纯填充字节会被当「不是图」拒掉（非图片名仍留填充字节，用来验扩展名那一关）
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 function makeSrc(name, bytes = 16) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-sprite-src-'));
   const p = path.join(dir, name);
-  fs.writeFileSync(p, Buffer.alloc(bytes, 1));
+  const head = /\.(png|jpe?g|gif)$/i.test(name) ? TINY_PNG : Buffer.alloc(0);
+  fs.writeFileSync(p, Buffer.concat([head, Buffer.alloc(Math.max(0, bytes - head.length), 1)]));
   return p;
 }
 

@@ -271,7 +271,7 @@ if [ "$DRY_RUN" = "1" ]; then
   python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1])), ensure_ascii=False, indent=2))" "$STAGE_DIR/latest.json"
   say ""
   say "✅ --dry-run 完成：安装包已签名并通过自检，未上传任何文件"
-  say "   去掉 --dry-run 正式发布：./skills/deploy-cute-pet/scripts/deploy-win.sh \"$PLAIN\" \"$NOTES\""
+  say "   去掉 --dry-run 正式发布：./skills/cute-pet-deploy/scripts/deploy-win.sh \"$PLAIN\" \"$NOTES\""
   rm -f "$PREV" "$STAGE_DIR/latest.json"
   exit 0
 fi

@@ -96,6 +96,11 @@ function createSpeechBubble(deps = {}) {
   /** 淡出后关闭：渲染层加 .leave 播过渡动画，主进程等动画时长再 close */
   function fadeOutAndClose(fadeMs = FADE_MS) {
     if (!win || win.isDestroyed()) return;
+    const clear = deps.clearTimer || clearTimeout;
+    if (hideTimer) {
+      clear(hideTimer);
+      hideTimer = null;
+    }
     stopFollow();
     win.webContents.send('bubble:leave');
     const setT = deps.setTimer || setTimeout;
@@ -203,6 +208,9 @@ function createSpeechBubble(deps = {}) {
     },
 
     dismiss,
+
+    /** 用户点掉气泡 / 台词自然结束：播淡出动画后收起（区别于 dismiss 的立即关闭） */
+    fadeOut: fadeOutAndClose,
 
     /** 退出前收尾：取消所有定时器（窗口由 app 统一销毁） */
     stop() {

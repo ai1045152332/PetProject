@@ -152,12 +152,20 @@ function createProactiveChat(deps = {}) {
     deps.say(encouragement(random));
   }
 
-  /** 按当前间隔重建周期搭话定时器（改完立即生效，不重跑启动首句） */
+  /**
+   * 按当前间隔重建周期搭话定时器（改完立即生效，不重跑启动首句）。
+   * 用「跑完一次再按最新间隔重挂」代替 setInterval：既对齐 mac 版 repeats 的节律，
+   * 又让间隔被改小/改大后下一轮就采用新值，不必等到旧周期结束。
+   */
   function restartRepeat() {
     if (repeatTimer) clearT(repeatTimer);
     repeatTimer = null;
     const minutes = currentChatInterval();
-    repeatTimer = setT(() => performProactiveChat(), minutes * 60 * 1000);
+    repeatTimer = setT(() => {
+      repeatTimer = null;
+      performProactiveChat();
+      restartRepeat();
+    }, minutes * 60 * 1000);
     if (typeof repeatTimer.unref === 'function') repeatTimer.unref();
   }
 
@@ -165,11 +173,17 @@ function createProactiveChat(deps = {}) {
     /** 启动：先拉一次热搜，再挂缓存刷新、首句与周期搭话 */
     start() {
       refreshNewsCache();
-      newsTimer = setT(() => {
-        refreshNewsCache();
-        restartRepeat(); // 每轮周期里顺带按最新间隔校准（改配置后最迟一轮生效）
-      }, NEWS_REFRESH_SECONDS * 1000);
-      if (typeof newsTimer.unref === 'function') newsTimer.unref();
+      const armNews = () => {
+        newsTimer = setT(() => {
+          newsTimer = null;
+          refreshNewsCache();
+          // 每轮缓存刷新顺带按最新间隔校准一次周期搭话
+          restartRepeat();
+          armNews();
+        }, NEWS_REFRESH_SECONDS * 1000);
+        if (typeof newsTimer.unref === 'function') newsTimer.unref();
+      };
+      armNews();
       firstTimer = setT(() => {
         firstTimer = null;
         sayGreeting();

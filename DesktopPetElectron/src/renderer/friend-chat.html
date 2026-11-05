@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>好友消息</title>
+  <!-- 复用提醒卡底板样式（.card / .header / .title / .close），会话区样式单独一套 -->
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./friend-chat.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <span class="title" id="title">💬 好友消息</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="thread" id="thread">
+      <div class="empty">正在加载聊天记录…</div>
+    </div>
+    <div class="compose">
+      <input type="text" id="chatInput" placeholder="回复…" />
+      <button type="button" class="send" id="sendBtn">发送 ✉️</button>
+    </div>
+    <div class="status" id="status">看完点 ✕ 关闭（关闭后对方能看到已读）</div>
+  </div>
+  <script src="./friend-chat.js"></script>
+</body>
+</html>

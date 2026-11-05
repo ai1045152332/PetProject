@@ -49,6 +49,7 @@
             <div class="card-header">
               <h3 class="card-title">设备列表</h3>
               <span class="ms-auto text-secondary">每 5 秒自动刷新</span>
+              <button class="btn btn-sm btn-primary ms-3" onclick="openPush('', '全部宠物')">全员推送</button>
             </div>
             <div class="table-responsive">
               <table class="table table-vcenter card-table table-hover">
@@ -71,6 +72,74 @@
             </div>
             <div class="card-body text-secondary text-center" id="empty" style="display:none">
               还没有宠物上报心跳哦～
+            </div>
+          </div>
+
+          <div class="card mt-3">
+            <div class="card-header">
+              <h3 class="card-title">推送记录</h3>
+              <span class="ms-auto text-secondary">随心跳一次性下发，同一台设备只执行一次</span>
+              <button class="btn btn-sm btn-outline-secondary ms-3" onclick="loadPushes()">刷新</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter card-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>类型</th>
+                    <th>目标</th>
+                    <th>内容</th>
+                    <th>已下发</th>
+                    <th class="w-1"></th>
+                  </tr>
+                </thead>
+                <tbody id="pushList"></tbody>
+              </table>
+            </div>
+            <div class="card-body text-secondary text-center" id="pushEmpty" style="display:none">
+              还没有推送过任何内容
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal modal-blur" id="pushModal" style="display:none">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="pushModalTitle">推送</h5>
+              <button type="button" class="btn-close" onclick="closePush()"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label">类型</label>
+                <select class="form-select" id="pushKind" onchange="syncPushForm()">
+                  <option value="text">文字通知</option>
+                  <option value="video">视频</option>
+                  <option value="update">触发客户端检查更新</option>
+                </select>
+              </div>
+              <div class="mb-3" id="pushTitleRow">
+                <label class="form-label">标题</label>
+                <input class="form-control" id="pushTitle" placeholder="例如：今晚 8 点维护" />
+              </div>
+              <div class="mb-3" id="pushTextRow">
+                <label class="form-label">文字内容</label>
+                <textarea class="form-control" id="pushText" rows="4" placeholder="要显示给用户的文字"></textarea>
+              </div>
+              <div class="mb-3" id="pushUrlRow" style="display:none">
+                <label class="form-label">视频地址（mp4 / https）</label>
+                <input class="form-control" id="pushUrl" placeholder="https://…/video.mp4" />
+              </div>
+              <div class="mb-3" id="pushDurationRow">
+                <label class="form-label">自动关闭（秒，0 = 手动关）</label>
+                <input class="form-control" id="pushDuration" type="number" min="0" value="0" />
+              </div>
+              <div class="text-secondary" id="pushTargetText"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-link" onclick="closePush()">取消</button>
+              <button type="button" class="btn btn-primary" id="pushSubmit" onclick="submitPush()">发送</button>
             </div>
           </div>
         </div>
@@ -137,9 +206,12 @@
             'placeholder="点击填写备注" value="' + esc(d.note || '') + '" ' +
             'data-host="' + esc(d.hostname) + '" onchange="saveNote(this)"></td>' +
           '<td>' + badge + '</td>' +
-          '<td><button class="btn btn-sm btn-outline-danger" data-host="' + esc(d.hostname) + '" ' +
-            'data-online="' + (d.online ? '1' : '0') + '" data-pet="' + esc(d.petName) + '" ' +
-            'onclick="deleteDevice(this)">删除</button></td>' +
+          '<td class="text-nowrap">' +
+            '<button class="btn btn-sm btn-outline-primary me-1" data-id="' + esc(d.deviceId || '') + '" ' +
+              'data-pet="' + esc(d.petName) + '" onclick="openPush(this.getAttribute(\'data-id\'), this.getAttribute(\'data-pet\'))">推送</button>' +
+            '<button class="btn btn-sm btn-outline-danger" data-host="' + esc(d.hostname) + '" ' +
+              'data-online="' + (d.online ? '1' : '0') + '" data-pet="' + esc(d.petName) + '" ' +
+              'onclick="deleteDevice(this)">删除</button></td>' +
         '</tr>';
       }).join('');
     }
@@ -219,8 +291,125 @@
       }
     }
 
+    // ── 运营推送（文字 / 视频 / 触发更新）──
+    let pushTarget = { deviceId: '', label: '全部宠物' };
+
+    function openPush(deviceId, label) {
+      pushTarget = { deviceId: deviceId || '', label: label || '全部宠物' };
+      document.getElementById('pushModalTitle').textContent = '推送给「' + pushTarget.label + '」';
+      document.getElementById('pushTargetText').textContent = pushTarget.deviceId
+        ? '设备 ID：' + pushTarget.deviceId
+        : '不指定设备 = 广播给所有宠物（各自只执行一次）';
+      document.getElementById('pushKind').value = 'text';
+      document.getElementById('pushTitle').value = '';
+      document.getElementById('pushText').value = '';
+      document.getElementById('pushUrl').value = '';
+      document.getElementById('pushDuration').value = '0';
+      syncPushForm();
+      const modal = document.getElementById('pushModal');
+      modal.style.display = 'block';
+      modal.classList.add('show');
+    }
+
+    function closePush() {
+      const modal = document.getElementById('pushModal');
+      modal.classList.remove('show');
+      modal.style.display = 'none';
+    }
+
+    function syncPushForm() {
+      const kind = document.getElementById('pushKind').value;
+      document.getElementById('pushTextRow').style.display = kind === 'text' ? '' : 'none';
+      document.getElementById('pushDurationRow').style.display = kind === 'text' ? '' : 'none';
+      document.getElementById('pushUrlRow').style.display = kind === 'video' ? '' : 'none';
+      document.getElementById('pushTitleRow').style.display = kind === 'update' ? 'none' : '';
+    }
+
+    async function submitPush() {
+      const btn = document.getElementById('pushSubmit');
+      const kind = document.getElementById('pushKind').value;
+      const body = {
+        kind: kind,
+        deviceId: pushTarget.deviceId,
+        title: document.getElementById('pushTitle').value.trim(),
+        text: document.getElementById('pushText').value.trim(),
+        url: document.getElementById('pushUrl').value.trim(),
+        durationMs: Math.max(0, Number(document.getElementById('pushDuration').value) || 0) * 1000,
+      };
+      if (kind === 'text' && !body.text) { alert('文字推送要填内容'); return; }
+      if (kind === 'video' && !body.url) { alert('视频推送要填地址'); return; }
+
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/api/admin/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Session-Token': session() },
+          body: JSON.stringify(body)
+        });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '发送失败');
+        closePush();
+        await loadPushes();
+      } catch (e) {
+        alert('推送失败：' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    const PUSH_KIND_LABEL = { text: '📝 文字', video: '🎬 视频', update: '🔄 更新' };
+
+    async function loadPushes() {
+      const tbody = document.getElementById('pushList');
+      try {
+        const resp = await fetch('/api/admin/push/list', { headers: { 'X-Session-Token': session() } });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '加载失败');
+        const list = (json.data && json.data.commands) || [];
+        document.getElementById('pushEmpty').style.display = list.length ? 'none' : '';
+        tbody.innerHTML = list.map(c => {
+          const when = new Date(c.createdAt).toLocaleString('zh-CN');
+          const content = c.kind === 'video' ? esc(c.url || '') : esc(c.text || '');
+          const target = c.deviceId ? '<span class="font-monospace">' + esc(c.deviceId) + '</span>' : '<span class="badge bg-blue-lt">广播</span>';
+          const delivered = (c.deliveredTo || []).length;
+          return '<tr>' +
+            '<td class="text-secondary text-nowrap">' + when + '</td>' +
+            '<td class="text-nowrap">' + (PUSH_KIND_LABEL[c.kind] || esc(c.kind)) + '</td>' +
+            '<td>' + target + '</td>' +
+            '<td class="text-truncate" style="max-width:280px">' + (esc(c.title || '') || content) + '</td>' +
+            '<td>' + (delivered ? delivered + ' 台' : '待下发') + '</td>' +
+            '<td><button class="btn btn-sm btn-outline-danger" onclick="deletePush(\'' + esc(c.id) + '\')">删除</button></td>' +
+            '</tr>';
+        }).join('');
+      } catch (e) {
+        document.getElementById('pushEmpty').style.display = '';
+        document.getElementById('pushEmpty').textContent = '推送记录加载失败：' + e.message;
+      }
+    }
+
+    async function deletePush(id) {
+      if (!confirm('删除这条推送？已下发的不会撤回。')) return;
+      try {
+        const resp = await fetch('/api/admin/push/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Session-Token': session() },
+          body: JSON.stringify({ id: id })
+        });
+        if (resp.status === 401) { localStorage.removeItem('petAdminSession'); location.replace('/admin/login'); return; }
+        const json = await resp.json();
+        if (json.code !== 0) throw new Error(json.msg || '删除失败');
+        await loadPushes();
+      } catch (e) {
+        alert('删除失败：' + e.message);
+      }
+    }
+
     load();
     setInterval(load, 5000);
+    loadPushes();
+    setInterval(loadPushes, 15000);
   </script>
 </body>
 </html>

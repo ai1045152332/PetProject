@@ -59,7 +59,8 @@ sqlite3 -header -column data/petserver.db "select kind,from_no,to_no,status,date
 | `GET /api/ping` | 连通性测试（浏览器可直接打开） |
 | `POST /api/heartbeat` | 心跳上报：版本号 + 本机信息 + 宠物名/状态 |
 | `GET /api/devices` | 在线宠物列表：返回所有设备及在线状态 |
-| `GET /api/weather` | 天气查询（服务端代持上游 Key，按设备限流 30 次/小时） |
+| `GET /api/weather` | 天气查询（服务端代持上游 Key，按设备限流 30 次/小时；结果按城市缓存 3 小时） |
+| `GET /api/news` | 热搜 Top10（服务端抓头条→百度兜底，缓存 10 分钟；客户端不再直连上游） |
 | `POST /api/access/verify` | 激活码验证（码 + 设备 ID，每码限绑定 N 台设备） |
 | `POST /api/admin/codes/generate` | 管理：生成激活码（需 `X-Admin-Token`，可带每码 AI 生图次数 `imageQuota`） |
 | `POST /api/admin/codes/quota` | 管理：设置/追加某激活码的 AI 生图总次数（需 `X-Admin-Token`） |

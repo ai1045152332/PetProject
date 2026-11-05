@@ -27,7 +27,7 @@ Module._load = function (request) {
   return origLoad.apply(this, arguments);
 };
 
-const store = require(path.join(SRC, 'custom-sprite-store.js'));
+const store = require(path.join(SRC, 'pet', 'custom-sprite-store.js'));
 
 let failed = 0;
 function check(name, cond, extra) {

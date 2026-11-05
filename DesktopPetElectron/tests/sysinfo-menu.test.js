@@ -11,9 +11,9 @@ const Module = require('module');
 const assert = require('assert');
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const TRAY_PATH = path.join(SRC, 'tray.js');
-const { SysInfoMonitor, parseCpuTop, parseVmStat, parseNetstatIb, computeTrayTitle, METRIC_ICONS } = require(path.join(SRC, 'system-monitor.js'));
-const { createCacheOnlySnapshot, buildWorkerMonitor, runWorkerLoop } = require(path.join(SRC, 'sysinfo-worker.js'));
+const TRAY_PATH = path.join(SRC, 'system', 'tray.js');
+const { SysInfoMonitor, parseCpuTop, parseVmStat, parseNetstatIb, computeTrayTitle, METRIC_ICONS } = require(path.join(SRC, 'system', 'system-monitor.js'));
+const { createCacheOnlySnapshot, buildWorkerMonitor, runWorkerLoop } = require(path.join(SRC, 'system', 'sysinfo-worker.js'));
 
 let failed = 0;
 function check(name, condition) {
@@ -313,7 +313,7 @@ Module._load = function (request) {
 
 const ORIGINAL_PLATFORM = process.platform;
 // 顶栏合成图桩：tray 只关心「拿到图 / 拿到 null」，真实拼图与落盘由 metric-bar-image.test.js 覆盖
-const BAR_PATH = path.join(SRC, 'metric-bar-image.js');
+const BAR_PATH = path.join(SRC, 'system', 'metric-bar-image.js');
 let barAvailable = true;
 require.cache[BAR_PATH] = {
   id: BAR_PATH, filename: BAR_PATH, loaded: true, children: [], paths: [],

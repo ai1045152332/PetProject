@@ -54,9 +54,9 @@ Module._load = function (request) {
   return origLoad.apply(this, arguments);
 };
 
-const { parseToutiao, parseBaidu, createNewsService } = require(path.join(SRC, 'news-service'));
-const { weatherEmoji, createWeatherService } = require(path.join(SRC, 'weather-service'));
-const { createCardWindow } = require(path.join(SRC, 'card-window'));
+const { createNewsService } = require(path.join(SRC, 'info', 'news-service'));
+const { weatherEmoji, createWeatherService } = require(path.join(SRC, 'info', 'weather-service'));
+const { createCardWindow } = require(path.join(SRC, 'push', 'card-window'));
 
 let failed = 0;
 function check(name, condition) {
@@ -68,47 +68,45 @@ function check(name, condition) {
   }
 }
 
-// ── 头条解析：字段名照抄 NewsFetcher.swift（Title / Url 大写） ──
-{
-  const items = parseToutiao({
-    data: Array.from({ length: 12 }, (_, i) => ({ Title: `标题${i + 1}`, Url: `https://t.example/${i}` })),
-  });
-  check('头条源取前 10 条（与 mac 版 prefix(10) 一致）', items && items.length === 10);
-  check('排名从 1 开始连续', items[0].rank === 1 && items[9].rank === 10);
-  check('标题/链接字段映射正确', items[0].title === '标题1' && items[0].url === 'https://t.example/0');
-  check('缺标题兜底「无标题」', parseToutiao({ data: [{ Url: 'x' }] })[0].title === '无标题');
-  check('空数据/坏结构返回 null（触发换源）', parseToutiao({ data: [] }) === null && parseToutiao(null) === null);
-}
-
-// ── 百度兜底解析：wise 结构多套一层 content，字段 query/word/title ──
-{
-  const nested = parseBaidu({
-    data: { cards: [{ content: [{ content: [{ query: '热搜A' }, { word: '热搜B' }] }] }] },
-  });
-  check('百度内层 content 展开后取列表', nested && nested.length === 2 && nested[0].title === '热搜A');
-  check('无直达链接时用标题拼百度搜索 URL',
-    nested[1].url === `https://www.baidu.com/s?wd=${encodeURIComponent('热搜B')}`);
-
-  const flat = parseBaidu({ data: { cards: [{ content: [{ word: '热搜C' }, { title: '热搜D' }] }] } });
-  check('平铺结构（无内层 content）也可解析', flat && flat.length === 2 && flat[1].title === '热搜D');
-  check('坏结构返回 null', parseBaidu({}) === null && parseBaidu(null) === null);
-}
-
-// ── 换源兜底：头条失败 → 百度；都失败 → 空数组 ──
+// ── 热搜改走服务端缓存：客户端只解析 /api/news 的返回，不再自己抓上游 ──
 {
   (async () => {
+    let requested = '';
     const news = createNewsService({
-      fetchJSON: async (url) => (url.includes('toutiao') ? null : {
-        data: { cards: [{ content: [{ query: '兜底热搜' }] }] },
-      }),
+      baseUrl: () => 'http://server.test',
+      fetchJSON: async (url) => {
+        requested = url;
+        return {
+          code: 0,
+          data: {
+            cached: true,
+            ttlSec: 600,
+            items: Array.from({ length: 12 }, (_, i) => ({
+              rank: i + 1, title: `热搜${i + 1}`, url: `https://n.example/${i}`,
+            })),
+          },
+        };
+      },
     });
     const items = await news.fetchHotNews();
-    check('头条失败自动换百度热搜', items.length === 1 && items[0].title === '兜底热搜');
+    check('热搜请求打到服务端 /api/news', requested === 'http://server.test/api/news', requested);
+    check('服务端榜单原样返回（排名/标题/链接）',
+      items.length === 12 && items[0].rank === 1 && items[0].title === '热搜1' && items[0].url === 'https://n.example/0');
 
-    const dead = createNewsService({ fetchJSON: async () => null });
-    check('两源都失败返回空数组（渲染层提示加载失败）', (await dead.fetchHotNews()).length === 0);
+    const empty = createNewsService({ baseUrl: () => 'http://server.test', fetchJSON: async () => null });
+    check('服务端不可用返回空数组（渲染层提示加载失败）', (await empty.fetchHotNews()).length === 0);
 
-    // ── 天气：emoji 映射与 mac 版一致（判序也一致：雷阵雨含「雨」先命中 🌧️）──
+    const blank = createNewsService({
+      baseUrl: () => 'http://server.test',
+      fetchJSON: async () => ({ data: { items: [{ title: '' }, { title: '有效' }] } }),
+    });
+    check('空标题条目被丢弃', (await blank.fetchHotNews()).length === 1);
+  })();
+}
+
+// ── 天气：emoji 映射与 mac 版一致（判序也一致：雷阵雨含「雨」先命中 🌧️）──
+{
+  (async () => {
     check('天气描述 → emoji', weatherEmoji('晴') === '☀️' && weatherEmoji('多云转阴') === '⛅'
       && weatherEmoji('大雨') === '🌧️' && weatherEmoji('雷阵雨') === '🌧️' && weatherEmoji('打雷') === '⛈️' && weatherEmoji('雾') === '🌫️');
 

@@ -94,7 +94,6 @@ final class PetViewModel: ObservableObject {
         static let waterRepeat = "waterRepeat"
         static let chatFirst = "chatFirst"
         static let chatRepeat = "chatRepeat"
-        static let newsRefresh = "newsRefresh"
         static let todoCheck = "todoCheck"
     }
 
@@ -730,23 +729,14 @@ final class PetViewModel: ObservableObject {
             UserDefaults.standard.set(clamped, forKey: Self.chatIntervalKey)
         }
     }
-    /// 热搜缓存刷新间隔（秒）
-    static let newsRefreshSeconds: TimeInterval = 1800
-
-    /// 缓存的热搜标题列表（后台刷新，搭话时随机挑一条，避免总是 Top1）
-    private var cachedNewsHeadlines: [String] = []
     /// 上次搭话播过的热搜（连续两次不弹同一条）
     private var lastSpokenHeadline: String?
-    /// 搭话轮换计数（新闻 / Todo 交替，避免总是同一主题）
+    /// 搭话轮换计数（新闻 / Todo / 关心问候轮着来，避免总是同一主题）
     private var chatTick: Int = 0
 
-    /// 启动主动搭话：先后台拉一次热搜做缓存，再安排首句与周期搭话
+    /// 启动主动搭话：排首句与周期搭话。
+    /// 热搜/天气由服务端带 TTL 缓存，这里不再本地缓存、也不设定时刷新。
     private func startProactiveChat() {
-        refreshNewsCache()
-        // 周期刷新热搜缓存
-        timers.schedule(name: TimerName.newsRefresh, interval: Self.newsRefreshSeconds, repeats: true) { [weak self] in
-            self?.refreshNewsCache()
-        }
         // 启动后一句：时段问候 +（若有）今日 Todo 数量；之后进入周期搭话
         timers.schedule(name: TimerName.chatFirst, interval: Self.chatFirstDelaySeconds, repeats: false) { [weak self] in
             guard let self else { return }
@@ -765,22 +755,10 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    /// 后台刷新热搜缓存（NewsFetcher 是阻塞网络请求，必须离开主线程）
-    private func refreshNewsCache() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let titles = NewsFetcher.fetchHotNews().prefix(10).map { $0.title }
-            FileLogger.log("[DesktopPet] 热搜缓存刷新: \(titles.count) 条\(titles.isEmpty ? "" : "，首条「\(titles[0])」")")
-            DispatchQueue.main.async {
-                self?.cachedNewsHeadlines = titles
-            }
-        }
-    }
-
-    /// 从缓存热搜里随机挑一条（非空，且避开上次播过的一条）
-    private func randomNewsHeadline() -> String? {
-        let pool = cachedNewsHeadlines.filter { !$0.isEmpty }
+    /// 从本次拿到的榜单里随机挑一条（避开上次播过的一条；只剩一条候选时忽略该规则）
+    private func pickHeadline(from list: [String]) -> String? {
+        let pool = list.filter { !$0.isEmpty }
         guard !pool.isEmpty else { return nil }
-        // 连续两次不弹同一条（与刷题抽题避重同一策略）；只剩一条候选时忽略该规则
         var candidates = pool
         if let last = lastSpokenHeadline, pool.count > 1 {
             candidates = pool.filter { $0 != last }
@@ -802,30 +780,44 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    /// 周期主动搭话：在新闻 / Todo 之间轮换，勿扰、睡觉或躲藏时不打扰
+    /// 周期主动搭话：新闻 / Todo / 关心问候轮着来，勿扰、睡觉或躲藏时不打扰。
+    /// 热搜每次现取（服务端 10 分钟 TTL 缓存），本地不留缓存。
     private func performProactiveChat() {
         guard proactiveChatEnabled else { return }
         // 陪伴式搭话只在“宠物醒着且未播动画”时进行，不打扰专注/勿扰，也不把睡觉或躲藏的自己喊出来
         guard !systemFocusActive, animationState != .sleep, animationState != .hide, !isPlayingOneShot else { return }
 
-        chatTick += 1
+        let tick = chatTick + 1
         let todoCount = TodoManager.shared.load().count
+        // NewsFetcher 是阻塞网络请求，必须离开主线程
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let titles = NewsFetcher.fetchHotNews().prefix(10).map { $0.title }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // 抓取期间状态可能变了（睡觉/躲藏/关开关），回来再判一次
+                guard self.proactiveChatEnabled, !self.systemFocusActive,
+                      self.animationState != .sleep, self.animationState != .hide, !self.isPlayingOneShot else { return }
+                self.chatTick = tick
 
-        // 偶数优先聊热搜，奇数优先聊 Todo；缺失数据时相互兜底（热搜随机挑一条）
-        if chatTick % 2 == 0, let headline = randomNewsHeadline() {
-            FileLogger.log("[DesktopPet] 搭话热搜: 「\(headline)」池内\(cachedNewsHeadlines.count)条")
-            onPetSay?("热搜在聊「\(Self.truncate(headline, 20))」🔥 右键看今日热点～")
-            return
+                let headline = self.pickHeadline(from: titles)
+                var candidates: [String] = []
+                if headline != nil { candidates.append("news") }
+                if todoCount > 0 { candidates.append("todo") }
+                candidates.append("care")
+                let topic = candidates[(tick - 1) % candidates.count]
+
+                if topic == "news", let headline {
+                    FileLogger.log("[DesktopPet] 搭话热搜: 「\(headline)」本次 \(titles.count) 条")
+                    self.onPetSay?("热搜在聊「\(Self.truncate(headline, 20))」🔥 右键看今日热点～")
+                    return
+                }
+                if topic == "todo" {
+                    self.onPetSay?("今天你还有 \(todoCount) 个 Todo 没完成 📝 加油～")
+                    return
+                }
+                self.onPetSay?(Self.encouragement())
+            }
         }
-        if todoCount > 0 {
-            onPetSay?("今天你还有 \(todoCount) 个 Todo 没完成 📝 加油～")
-            return
-        }
-        if let headline = randomNewsHeadline() {
-            onPetSay?("热搜在聊「\(Self.truncate(headline, 20))」🔥")
-            return
-        }
-        onPetSay?(Self.encouragement())
     }
 
     /// 按时段给出问候语

@@ -23,11 +23,11 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const config = require(path.join(SRC, 'config-store.js'));
-const { encryptedEnvelope } = require(path.join(SRC, 'crypto-envelope.js'));
-const access = require(path.join(SRC, 'access-service.js'));
-const { createWeatherReminder, nextFireMs } = require(path.join(SRC, 'weather-reminder.js'));
-const { SettingsService } = require(path.join(SRC, 'settings-service.js'));
+const config = require(path.join(SRC, 'core', 'config-store.js'));
+const { encryptedEnvelope } = require(path.join(SRC, 'core', 'crypto-envelope.js'));
+const access = require(path.join(SRC, 'core', 'access-service.js'));
+const { createWeatherReminder, nextFireMs } = require(path.join(SRC, 'reminders', 'weather-reminder.js'));
+const { SettingsService } = require(path.join(SRC, 'settings', 'settings-service.js'));
 
 let failed = 0;
 function check(name, condition) {
@@ -225,28 +225,25 @@ async function main() {
     const bare = new SettingsService({});
     const init = bare.load();
     check('未解锁时 load().access.fullAccess = false', init.access.fullAccess === false);
-    check('天气提醒默认 关 / 08:00 / 城市留空',
+    check('天气提醒默认 关 / 08:00',
       init.weatherReminder.enabled === false
-        && init.weatherReminder.hour === 8 && init.weatherReminder.minute === 0
-        && init.weatherReminder.city === '');
+        && init.weatherReminder.hour === 8 && init.weatherReminder.minute === 0);
 
     const blocked = bare.setWeatherReminder({ enabled: true });
     check('基础权限拒改天气提醒（对齐 mac 版：接口按量付费）',
       blocked.ok === false && config.get('weatherReminderEnabled') === false);
 
     const unlockedService = new SettingsService({ providers: { isFullAccess: () => true } });
-    let res = unlockedService.setWeatherReminder({ enabled: true, hour: 7, minute: 30, city: ' 杭州 ' });
-    check('解锁后可开启并写时分城市（城市去首尾空格）',
+    let res = unlockedService.setWeatherReminder({ enabled: true, hour: 7, minute: 30 });
+    check('解锁后可开启并写时分',
       res.ok === true && res.weather.enabled === true && res.weather.hour === 7
-        && res.weather.minute === 30 && res.weather.city === '杭州');
-    check('配置已持久化', config.get('weatherReminderHour') === 7 && config.get('weatherReminderCity') === '杭州');
+        && res.weather.minute === 30);
+    check('配置已持久化', config.get('weatherReminderHour') === 7);
 
     res = unlockedService.setWeatherReminder({ hour: 24 });
     check('小时越界被拒', res.ok === false && config.get('weatherReminderHour') === 7);
     res = unlockedService.setWeatherReminder({ minute: 60 });
     check('分钟越界被拒', res.ok === false);
-    res = unlockedService.setWeatherReminder({ city: 'x'.repeat(41) });
-    check('城市名超长被拒', res.ok === false && config.get('weatherReminderCity') === '杭州');
     res = unlockedService.setWeatherReminder({ hour: 19 });
     check('局部更新只改传入字段', res.ok === true && res.weather.hour === 19 && res.weather.minute === 30);
 
@@ -259,7 +256,6 @@ async function main() {
     config.remove('weatherReminderEnabled');
     config.remove('weatherReminderHour');
     config.remove('weatherReminderMinute');
-    config.remove('weatherReminderCity');
   }
 
   if (failed > 0) {

@@ -37,4 +37,11 @@ contextBridge.exposeInMainWorld('petAPI', {
   requestContextMenu: () => ipcRenderer.send('pet:context-menu'),
   // 双击小猫 → 主进程开 Todo 清单（对标 mac 版 CatView clickCount == 2）
   openTodoList: () => ipcRenderer.send('pet:open-todo'),
+  // 好友消息红点：主进程推未读条数；点红点请求打开会话窗
+  onBadge: (callback) => {
+    ipcRenderer.on('pet:badge', (event, payload) => callback(payload));
+  },
+  openFriendChat: () => ipcRenderer.send('pet:open-friend-chat'),
+  // 首次加载主动拉一次（窗口重建时不必等下一次心跳）
+  requestBadge: () => ipcRenderer.invoke('pet:badge-snapshot'),
 });

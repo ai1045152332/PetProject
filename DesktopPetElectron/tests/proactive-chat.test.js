@@ -25,10 +25,10 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const chat = require(path.join(SRC, 'proactive-chat.js'));
-const { holdMsFor, clampToBounds, MAX_WIDTH } = require(path.join(SRC, 'speech-bubble.js'));
-const { SettingsService } = require(path.join(SRC, 'settings-service.js'));
-const config = require(path.join(SRC, 'config-store.js'));
+const chat = require(path.join(SRC, 'pet', 'proactive-chat.js'));
+const { holdMsFor, clampToBounds, MAX_WIDTH } = require(path.join(SRC, 'pet', 'speech-bubble.js'));
+const { SettingsService } = require(path.join(SRC, 'settings', 'settings-service.js'));
+const config = require(path.join(SRC, 'core', 'config-store.js'));
 
 let failed = 0;
 function check(name, condition, extra) {
@@ -101,24 +101,23 @@ function makeChat(overrides = {}) {
 (async () => {
   // 热搜缓存：只取前 10 条，空标题丢弃
   {
-    const { instance } = makeChat({
+    const { instance, spoken } = makeChat({
+      todoCount: () => 0,
       fetchHeadlines: async () => [
         ...Array.from({ length: 12 }, (_, i) => ({ title: `热搜${i + 1}` })),
         { title: '' },
         null,
       ],
     });
-    await instance.refreshNewsCache();
-    check('热搜缓存只留前 10 条', instance.headlineCount === 10, `实际 ${instance.headlineCount}`);
+    await instance.performProactiveChat();
+    check('热搜只用前 10 条', /^热搜在聊「热搜([1-9]|10)」/.test(spoken[0] || ''), spoken[0]);
   }
 
   // 抓取失败保留旧缓存，不打扰用户
   {
     const { instance, spoken } = makeChat({ fetchHeadlines: async () => { throw new Error('断网'); } });
-    await instance.refreshNewsCache();
-    check('热搜抓取失败时缓存为空', instance.headlineCount === 0);
-    instance.performProactiveChat();
-    check('抓取失败仍能搭话（兜底鼓励语）', spoken.length === 1 && !spoken[0].startsWith('热搜'), spoken[0]);
+    await instance.performProactiveChat();
+    check('热搜抓取失败仍能搭话（改说关心问候）', spoken.length === 1 && !spoken[0].startsWith('热搜'), spoken[0]);
   }
 
   // 启动首句：带 Todo 数量 / 无 Todo 两种文案
@@ -133,47 +132,56 @@ function makeChat(overrides = {}) {
     check('无 Todo 时首句走轻松文案', /｜今天没有待办，轻松一下～$/.test(spoken[0] || ''), spoken[0]);
   }
 
-  // 轮换：偶数聊热搜、奇数聊 Todo（都有数据时）
+  // 轮换：按「新闻 → Todo → 天气 → 关心问候」固定顺序，只挑有料的
   {
     const { instance, spoken } = makeChat({
       todoCount: () => 5,
       fetchHeadlines: async () => [{ title: '小猫开会' }, { title: '毛豆加班' }],
     });
-    await instance.refreshNewsCache();
-    instance.performProactiveChat(); // tick = 1 奇数 → Todo 优先
-    instance.performProactiveChat(); // tick = 2 偶数 → 热搜优先
-    check('奇数轮先聊 Todo', /个 Todo 没完成 📝 加油～$/.test(spoken[0] || ''), spoken[0]);
-    check('偶数轮先聊热搜', /^热搜在聊「(小猫开会|毛豆加班)」🔥 右键看今日热点～$/.test(spoken[1] || ''), spoken[1]);
+    await instance.performProactiveChat(); // 第 1 句：新闻（有缓存）
+    await instance.performProactiveChat(); // 第 2 句：Todo（有未完成）
+    await instance.performProactiveChat(); // 第 3 句：关心问候（天气没数据，跳过）
+    check('第 1 句先聊热搜', /^热搜在聊「(小猫开会|毛豆加班)」🔥 右键看今日热点～$/.test(spoken[0] || ''), spoken[0]);
+    check('第 2 句轮到 Todo', /个 Todo 没完成 📝 加油～$/.test(spoken[1] || ''), spoken[1]);
+    check('第 3 句轮到关心问候（天气没料自动跳过）', /🐾|陪着你|伸个懒腰|辛苦啦|想你了/.test(spoken[2] || ''), spoken[2]);
+  }
+
+  // 只勾热点新闻：即使有 Todo 也只聊热搜，不会串台
+  {
+    config.set(chat.TOPICS_KEY, ['news']);
+    const { instance, spoken } = makeChat({
+      todoCount: () => 9,
+      fetchHeadlines: async () => [{ title: '只聊新闻' }],
+    });
+    await instance.performProactiveChat();
+    await instance.performProactiveChat();
+    check('只勾新闻时两次都说热搜', spoken.length === 2 && spoken.every((t) => t.startsWith('热搜在聊')), JSON.stringify(spoken));
+    config.set(chat.TOPICS_KEY, chat.ALL_TOPICS.slice());
   }
 
   // 超长热搜标题进台词时被截到 20 字
   {
     const long = '一'.repeat(30);
     const { instance, spoken } = makeChat({ todoCount: () => 0, fetchHeadlines: async () => [{ title: long }] });
-    await instance.refreshNewsCache();
-    instance.performProactiveChat();
-    check('台词里的长标题被截断', spoken[0] === `热搜在聊「${'一'.repeat(20)}…」🔥`, spoken[0]);
+    await instance.performProactiveChat();
+    check('台词里的长标题被截断', spoken[0] === `热搜在聊「${'一'.repeat(20)}…」🔥 右键看今日热点～`, spoken[0]);
   }
 
   // 连续两次不重复同一条热搜
   {
     const picks = [];
-    const { instance } = makeChat({
-      fetchHeadlines: async () => [{ title: 'A' }, { title: 'B' }],
-      random: () => 0,
-    });
-    await instance.refreshNewsCache();
-    for (let i = 0; i < 4; i += 1) picks.push(instance.pickHeadline());
+    const { instance } = makeChat({ random: () => 0 });
+    const list = ['A', 'B'];
+    for (let i = 0; i < 4; i += 1) picks.push(instance.pickHeadline(list));
     check('热搜避开上一条', picks[1] !== picks[0], JSON.stringify(picks));
     check('池里两条轮换不重复', new Set(picks.slice(0, 2)).size === 2, JSON.stringify(picks));
   }
 
   // 只剩一条热搜时无可避免仍要说出来
   {
-    const { instance } = makeChat({ fetchHeadlines: async () => [{ title: '唯一的一条' }] });
-    await instance.refreshNewsCache();
-    instance.pickHeadline();
-    check('只剩一条时不再挑避重', instance.pickHeadline() === '唯一的一条');
+    const { instance } = makeChat({});
+    instance.pickHeadline(['唯一的一条']);
+    check('只剩一条时不再挑避重', instance.pickHeadline(['唯一的一条']) === '唯一的一条');
   }
 
   // 守卫：关闭开关 / 勿扰 / 睡觉 / 躲藏 / 抚摸中都不打扰
@@ -189,7 +197,7 @@ function makeChat(overrides = {}) {
       if (cfg.overrides.enabled === false) config.set(chat.ENABLED_KEY, false);
       const { instance, spoken } = makeChat(cfg.overrides || {});
       instance.sayGreeting();
-      instance.performProactiveChat();
+      await instance.performProactiveChat();
       check(`${name}时不打扰用户`, spoken.length === 0, JSON.stringify(spoken));
       if (cfg.overrides.enabled === false) config.set(chat.ENABLED_KEY, true);
     }
@@ -201,13 +209,12 @@ function makeChat(overrides = {}) {
       todoCount: () => 0,
       fetchHeadlines: async () => [{ title: '唯一热搜' }],
     });
-    await instance.refreshNewsCache();
-    instance.performProactiveChat(); // tick = 1 奇数：Todo 为 0 → 退回热搜
-    check('奇数轮无 Todo 时聊热搜', spoken[0] === '热搜在聊「唯一热搜」🔥', spoken[0]);
+    await instance.performProactiveChat(); // 只有一条热搜、Todo 为 0 → 说热搜
+    check('无 Todo 时聊热搜', spoken[0] === '热搜在聊「唯一热搜」🔥 右键看今日热点～', spoken[0]);
   }
   {
     const { instance, spoken } = makeChat({ todoCount: () => 0, fetchHeadlines: async () => [] });
-    instance.performProactiveChat();
+    await instance.performProactiveChat();
     check('既无 Todo 又无热搜时说鼓励语', spoken.length === 1 && !spoken[0].includes('Todo') && !spoken[0].includes('热搜'), spoken[0]);
   }
 
@@ -224,15 +231,14 @@ function makeChat(overrides = {}) {
       clearTimer: fakeClear,
     });
     instance.start();
-    check('启动挂上两个定时器（热搜刷新 / 首句）', armed.length === 2, `实际 ${armed.length}`);
-    check('热搜缓存 30 分钟刷一次', armed[0].ms === chat.NEWS_REFRESH_SECONDS * 1000, String(armed[0].ms));
-    check('首句延迟 20 秒', armed[1].ms === chat.FIRST_DELAY_SECONDS * 1000, String(armed[1].ms));
+    check('启动只挂首句定时器（热搜/天气由服务端缓存，客户端不再定时刷新）', armed.length === 1, `实际 ${armed.length}`);
+    check('首句延迟 20 秒', armed[0].ms === chat.FIRST_DELAY_SECONDS * 1000, String(armed[0].ms));
     // 首句跑完才排周期搭话，按当前间隔（默认 30 分钟）
-    armed[1].fn();
-    check('首句后排出周期搭话（默认 30 分钟）', armed.length === 3 && armed[2].ms === chat.DEFAULT_CHAT_INTERVAL * 60 * 1000,
+    armed[0].fn();
+    check('首句后排出周期搭话（默认 30 分钟）', armed.length === 2 && armed[1].ms === chat.DEFAULT_CHAT_INTERVAL * 60 * 1000,
       JSON.stringify(armed.map((t) => t.ms)));
     instance.stop();
-    check('stop 取消已挂的定时器', cleared === 2, `实际 ${cleared}`);
+    check('stop 取消已挂的定时器', cleared === 1, `实际 ${cleared}`);
 
     // 周期搭话跑完会按最新间隔重挂（改小间隔下一轮即生效）
     cleared = 0;

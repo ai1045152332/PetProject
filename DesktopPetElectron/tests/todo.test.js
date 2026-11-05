@@ -27,15 +27,15 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const store = require(path.join(SRC, 'todo-store.js'));
+const store = require(path.join(SRC, 'reminders', 'todo-store.js'));
 const {
   pickDueTodo,
   clampRepeatMinutes,
   formatDueLabel,
   createTodoReminderLoop,
   DEFAULT_REPEAT_MINUTES,
-} = require(path.join(SRC, 'todo-reminder.js'));
-const { todoFinalHeight } = require(path.join(SRC, 'todo-window.js'));
+} = require(path.join(SRC, 'reminders', 'todo-reminder.js'));
+const { todoFinalHeight } = require(path.join(SRC, 'reminders', 'todo-window.js'));
 
 let failed = 0;
 function check(name, cond) {

@@ -20,10 +20,11 @@ metadata:
 | 打个 Windows 包自己试 | 通道 C | `scripts/build-win-local.sh` |
 | 打个 macOS 的 Electron 包自己试 | 通道 E | `scripts/build-mac-electron-local.sh` |
 | 让 Windows 用户能下载、能升级 | 通道 D | `scripts/deploy-win.sh` |
+| 让 mac 用户能下载、能升级（Electron 版） | 通道 F | `scripts/deploy-mac-electron.sh` |
 | 部署 / 回滚服务端 | [references/release.md](references/release.md) | `scripts/deploy-server.sh` |
 | 查线上版本 | — | `curl http://101.96.248.75/api/app/latest` |
 
-## 五条通道（3 本地 + 2 远程）
+## 六条通道（3 本地 + 3 远程）
 
 | 通道 | 命令 | 影响范围 | 可逆 |
 | --- | --- | --- | --- |
@@ -31,9 +32,12 @@ metadata:
 | **B 远程 Swift** | `deploy.sh` | 线上 mac 自动更新 + 官网 dmg | **不可撤回** |
 | **C 本地 Windows** | `build-win-local.sh` | 只有本机 `dist/` | 可反复折腾 |
 | **D 远程 Windows** | `deploy-win.sh` | 官网 Windows 按钮 + 线上 Windows 客户端 | **不可撤回** |
-| **E 本地 Electron macOS** | `build-mac-electron-local.sh` | 只有本机 `dist/`（dmg + zip） | 可反复折腾 |
+| **E 本地 Electron macOS** | `build-mac-electron-local.sh` | 只有本机 `dist/`（arm64 + x64 dmg） | 可反复折腾 |
+| **F 远程 Electron macOS** | `deploy-mac-electron.sh` | 官网 mac 下载 + 线上 Electron mac 客户端 | **不可撤回** |
 
-分界线只有一条：**A / C / E 不签名、不上传、不动线上；B / D 才发到 101.96.248.75，一旦发出无法撤回。**
+分界线只有一条：**A / C / E 不签名、不上传、不动线上；B / D / F 才发到 101.96.248.75，一旦发出无法撤回。**
+
+**F 的额外红线**：默认只写 `mac*` / `macFiles` 字段，不碰 Swift 通道；加 `--takeover` 才会把 `version/file` 指过去（让老 Swift 用户迁到 Electron），且必须用 **universal zip**——只发单架构会把 Intel Mac 用户换成跑不起来的版本。
 一次改动同时涉及接口与客户端时，**先部署服务端（保持向后兼容），再发客户端**。
 
 ## 四条铁律（发布前默读）

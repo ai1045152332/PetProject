@@ -22,11 +22,13 @@ function replayEnter() {
 
 /** 量完内容尺寸报给主进程（由它 show 并贴到头顶） */
 function reportSize() {
-  const rect = bubble.getBoundingClientRect();
   if (!api || !api.reportSize) return;
+  // 必须用 offsetWidth/Height：这是不受 transform 影响的布局尺寸。
+  // 之前用 getBoundingClientRect，弹入动画起步瞬间 scale(0.7) 被算进去，
+  // 量出来比真实内容小 → 窗口装不下内容，右边就冒出滚动条
   api.reportSize(
-    Math.ceil(rect.width) + SIDE_PAD,
-    Math.ceil(rect.height) + TAIL_HEIGHT + SIDE_PAD,
+    Math.ceil(bubble.offsetWidth) + SIDE_PAD,
+    Math.ceil(bubble.offsetHeight) + TAIL_HEIGHT + SIDE_PAD,
   );
 }
 

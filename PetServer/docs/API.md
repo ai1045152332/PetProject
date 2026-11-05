@@ -198,6 +198,61 @@ curl -X POST http://101.96.248.75/api/heartbeat \
 
 ---
 
+## 1.5 热搜榜单
+
+服务端统一抓取「今日头条热榜」，失败自动换百度热搜，并在服务端缓存 **10 分钟**。
+客户端（mac 原生 / Electron）只读这个接口，不再各自直连上游、也不在本地缓存。
+
+### 请求
+
+```
+GET /api/news
+```
+
+无参数、无需鉴权。
+
+### 成功响应
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "items": [{ "rank": 1, "title": "春节连休9天", "url": "https://www.toutiao.com/..." }],
+    "updatedAt": 1793868000000,
+    "ttlSec": 600,
+    "cached": true,
+    "stale": false
+  }
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `items` | Top10 榜单，`rank` 从 1 递增 |
+| `updatedAt` | 抓取时间（UnixMilli） |
+| `ttlSec` | 服务端缓存有效期（秒，当前 600） |
+| `cached` | 本次是否命中服务端缓存 |
+| `stale` | 上游抓取失败、返回的是上一次成功的旧榜单 |
+
+### 失败响应
+
+上游两源都失败且无旧榜可退：`502 {"code":502,"msg":"news fetch failed: ..."}`
+
+---
+
+## 1.6 天气缓存说明
+
+`GET /api/weather` 的返回结果在服务端**按城市**缓存 **3 小时**（城市名去空格、忽略大小写归一）；
+请求里没带 `city`（定位失败、只给坐标）时退回按「坐标两位小数」缓存，避免所有「当前位置」共用一份结果。
+
+响应里多两个字段：`cached`（本次是否命中）与 `updatedAt`（抓取时间，UnixMilli）。
+同一城市的多台设备在 3 小时内只会打一次上游（天气接口按量付费），客户端不做本地缓存。
+
+> 注意：3 小时窗口内 `nowTemp/nowText` 是抓取时的值，不会随时段变化；响应里的 `ttlSec` 就是当前窗口长度（10800）。
+
+---
+
 ## 2. 激活码验证
 
 设置面板「权限」解锁的远程校验。App 端先比对本地校验码（456），
@@ -672,6 +727,56 @@ POST /api/admin/social/conversations/clear
 清空全部对话留痕（不可恢复，不影响宠物端已收/待收消息）。后台「宠物对话」页
 （`/admin/social`）提供可视化列表：按对话双方分组筛选、气泡展示收发方向、
 消息带「已读/未读」与申请带「待处理/已同意/已拒绝」状态徽章，支持刷新与清空。
+
+## 3.16 运营推送（更新 / 文字 / 视频）
+
+后台向指定设备（或全量）下发一条指令，客户端下一次心跳收到并执行；指令**一次性下发**，同一设备只收一次。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/admin/push` | 新建指令 |
+| GET | `/api/admin/push/list` | 指令列表（新 → 旧） |
+| POST | `/api/admin/push/delete` | 删除指令 `{id}` |
+
+鉴权：`X-Session-Token`（后台登录）或 `X-Admin-Token`（管理密码）。
+
+请求体字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `deviceId` | string | 目标设备；留空 = 广播给所有设备 |
+| `kind` | string | `update` / `text` / `video` |
+| `title` | string | 卡片标题（可选） |
+| `text` | string | 文字内容，`kind=text` 必填 |
+| `url` | string | 视频地址，`kind=video` 必填 |
+| `durationMs` | int | 文字卡自动关闭毫秒数（0 = 手动关） |
+| `expiresMins` | int | 有效期分钟（默认 24 小时） |
+
+心跳响应中的下发结构：
+
+```json
+{
+  "commands": [
+    { "id": "…", "kind": "text", "title": "通知", "text": "…", "durationMs": 8000 },
+    { "id": "…", "kind": "video", "title": "宣传片", "url": "https://…/a.mp4" },
+    { "id": "…", "kind": "update" }
+  ]
+}
+```
+
+### 3.17 macOS 按架构分流（macFiles）
+
+Electron 版 macOS 安装包分 arm64 / x64 两个，manifest 里用 `macFiles` 记录（旧的单文件 `macFile` 保留兼容）：
+
+```json
+"macFiles": {
+  "arm64": { "file": "DesktopPet-1.1.001-arm64.dmg", "sha256": "…", "signature": "…", "size": 123 },
+  "x64":   { "file": "DesktopPet-1.1.001-x64.dmg",   "sha256": "…", "signature": "…", "size": 120 }
+}
+```
+
+- 官网：优先用 `navigator.userAgentData.getHighEntropyValues(['architecture'])` 判断，探测不到默认 arm64，页面提供手动切换；只发了一个架构时提示「当前仅提供该架构」。
+- 客户端：按 `process.arch` 取自己那条，取不到回落到 `macFile`；**不会**跨架构回落（另一架构装了也跑不起来）。
 
 ## 4. App 更新接口
 

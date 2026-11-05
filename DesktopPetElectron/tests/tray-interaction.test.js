@@ -8,7 +8,7 @@ const path = require('path');
 const Module = require('module');
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const TRAY_PATH = path.join(SRC, 'tray.js');
+const TRAY_PATH = path.join(SRC, 'system', 'tray.js');
 
 const trayInstances = [];
 

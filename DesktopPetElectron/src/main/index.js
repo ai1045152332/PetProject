@@ -6,9 +6,9 @@
 const { app, BrowserWindow, Menu, ipcMain, globalShortcut, dialog, shell, screen, clipboard } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { createPetWindow, applyPetScale, startOnTopGuard, createDragController } = require('./pet-window');
-const { openReminderWindow, closeReminderWindow } = require('./reminder-window');
-const { openSettingsWindow, closeSettingsWindow, sendToSettingsWin } = require('./settings-window');
+const { createPetWindow, applyPetScale, startOnTopGuard, createDragController } = require('./pet/pet-window');
+const { openReminderWindow, closeReminderWindow } = require('./reminders/reminder-window');
+const { openSettingsWindow, closeSettingsWindow, sendToSettingsWin } = require('./settings/settings-window');
 const {
   SettingsService,
   currentPetScale,
@@ -17,57 +17,62 @@ const {
   isSwitchablePetState,
   panelPetStates,
   HIDE_STATE,
-} = require('./settings-service');
-const { ReminderScheduler } = require('./reminder-scheduler');
-const todoStore = require('./todo-store');
+} = require('./settings/settings-service');
+const { ReminderScheduler } = require('./reminders/reminder-scheduler');
+const todoStore = require('./reminders/todo-store');
 const {
   openTodoWindow,
   syncTodoWindow,
   closeTodoWindow,
   isTodoOpen,
-} = require('./todo-window');
-const { openTodoReminderWindow, closeTodoReminderWindow } = require('./todo-reminder-window');
-const { createTodoReminderLoop, formatDueLabel } = require('./todo-reminder');
-const { createTray, setTrayStatus, setTrayTitle, popUpMenu: popUpTrayMenu } = require('./tray');
-const { SysInfoMonitor } = require('./system-monitor');
-const { startWorker, createCacheOnlySnapshot } = require('./sysinfo-worker');
-const { popupPetContextMenu, createPettingOneShot } = require('./pet-context-menu');
-const contextMenuPrefs = require('./context-menu-prefs');
-const { createSpeechBubble } = require('./speech-bubble');
-const { createProactiveChat } = require('./proactive-chat');
-const { startFocusModeMonitor, detectFocusMode, petStateForFocusMode } = require('./focus-mode-monitor');
-const { snapToEdgeForHiding, revealFromEdge } = require('./edge-snap');
-const { createCardWindow } = require('./card-window');
-const { createNewsService } = require('./news-service');
-const { createWeatherService } = require('./weather-service');
-const access = require('./access-service');
-const { createWeatherReminder } = require('./weather-reminder');
-const { HeartbeatService } = require('./heartbeat');
-const { UpdateService } = require('./update-service');
-const { createSocialService } = require('./social-service');
+} = require('./reminders/todo-window');
+const { openTodoReminderWindow, closeTodoReminderWindow } = require('./reminders/todo-reminder-window');
+const { createTodoReminderLoop, formatDueLabel } = require('./reminders/todo-reminder');
+const { createTray, setTrayStatus, setTrayTitle, popUpMenu: popUpTrayMenu } = require('./system/tray');
+const { SysInfoMonitor } = require('./system/system-monitor');
+const { startWorker, createCacheOnlySnapshot } = require('./system/sysinfo-worker');
+const { popupPetContextMenu, createPettingOneShot } = require('./pet/pet-context-menu');
+const contextMenuPrefs = require('./pet/context-menu-prefs');
+const { createSpeechBubble } = require('./pet/speech-bubble');
+const { createProactiveChat } = require('./pet/proactive-chat');
+const { startFocusModeMonitor, detectFocusMode, petStateForFocusMode } = require('./pet/focus-mode-monitor');
+const { snapToEdgeForHiding, revealFromEdge } = require('./pet/edge-snap');
+const { createCardWindow } = require('./push/card-window');
+const { createNewsService } = require('./info/news-service');
+const { createWeatherService } = require('./info/weather-service');
+const access = require('./core/access-service');
+const { createWeatherReminder } = require('./reminders/weather-reminder');
+const { HeartbeatService } = require('./updates/heartbeat');
+const { UpdateService } = require('./updates/update-service');
+const { showAlert, getAlertWindow } = require('./updates/alert-window');
+const { createSocialService } = require('./social/social-service');
 const {
   setFriendChatAPI,
   openFriendChat,
   presentFriendMessages,
   closeFriendChat,
-} = require('./friend-chat-window');
+  isFriendChatOpen,
+} = require('./social/friend-chat-window');
+const { registerPushIpc, showPush, closePush } = require('./push/push-window');
+const { createPushCommands } = require('./push/push-command');
+const { migrateFromSwift } = require('./core/swift-migration');
 const {
   setFriendRequestHandlers,
   openFriendRequestCard,
   closeFriendRequestWindow,
-} = require('./friend-request-window');
-const { createPetImageService } = require('./pet-image-service');
-const { createPetImageFlow, unlockNotice } = require('./pet-image-flow');
+} = require('./social/friend-request-window');
+const { createPetImageService } = require('./pet/pet-image-service');
+const { createPetImageFlow, unlockNotice } = require('./pet/pet-image-flow');
 const {
   setPetImageHistoryAPI,
   openPetImageHistory,
   closePetImageHistory,
   refreshPetImageHistory,
-} = require('./pet-image-history-window');
-const info = require('./app-info');
-const config = require('./config-store');
-const customSprites = require('./custom-sprite-store');
-const spriteFrames = require('./sprite-frames');
+} = require('./pet/pet-image-history-window');
+const info = require('./core/app-info');
+const config = require('./core/config-store');
+const customSprites = require('./pet/custom-sprite-store');
+const spriteFrames = require('./core/sprite-frames');
 
 let petWindow = null;
 let petGuard = null;   // Windows 置顶守护（周期性抬回最上层）
@@ -79,7 +84,11 @@ let updater = null;
 let settings = null;
 let weatherReminder = null; // 每日天气提醒调度（对标 mac 版 WeatherReminderService，需解锁）
 let bubble = null;      // 宠物头顶气泡窗（对标 mac 版 showFeedBubble / catSay）
+// 更新下载进行中（进度气泡钉在宠物头顶）：主动搭话等普通台词期间让位
+let updateProgressPinned = false;
 let chat = null;        // 主动搭话调度器（对标 mac 版 startProactiveChat）
+let pushCommands = null;      // 运营推送指令执行器（更新 / 文字 / 视频）
+let pendingFriendMessages = []; // 已收到但还没点红点打开的好友消息（去重后就是红点数字）
 let social = null;      // 好友与宠物消息客户端（对标 mac 版 FriendService）
 let petImages = null;   // 自定义状态图片流程（对标 mac 版 PetImageService + 面板图片区的 busy/配额/状态文案）
 // 已推给面板的宠物号（面板开着才推得动，变化去重避免心跳每分钟重推同一个号）
@@ -314,8 +323,49 @@ function handleHeartbeatDelivery(data) {
   }
   if (delivery.messages.length) {
     console.log(`[social] 收到好友消息 ${delivery.messages.length} 条`);
-    yieldTopTo(presentFriendMessages(delivery.messages));
+    if (isFriendChatOpen()) {
+      // 会话窗已经开着：直接并进去，不打扰红点
+      yieldTopTo(presentFriendMessages(delivery.messages));
+    } else {
+      queueFriendMessages(delivery.messages);
+    }
   }
+  // 运营推送（更新 / 文字 / 视频）
+  if (Array.isArray(data.commands) && data.commands.length) {
+    console.log(`[push] 收到运营推送 ${data.commands.length} 条`);
+    if (pushCommands) pushCommands.handle(data.commands);
+  }
+}
+
+/** 好友消息入队 → 只更新红点，不弹窗（用户点红点才开会话窗） */
+function queueFriendMessages(messages) {
+  const known = new Set(pendingFriendMessages.map((m) => m.id).filter(Boolean));
+  for (const msg of messages) {
+    if (!msg || (msg.id && known.has(msg.id))) continue;
+    known.add(msg.id);
+    pendingFriendMessages.push(msg);
+  }
+  syncFriendBadge();
+}
+
+/** 把当前未读条数推给宠物窗（没有窗口时下次显示会重新拉快照） */
+function syncFriendBadge() {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.webContents.send('pet:badge', { count: pendingFriendMessages.length });
+  }
+}
+
+/**
+ * 点红点：只打开「最近一位好友」的会话，其他好友的消息留在队列里（红点数字跟着减少），
+ * 避免点一次就把别人的消息也清掉。
+ */
+function openQueuedFriendChat() {
+  if (!pendingFriendMessages.length) return null;
+  const latest = pendingFriendMessages[pendingFriendMessages.length - 1];
+  const group = pendingFriendMessages.filter((m) => Number(m.fromPetNo) === Number(latest.fromPetNo));
+  pendingFriendMessages = pendingFriendMessages.filter((m) => Number(m.fromPetNo) !== Number(latest.fromPetNo));
+  syncFriendBadge();
+  return presentFriendMessages(group);
 }
 
 // 切换宠物窗显示 / 隐藏（托盘 / 右键菜单 / 快捷键用）
@@ -472,12 +522,11 @@ function openAccessGuide() {
   openSettings();
 }
 
-// 每日天气提醒推送（对标 Swift WeatherReminderService.deliver）：按配置城市（留空按定位）查天气，同窗展示结果
+// 每日天气提醒推送（对标 Swift WeatherReminderService.deliver）：提醒固定按 IP 定位当前城市，同窗展示结果
 function deliverWeatherReminder() {
-  const city = String(config.get('weatherReminderCity') || '').trim();
   const win = weatherWin.open({ message: '🌤️ 正在获取今日天气...' });
   yieldTopTo(win);
-  queryWeather(city);
+  queryWeather('');
 }
 
 // Todo 到期触达：弹常驻提醒卡（需用户点 ✕ 才收起），并让宠物专注动画从头播放唤起注意
@@ -517,18 +566,49 @@ function buildAppMenu() {
   ]));
 }
 
-// 更新流程的托盘提示：检查中/下载中/安装中都有反馈，结束后恢复默认文案
+// 更新流程的进度反馈：托盘 tooltip + 宠物头顶气泡双通道。
+// 只写 tooltip 用户根本看不到（要悬停托盘图标才浮现），下载期间宠物气泡钉住实时报百分比
 function onUpdateStatus(status) {
   if (!status) return;
   if (status.phase === 'checking') setTrayStatus('正在检查更新…');
-  else if (status.phase === 'downloading') setTrayStatus(`正在下载 ${status.version || '更新'} ${status.percent || 0}%`);
-  else if (status.phase === 'ready') setTrayStatus(`更新已下载，准备安装 ${status.version || ''}`.trim());
-  else if (status.phase === 'installing') setTrayStatus('正在安装更新，宠物马上回来…');
-  // 空串让托盘回到默认文案（带版本号 + 当前显隐状态）
-  else setTrayStatus();
+  else if (status.phase === 'downloading') {
+    const text = `正在下载 ${status.version || '更新'} ${status.percent || 0}%`;
+    setTrayStatus(text);
+    if (bubble) bubble.say(text, { pin: true }); // 宠物隐藏时 say 返回 false，下一格百分比会再试
+    updateProgressPinned = true;
+  } else if (status.phase === 'ready') {
+    setTrayStatus(`更新已下载，准备安装 ${status.version || ''}`.trim());
+    releaseUpdateProgressBubble();
+  } else if (status.phase === 'installing') {
+    setTrayStatus('正在安装更新，宠物马上回来…');
+    releaseUpdateProgressBubble();
+  } else {
+    // 空串让托盘回到默认文案（带版本号 + 当前显隐状态）
+    setTrayStatus();
+    releaseUpdateProgressBubble();
+  }
 }
 
+/** 下载结束（成功 / 失败 / 放弃）：收起钉住的进度气泡，恢复搭话 */
+function releaseUpdateProgressBubble() {
+  if (!updateProgressPinned) return;
+  updateProgressPinned = false;
+  if (bubble) bubble.unpin();
+}
+
+// 应用身份对齐 Swift 原生版（appId / productName 已改成 com.desktoppetformacapp.app / cute pet）：
+// 用户目录固定在这里，避免改 productName 后配置跑到「~/Library/Application Support/cute pet」去，
+// 也让升级/回滚时数据目录保持稳定。
+app.setPath('userData', path.join(app.getPath('appData'), 'desktop-pet-electron'));
+
 app.whenReady().then(() => {
+  // 从 Swift 原生版迁移本地数据（宠物名 / 提醒间隔 / 权限 / Todo 等），只跑一次、不覆盖已有配置
+  try {
+    migrateFromSwift(config);
+  } catch (e) {
+    console.warn(`[migrate] 迁移失败（忽略，按默认配置启动）: ${e.message}`);
+  }
+
   // 首次启动的一次性默认值：默认开启开机自启，并随机取一个宠物名（两者用户之后都可在面板里改）
   if (!config.get('autoLaunchInitialized')) {
     try {
@@ -603,7 +683,16 @@ app.whenReady().then(() => {
   // 主动搭话（对标 mac 版 startProactiveChat）：启动 20 秒后一句时段问候，
   // 之后按面板设的间隔在热搜 / Todo 之间轮换冒泡；勿扰、睡觉、躲藏、抚摸中都不打扰
   chat = createProactiveChat({
-    say: (text) => (bubble ? bubble.say(text) : false),
+    say: (text) => {
+      // 更新下载进度钉在气泡上时主动搭话让位，避免顶掉进度
+      if (updateProgressPinned) {
+        console.log('[proactive-chat] 更新下载中，本次搭话跳过');
+        return false;
+      }
+      const ok = bubble ? bubble.say(text) : false;
+      if (!ok) console.warn('[proactive-chat] 气泡没显示：宠物窗不可见或未就绪');
+      return ok;
+    },
     // 热搜源与新闻卡共用同一份抓取链路（后台只存标题做缓存，失败保留旧缓存）
     fetchHeadlines: () => newsService.fetchHotNews(),
     todoCount: () => todoStore.load().length,
@@ -683,6 +772,27 @@ app.whenReady().then(() => {
     },
   });
   updater.start();
+
+  // 运营推送：服务端随心跳下发（更新 / 文字 / 视频），客户端按 kind 执行
+  registerPushIpc();
+  pushCommands = createPushCommands({
+    onUpdate: () => {
+      // 服务端主动触发更新：等同用户点「检查更新」，会弹提示卡而不是静默
+      app.focus({ steal: true });
+      updater.checkForUpdate({ userInitiated: true });
+    },
+    onText: (cmd) => yieldTopTo(showPush({
+      kind: 'text',
+      title: cmd.title || '通知',
+      text: cmd.text || '',
+      durationMs: Number(cmd.durationMs) || 0,
+    })),
+    onVideo: (cmd) => yieldTopTo(showPush({
+      kind: 'video',
+      title: cmd.title || '视频',
+      url: cmd.url || '',
+    })),
+  });
 
   // 提醒窗关闭按钮 → 收起提醒窗、解除"正在显示"（专注动画自身持续循环，无需通知渲染层切换）
   ipcMain.on('drink-water:dismiss', () => {
@@ -779,6 +889,13 @@ app.whenReady().then(() => {
   });
 
   // 主动搭话：写开关 / 间隔（主进程收敛 1~720 分钟）→ 立即按新节奏重建周期搭话
+  // 立刻说一句：验证主动搭话是否真的通路（不等 15 分钟）
+  ipcMain.handle('settings:test-chat', () => {
+    if (!chat) return { ok: false, error: '搭话调度器未就绪' };
+    chat.chatNow();
+    return { ok: true };
+  });
+
   ipcMain.handle('settings:set-proactive-chat', (event, patch) => {
     const result = settings.setProactiveChat(patch);
     console.log(`[settings] proactiveChat -> ${JSON.stringify(patch)} ${result.ok ? '✓' : `✗ ${result.error}`}`);
@@ -809,8 +926,18 @@ app.whenReady().then(() => {
   ipcMain.handle('social:remove', (event, payload) => social.removeFriend((payload || {}).petNo));
 
   // 打开会话窗（已开着同一位好友时只并入消息并前置，不重开）
+  // 好友消息红点：宠物窗加载时拉一次当前未读数；点红点把攒下的消息交给会话窗
+  ipcMain.handle('pet:badge-snapshot', () => ({ count: pendingFriendMessages.length }));
+  ipcMain.on('pet:open-friend-chat', () => {
+    const win = openQueuedFriendChat();
+    if (win) yieldTopTo(win);
+  });
+
   ipcMain.handle('social:open-chat', (event, payload) => {
     const p = payload || {};
+    // 从面板主动点开会话：相当于「已看过」，把红点清掉（消息本身仍由会话窗拉历史补齐）
+    pendingFriendMessages = [];
+    syncFriendBadge();
     yieldTopTo(openFriendChat({ petNo: p.petNo, display: p.display }));
     return { ok: true };
   });
@@ -958,6 +1085,14 @@ app.whenReady().then(() => {
     return { ok: true, fullAccess: false };
   });
 
+  // 通用复制：渲染层读不到系统剪贴板，统一主进程写（目前用于权限卡的微信号）
+  ipcMain.handle('settings:copy-text', (event, payload) => {
+    const text = String((payload || {}).text || '').slice(0, 128);
+    if (!text) return { ok: false, error: '复制内容为空' };
+    clipboard.writeText(text);
+    return { ok: true };
+  });
+
   // 每日天气提醒：写配置（主进程二次把关：未解锁拒改）→ 重排调度
   ipcMain.handle('settings:set-weather-reminder', (event, patch) => {
     const result = settings.setWeatherReminder(patch);
@@ -984,13 +1119,14 @@ app.whenReady().then(() => {
   ipcMain.on('pet:drag-end', () => handleDragEnd());
 
   // 单击小猫（对标 mac 版 CatView.mouseUp 非拖动分支）：
-  // 躲藏中被点 -> 先现身；否则点一下走专注动作唤起注意
+  // 躲藏中被点 -> 先现身；否则在「专注 / 休闲」之间互切（专注→休闲，休闲→专注）
   ipcMain.on('pet:pet-click', () => {
     if (isHiding) {
       revealFromHiding();
       return;
     }
-    applyPetState('focus');
+    // 专注与休闲互切；睡觉 / 抚摸等其它状态维持原「点一下走专注唤起注意」的行为
+    applyPetState(petState === 'focus' ? 'idel' : 'focus');
   });
 
   ipcMain.on('pet:context-menu', () => {
@@ -1047,6 +1183,50 @@ app.whenReady().then(() => {
   // 仅测试用：PET_TEST_REMINDER=1 时启动 2 秒后自动弹一次提醒
   if (process.env.PET_TEST_REMINDER === '1') {
     setTimeout(() => scheduler && scheduler.triggerNow(), 2000);
+  }
+
+  // 仅测试用：PET_TEST_BADGE=<n> 预置 n 条未读好友消息（验证红点）；
+  // 配 PET_TEST_BADGE_SHOT=/path.png 截宠物窗后自退
+  if (process.env.PET_TEST_BADGE) {
+    const count = Math.max(1, Number(process.env.PET_TEST_BADGE) || 1);
+    setTimeout(() => {
+      for (let i = 0; i < count; i += 1) {
+        pendingFriendMessages.push({
+          id: `test-badge-${i}`, fromPetNo: 999999, fromName: '测试', text: `第 ${i + 1} 条`, sentMs: Date.now(),
+        });
+      }
+      syncFriendBadge();
+    }, 1200);
+  }
+  if (process.env.PET_TEST_BADGE_SHOT) {
+    setTimeout(async () => {
+      try {
+        const win = ensurePetWindow();
+        await new Promise((r) => setTimeout(r, 400));
+        const image = await win.webContents.capturePage();
+        require('fs').writeFileSync(process.env.PET_TEST_BADGE_SHOT, image.toPNG());
+        console.log('[badge-shot] 已保存', process.env.PET_TEST_BADGE_SHOT);
+      } catch (err) {
+        console.error('[badge-shot] 失败', err);
+      }
+      app.quit();
+    }, 2600);
+  }
+
+  // 仅测试用：PET_TEST_PUSH_SHOT=/path.png 直接弹一张文字推送卡并截图
+  if (process.env.PET_TEST_PUSH_SHOT) {
+    setTimeout(async () => {
+      try {
+        const win = showPush({ kind: 'text', title: '测试通知', text: '这是一条服务端推送\n第二行文字', durationMs: 0 });
+        await new Promise((r) => setTimeout(r, 700));
+        const image = await win.webContents.capturePage();
+        require('fs').writeFileSync(process.env.PET_TEST_PUSH_SHOT, image.toPNG());
+        console.log('[push-shot] 已保存', process.env.PET_TEST_PUSH_SHOT);
+      } catch (err) {
+        console.error('[push-shot] 失败', err);
+      }
+      app.quit();
+    }, 2200);
   }
 
   // 仅测试用：PET_TEST_SETTINGS=1 时启动 2.5 秒后自动打开设置面板
@@ -1298,6 +1478,23 @@ app.whenReady().then(() => {
   // 仅测试用：PET_TEST_UPDATE=1 时启动 3 秒后立刻检查更新（跳过 30 秒首检等待）
   if (process.env.PET_TEST_UPDATE === '1') {
     setTimeout(() => updater && updater.checkForUpdate({ userInitiated: true }), 3000);
+  }
+
+  // 仅调试用：PET_TEST_ALERT_SHOT=/path.png 时启动 2 秒后弹一张提示卡并截图落盘，完成后自退
+  //（本地假文案走查提示卡 UI 与高度自适应，不发起任何网络请求）
+  if (process.env.PET_TEST_ALERT_SHOT) {
+    setTimeout(() => {
+      showAlert({
+        title: '有新版本啦 0.0.9',
+        message: '发现新版本 0.0.9（当前 0.0.8）',
+        detail: '本次更新：\n· 修复若干问题\n· 全新提示卡样式，要不要现在就更新？',
+        icon: '✨',
+        buttons: ['立即更新', '稍后'],
+        defaultIndex: 0,
+        cancelIndex: 1,
+      });
+      shotWindow(process.env.PET_TEST_ALERT_SHOT, getAlertWindow(), 1500, 'alert-shot');
+    }, 2000);
   }
 
   app.on('activate', () => {

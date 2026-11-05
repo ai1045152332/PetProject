@@ -171,6 +171,43 @@ window.addEventListener('mouseup', (e) => {
   else if (window.petAPI.notifyClick) window.petAPI.notifyClick();
 });
 
+// ── 好友消息红点 ──────────────────────────────
+// 来了消息不再直接弹会话窗：先在宠物右上角出红点（数字=未读条数），点它才弹窗。
+const badge = document.getElementById('badge');
+const badgeCount = document.getElementById('badge-count');
+
+function renderBadge(payload) {
+  if (!badge || !badgeCount) return;
+  const count = Math.max(0, Number(payload && payload.count) || 0);
+  const wasHidden = !badge.classList.contains('show');
+  badge.classList.toggle('show', count > 0);
+  badgeCount.textContent = count > 99 ? '99+' : String(count);
+  if (count > 0) {
+    // 每次数字变化抖一下，避免用户错过
+    badge.classList.remove('bump');
+    void badge.offsetWidth;
+    badge.classList.add('bump');
+  } else if (wasHidden) {
+    badge.classList.remove('bump');
+  }
+}
+
+if (badge) {
+  // 红点上的按下/松手不能走拖窗逻辑（window 上挂了 mousedown），拦掉并当作点击
+  badge.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+  badge.addEventListener('mouseup', (e) => { e.stopPropagation(); });
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (window.petAPI && window.petAPI.openFriendChat) window.petAPI.openFriendChat();
+  });
+}
+
+if (window.petAPI && window.petAPI.onBadge) window.petAPI.onBadge(renderBadge);
+// 窗口重建时立刻拉一次当前未读数（否则要等下一次心跳才有红点）
+if (window.petAPI && window.petAPI.requestBadge) {
+  window.petAPI.requestBadge().then(renderBadge).catch(() => {});
+}
+
 // 双击宠物 → 打开 Todo 清单（对标 mac 版 CatView mouseDown clickCount == 2 → showTodoList）
 // 拖动过（位移 > 6px）或仍在拖窗中不算点击，避免拖完窗口就弹清单
 window.addEventListener('dblclick', (e) => {

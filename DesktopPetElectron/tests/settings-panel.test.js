@@ -20,13 +20,13 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const config = require(path.join(SRC, 'config-store.js'));
+const config = require(path.join(SRC, 'core', 'config-store.js'));
 const {
   clampInterval,
   isValidInterval,
   MIN_INTERVAL,
   MAX_INTERVAL,
-} = require(path.join(SRC, 'reminder-scheduler.js'));
+} = require(path.join(SRC, 'reminders', 'reminder-scheduler.js'));
 const {
   SettingsService,
   PRESETS,
@@ -39,8 +39,8 @@ const {
   clampScale,
   PET_NAME_POOL,
   MAX_PET_NAME,
-} = require(path.join(SRC, 'settings-service.js'));
-const { scaledSize } = require(path.join(SRC, 'pet-window.js'));
+} = require(path.join(SRC, 'settings', 'settings-service.js'));
+const { scaledSize } = require(path.join(SRC, 'pet', 'pet-window.js'));
 
 let failed = 0;
 function check(name, actual, expected) {
@@ -82,7 +82,7 @@ const scheduler = fakeScheduler();
 const service = new SettingsService({
   scheduler,
   providers: {
-    version: () => 'electron0.0.1',
+    version: () => 'v0.0.1',
     petNo: () => 100003,
     petState: () => 'idel',
     autoLaunch: () => true,
@@ -114,7 +114,7 @@ check('形象列表与 mac 版 displayName 一致（躲藏作为只读项附在�
   { id: 'pet', label: '抚摸', switchable: true },
   { id: 'hide', label: '躲藏', switchable: false },
 ]);
-check('通用区版本号来自 provider', initial.general.version, 'electron0.0.1');
+check('通用区版本号来自 provider', initial.general.version, 'v0.0.1');
 check('通用区开机自启来自 provider', initial.general.autoLaunch, true);
 check('心跳状态透传到通用区', initial.general.heartbeat, {
   lastAttemptAt: 1000,
@@ -216,6 +216,31 @@ config.set(KEY, 0);
 check('配置 0 → 回落默认 30', service.load().reminder.minutes, 30);
 config.set(KEY, 'oops');
 check("配置 'oops' → 回落默认 30", service.load().reminder.minutes, 30);
+
+// ── 11. 提醒设置：消息提醒的搭话内容可勾选（弹窗提醒只剩喝水 / 天气）──
+{
+  const svc = new SettingsService({ scheduler: fakeScheduler() });
+  const st = svc.load();
+  check('搭话内容默认三项全开',
+    st.proactiveChat.allTopics.map((t) => t.key), ['news', 'todo', 'care']);
+  check('搭话内容带中文标签',
+    st.proactiveChat.allTopics.map((t) => t.label), ['热点新闻', '今日 Todo', '关心问候']);
+  check('弹窗提醒不再暴露 Todo 配置', Object.prototype.hasOwnProperty.call(st, 'todoReminder'), false);
+
+  const onlyNews = svc.setProactiveChat({ topics: ['news'] });
+  check('搭话内容只勾热点新闻',
+    onlyNews.chat.allTopics.filter((t) => t.checked).map((t) => t.key), ['news']);
+
+  const empty = svc.setProactiveChat({ topics: [] });
+  check('搭话内容一项都不勾会被拒',
+    [empty.ok, svc.load().proactiveChat.allTopics.filter((t) => t.checked).map((t) => t.key)], [false, ['news']]);
+
+  const unknown = svc.setProactiveChat({ topics: ['news', 'nope', 'weather'] });
+  check('未知/已下线的内容 key 被忽略',
+    [unknown.ok, unknown.chat.allTopics.filter((t) => t.checked).map((t) => t.key)], [true, ['news']]);
+
+  svc.setProactiveChat({ topics: ['news', 'todo', 'care'] });
+}
 
 // ── 10. 测试提醒只弹窗，不改配置、不影响计时 ──
 config.set(KEY, 30);

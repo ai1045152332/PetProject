@@ -8,7 +8,7 @@ const path = require('path');
 const Module = require('module');
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const MODULE_PATH = path.join(SRC, 'pet-context-menu.js');
+const MODULE_PATH = path.join(SRC, 'pet', 'pet-context-menu.js');
 
 const builtMenus = [];
 

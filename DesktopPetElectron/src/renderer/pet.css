@@ -37,3 +37,33 @@ html, body {
   right: 0;
   transform: scaleX(-1);
 }
+
+/* 好友消息红点：贴在宠物右上角，显示未读条数，点它才弹会话窗 */
+#badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: #ff3b30;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font: 600 12px/20px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-align: center;
+  cursor: pointer;
+  display: none;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+
+#badge.show { display: block; }
+#badge.bump { animation: badge-bump 0.36s ease; }
+
+@keyframes badge-bump {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}

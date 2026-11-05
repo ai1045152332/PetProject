@@ -60,6 +60,9 @@ func buildDeps() (*deps, func(), error) {
 	// 天气服务：上游 Key 只存服务器环境变量（天气接口按量付费，不下发客户端）
 	weatherSvc := service.NewWeatherService(os.Getenv("PETSERVER_QWEATHER_HOST"), os.Getenv("PETSERVER_QWEATHER_KEY"))
 	weatherCtrl := controller.NewWeatherController(weatherSvc)
+	// 热搜：服务端统一抓取并做 TTL 缓存（客户端不再直连上游、也不本地缓存）
+	newsSvc := service.NewNewsService()
+	newsCtrl := controller.NewNewsController(newsSvc)
 	if !weatherSvc.Enabled() {
 		log.Printf("[weather] 未配置 PETSERVER_QWEATHER_KEY，/api/weather 将返回 503")
 	}
@@ -122,6 +125,15 @@ func buildDeps() (*deps, func(), error) {
 
 	adminCtrl := controller.NewAdminController(accessSvc, authSvc, noteSvc, systemSvc, heartbeatSvc, metricsSvc, socialSvc)
 
+	// 运营推送（更新 / 文字 / 视频）：随心跳一次性下发
+	pushStore, err := storage.NewPushStore("data/push_commands.json")
+	if err != nil {
+		return nil, nil, fmt.Errorf("初始化推送存储失败: %w", err)
+	}
+	pushSvc := service.NewPushService(pushStore)
+	pushCtrl := controller.NewPushController(authSvc, pushSvc)
+	heartbeatCtrl.SetPush(pushSvc)
+
 	// AI 生图与宠物图片
 	imageObjects, err := storage.NewLocalPetImageObjects("data/pet-images/objects")
 	if err != nil {
@@ -160,7 +172,7 @@ func buildDeps() (*deps, func(), error) {
 	}
 
 	handler := router.New(heartbeatCtrl, devicesCtrl, accessCtrl, pingCtrl, adminCtrl, authCtrl, cryptoCtrl,
-		releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir, imageCtrl, socialCtrl)
+		releaseCtrl, weatherCtrl, filesCtrl, wordbankCtrl, metricsSvc, acmeDir, imageCtrl, socialCtrl, newsCtrl, pushCtrl)
 
 	cleanup := func() {
 		imageSvc.Close()

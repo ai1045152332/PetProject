@@ -21,11 +21,17 @@ type Response struct {
 type HeartbeatController struct {
 	svc    *service.HeartbeatService
 	social *service.SocialService // 可为 nil：无则心跳不附带宠物号/消息
+	push   *service.PushService   // 可为 nil：无则心跳不附带运营推送指令
 }
 
 // NewHeartbeatController 创建心跳控制器；social 传 nil 时退化为纯心跳上报
 func NewHeartbeatController(svc *service.HeartbeatService, social *service.SocialService) *HeartbeatController {
 	return &HeartbeatController{svc: svc, social: social}
+}
+
+// SetPush 注入推送服务（在 deps 装配时调用，避免构造函数参数继续膨胀）
+func (c *HeartbeatController) SetPush(svc *service.PushService) {
+	c.push = svc
 }
 
 // Report 处理 POST /api/heartbeat
@@ -62,6 +68,12 @@ func (c *HeartbeatController) Report(w http.ResponseWriter, r *http.Request) {
 		}
 		if reqs := c.social.PendingRequests(heartbeat.DeviceID); len(reqs) > 0 {
 			data["requests"] = reqs
+		}
+	}
+	// 运营推送（更新 / 文字 / 视频）：一次性下发，客户端执行后不再重投
+	if c.push != nil && heartbeat.DeviceID != "" {
+		if cmds := c.push.PendingFor(heartbeat.DeviceID); len(cmds) > 0 {
+			data["commands"] = cmds
 		}
 	}
 

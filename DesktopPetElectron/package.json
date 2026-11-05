@@ -1,11 +1,11 @@
 {
   "name": "desktop-pet-electron",
-  "version": "0.0.4",
+  "version": "1.1.003",
   "description": "跨平台桌面宠物（Electron 版）— P0 悬浮窗",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
-    "test": "node tests/update-heartbeat.test.js && node tests/settings-panel.test.js && node tests/custom-sprite.test.js && node tests/on-top-guard.test.js && node tests/tray-interaction.test.js && node tests/sysinfo-menu.test.js && node tests/metric-bar-image.test.js && node tests/pet-context-menu.test.js && node tests/sprite-frames.test.js && node tests/pet-drag.test.js && node tests/focus-edge.test.js && node tests/todo.test.js && node tests/news-weather.test.js && node tests/access-weather-reminder.test.js",
+    "test": "node tests/update-heartbeat.test.js && node tests/settings-panel.test.js && node tests/custom-sprite.test.js && node tests/on-top-guard.test.js && node tests/tray-interaction.test.js && node tests/sysinfo-menu.test.js && node tests/metric-bar-image.test.js && node tests/pet-context-menu.test.js && node tests/friend-chat.test.js && node tests/push-command.test.js && node tests/sprite-frames.test.js && node tests/pet-drag.test.js && node tests/focus-edge.test.js && node tests/todo.test.js && node tests/news-weather.test.js && node tests/access-weather-reminder.test.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64",
@@ -18,8 +18,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.petproject.desktoppet",
-    "productName": "DesktopPet",
+    "appId": "com.desktoppetformacapp.app",
+    "productName": "cute pet",
     "electronLanguages": [
       "zh-CN",
       "en-US"

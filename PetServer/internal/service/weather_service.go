@@ -16,6 +16,12 @@ import (
 // weatherTimeout 单次上游请求超时
 const weatherTimeout = 6 * time.Second
 
+// weatherTTL 天气结果缓存有效期：3 小时。
+// 按「城市」缓存：同一城市的设备共用一份结果，把按量付费的上游调用压到很低；
+// 3 小时足够覆盖一个时段，又不会让实况温度失真太久。
+// 没传城市（定位失败/只给坐标）时才退回按坐标（两位小数）缓存。
+const weatherTTL = 3 * time.Hour
+
 // WeatherService 天气服务：服务端持 Key 调上游，客户端不接触 Key
 // （天气接口按量付费，Key 只存在服务器环境变量里）
 type WeatherService struct {
@@ -25,6 +31,8 @@ type WeatherService struct {
 
 	mu       sync.Mutex
 	requests map[string][]time.Time // key(设备/IP) → 最近请求时间
+
+	cache *TTLCache[*model.WeatherResult] // 坐标/城市 → 归一化天气结果（TTL）
 }
 
 // NewWeatherService 创建天气服务；key 为空时接口返回 503（功能未配置）
@@ -37,6 +45,7 @@ func NewWeatherService(host, key string) *WeatherService {
 		key:      key,
 		client:   &http.Client{Timeout: weatherTimeout},
 		requests: make(map[string][]time.Time),
+		cache:    NewTTLCache[*model.WeatherResult](weatherTTL),
 	}
 }
 
@@ -69,6 +78,16 @@ func (s *WeatherService) Allow(ident string, limit int, window time.Duration) bo
 func (s *WeatherService) Fetch(city string, lat, lon float64) (*model.WeatherResult, error) {
 	if !s.Enabled() {
 		return nil, fmt.Errorf("天气服务未配置")
+	}
+
+	// 0. 缓存命中直接返回：优先按城市（同城共享），没城市时按坐标（两位小数，几百米内视为同一片区）
+	cacheKey := weatherCacheKey(city, lat, lon)
+	if hit, at, ok := s.cache.Get(cacheKey); ok {
+		cp := *hit
+		cp.Cached = true
+		cp.UpdatedAt = at.UnixMilli()
+		cp.TTLSec = int64(weatherTTL / time.Second)
+		return &cp, nil
 	}
 
 	loc := fmt.Sprintf("%.4f,%.4f", lon, lat)
@@ -155,8 +174,21 @@ func (s *WeatherService) Fetch(city string, lat, lon float64) (*model.WeatherRes
 		Hourly:   hourly,
 		Daily:    daily,
 	}
-	log.Printf("[weather] 查询成功：%s %.4f,%.4f → %s %s℃", city, lat, lon, result.NowText, result.NowTemp)
+	at := s.cache.Set(cacheKey, result)
+	result.UpdatedAt = at.UnixMilli()
+	result.TTLSec = int64(weatherTTL / time.Second)
+	log.Printf("[weather] 查询成功（已缓存 %s）：%s %.4f,%.4f → %s %s℃",
+		weatherTTL, city, lat, lon, result.NowText, result.NowTemp)
 	return result, nil
+}
+
+// weatherCacheKey 缓存键：城市优先（同一城市共用一份），无城市时退回坐标。
+// 城市名做去空格 + 小写归一，「北京」「北京 」这类写法不会各存一份。
+func weatherCacheKey(city string, lat, lon float64) string {
+	if name := strings.ToLower(strings.TrimSpace(city)); name != "" {
+		return "city:" + name
+	}
+	return fmt.Sprintf("coord:%.2f,%.2f", lat, lon)
 }
 
 // getJSON 请求上游并把响应解析到 out

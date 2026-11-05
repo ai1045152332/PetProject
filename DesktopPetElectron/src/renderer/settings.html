@@ -34,9 +34,9 @@
           </div>
 
           <div class="card">
-            <div class="card-title">宠物名称</div>
-            <div class="row">
-              <input id="pet-name" class="text-input" type="text" maxlength="20" placeholder="毛豆" />
+            <div class="row inline">
+              <span class="card-title add-title">宠物名称</span>
+              <input id="pet-name" class="text-input" type="text" maxlength="10" placeholder="毛豆" autocomplete="off" />
               <button class="primary" id="save-name" type="button">保存</button>
             </div>
           </div>
@@ -89,12 +89,10 @@
           </div>
 
           <div class="card">
-            <div class="card-head">
-              <div>
-                <div class="card-title">版本</div>
-                <div class="card-desc" id="version">—</div>
-              </div>
-              <button class="ghost" id="check-update" type="button">检查更新</button>
+            <div class="row inline">
+              <span class="card-title add-title">版本</span>
+              <span class="value" id="version">—</span>
+              <button class="ghost push-right" id="check-update" type="button">检查更新</button>
             </div>
           </div>
 
@@ -103,7 +101,7 @@
             <div class="card-head">
               <div>
                 <div class="card-title">权限</div>
-                <div class="card-desc">输入校验码解锁全部功能；如需获取校验码，请添加微信：Ideal2020life</div>
+                <div class="card-desc">输入校验码解锁全部功能；如需获取校验码，请添加微信：<b class="copyable" id="copy-wechat" title="点击复制">Ideal2020life</b></div>
               </div>
               <span class="value" id="access-status">基础权限</span>
             </div>
@@ -116,11 +114,14 @@
           </div>
         </section>
 
-        <!-- ── 提醒设置 ───────────────────────────── -->
+        <!-- ── 提醒设置（分两类：弹窗提醒 / 消息提醒） ── -->
         <section class="section" data-section="reminder">
           <div class="section-head">
             <div class="section-title">🔔 提醒设置</div>
-            <div class="section-desc">喝水、天气提醒与主动搭话</div>
+          </div>
+
+          <div class="group-head">
+            <div class="group-title">① 弹窗提醒</div>
           </div>
 
           <div class="card">
@@ -158,25 +159,33 @@
             </div>
             <div class="row">
               <input id="weather-rem-time" class="text-input weather-time" type="time" value="08:00" />
-              <span class="unit">每天提醒时间（24 小时制）</span>
-              <input id="weather-rem-city" class="text-input" type="text" maxlength="40" placeholder="城市（留空按定位）" autocomplete="off" />
-              <button class="ghost" id="weather-rem-preview" type="button">预览</button>
+              <span class="unit">每天提醒时间（24 小时制，默认提醒当前城市）</span>
+              <button class="ghost push-right" id="weather-rem-preview" type="button">预览</button>
             </div>
             <div class="hint" id="weather-rem-hint"></div>
           </div>
 
-          <!-- 主动搭话（对标 mac 版提醒设置卡片 3：开关 + 15/30/60 分钟预设，描述随开关联动） -->
+          <div class="group-head">
+            <div class="group-title">② 消息提醒</div>
+          </div>
+
+          <!-- 主动搭话（消息提醒）：开关 + 间隔 + 可勾选的搭话内容 -->
           <div class="card" id="chat-card">
             <div class="card-head">
               <div>
                 <div class="card-title">主动搭话</div>
-                <div class="card-desc" id="chat-desc">宠物会适时冒泡，结合热搜与你的 Todo 打个招呼（勿扰/睡觉时不打扰）</div>
+                <div class="card-desc" id="chat-desc">按勾选的内容找你聊天</div>
               </div>
               <button class="switch" id="chat-toggle" type="button" aria-pressed="true"><span></span></button>
             </div>
             <div class="row">
               <div class="presets" id="chat-presets"></div>
               <span class="unit">分钟 / 次</span>
+              <button class="ghost push-right" id="chat-test" type="button">说一句</button>
+            </div>
+            <div class="row topics-row">
+              <span class="unit">搭话内容</span>
+              <div class="topic-grid" id="chat-topics"></div>
             </div>
             <div class="hint" id="chat-hint"></div>
           </div>

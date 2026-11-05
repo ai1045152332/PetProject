@@ -72,13 +72,30 @@ COMMIT=1 ./skills/cute-pet-deploy/scripts/deploy.sh ...            # 发布后�
 ./skills/cute-pet-deploy/scripts/build-mac-electron-local.sh --open          # 打完自动挂载 dmg
 ```
 
-- 产物：`DesktopPetElectron/dist/DesktopPet-<版本>-<arch>.dmg`（安装镜像）+ `-mac.zip`（自动更新包，本地用不到）
+- 产物：`DesktopPetElectron/dist/DesktopPet-<版本>-arm64.dmg` 与 `-x64.dmg`（默认两个架构都打，`--arch arm64|x64` 只打一个）+ 各自的 `-mac.zip`（自动更新包，本地用不到）
+- 发布到 manifest 时用 `macFiles: { arm64: {file,sha256,signature,size}, x64: {...} }` 分流；官网按访客 CPU 选、客户端按 `process.arch` 取，老 manifest 回落到单文件 `macFile`
 - 不签名（`CSC_IDENTITY_AUTO_DISCOVERY=false`，产物是 ad-hoc 签名），不上传、不改线上；只影响本机 `dist/`
 - 清理逻辑与通道 C 对称：一次只删自己那半边（`clean-mac-dist.sh` 保留 `*.exe` / `latest.yml` / `win-*`，`clean-win-dist.sh` 保留 dmg / `*-mac.zip` / `mac-*`）
 - **踩过的坑**：`packaging/icon.icns` 是指向 `SharedAssets/AppIcon.icns` 的软链，electron-builder 给 dmg 卷写 `.VolumeIcon.icns` 时不跟随软链，会报
   `xattr.Set /Volumes/…/.VolumeIcon.icns com.apple.FinderInfo: no such file or directory`。脚本会用 `cp -L` 把图标物化到临时目录再 `-c.dmg.icon=…` 传入；不要删掉这一步，也不要把软链改回真实副本（共享素材只存一份）。
 - 归属：这是 **Electron 线**的 macOS 包。给 mac 用户升级走通道 B（Swift 原生版）；manifest 里的 `macVersion/macFile` 通道目前未启用。
 - 首次打开：右键 App →「打开」，或 `xattr -dr com.apple.quarantine /Applications/DesktopPet.app`
+
+## 通道 F：远程 Electron macOS 版（官网 + 客户端自动更新）
+
+```bash
+./skills/cute-pet-deploy/scripts/deploy-mac-electron.sh --check                 # 只检查环境与计划版本
+./skills/cute-pet-deploy/scripts/deploy-mac-electron.sh --dry-run --skip-build   # 预演：签名 + 出 manifest，不上传
+./skills/cute-pet-deploy/scripts/deploy-mac-electron.sh v1.1.001 "更新说明"       # 正式发：双架构
+./skills/cute-pet-deploy/scripts/deploy-mac-electron.sh --arch arm64 ...          # 只发一个架构（官网会提示）
+./skills/cute-pet-deploy/scripts/deploy-mac-electron.sh --takeover ...            # 同时接管 Swift 通道
+```
+
+- 产物：`dist/DesktopPet-<版本>-arm64.dmg` / `-x64.dmg`，每次发布写 `macFiles: { arm64: {...}, x64: {...} }`
+- 官网按访客 CPU 自动选架构，客户端按 `process.arch` 取自己那条；都不跨架构回落
+- `--takeover` 会把 `version/file/sha256/signature/size` 指向 **universal zip**，让老 Swift 用户升级时换成 Electron 版；
+  **必须**是 universal（老用户里有 Intel Mac），脚本会拒绝单架构接管
+- 发布顺序：先部署服务端（官网要认 `macFiles`）→ 再发客户端
 
 ## manifest 契约（三条通道共存，严禁整体覆盖）
 
@@ -189,6 +206,7 @@ objects/<sha256(设备ID)>/<YYYYMMDD-HHMMSS-6hex>/
 | 远程 Swift 发版 | `skills/cute-pet-deploy/scripts/deploy.sh` → `DesktopPetForMacApp/release.sh` |
 | 本地 Windows 打包 | `skills/cute-pet-deploy/scripts/build-win-local.sh` |
 | 本地 Electron macOS 打包 | `skills/cute-pet-deploy/scripts/build-mac-electron-local.sh` |
+| 远程 Electron macOS 发版 | `skills/cute-pet-deploy/scripts/deploy-mac-electron.sh` |
 | 清理旧 mac 产物 | `skills/cute-pet-deploy/scripts/clean-mac-dist.sh` |
 | 远程 Windows 发版 | `skills/cute-pet-deploy/scripts/deploy-win.sh` |
 | 清理旧 Windows 产物 | `skills/cute-pet-deploy/scripts/clean-win-dist.sh` |

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>提示</title>
+  <link rel="stylesheet" href="./alert.css" />
+</head>
+<body>
+  <!-- 提示卡：替代原生 MessageBox，高度随内容自适应（量高逻辑在 alert.js） -->
+  <div class="card" id="card">
+    <div class="head">
+      <div class="avatar" id="avatar">🐱</div>
+      <div class="head-main">
+        <div class="eyebrow" id="eyebrow"></div>
+        <div class="message" id="message"></div>
+      </div>
+      <span class="close" id="closeBtn">×</span>
+    </div>
+    <div class="detail" id="detail"></div>
+    <div class="actions" id="actions"></div>
+  </div>
+  <script src="./alert.js"></script>
+</body>
+</html>

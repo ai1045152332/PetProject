@@ -28,9 +28,9 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const focus = require(path.join(SRC, 'focus-mode-monitor.js'));
-const { snapToEdgeForHiding, revealFromEdge } = require(path.join(SRC, 'edge-snap.js'));
-const { applyPetScale } = require(path.join(SRC, 'pet-window.js'));
+const focus = require(path.join(SRC, 'pet', 'focus-mode-monitor.js'));
+const { snapToEdgeForHiding, revealFromEdge } = require(path.join(SRC, 'pet', 'edge-snap.js'));
+const { applyPetScale } = require(path.join(SRC, 'pet', 'pet-window.js'));
 
 let failed = 0;
 function check(name, condition, extra) {

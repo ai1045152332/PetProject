@@ -39,14 +39,20 @@ npm start
 
 图标资源放在 `packaging/`：`icon.icns`（mac）、`icon.png`（1024×1024，electron-builder 会据此自动生成 Windows `icon.ico`）。
 
-### macOS 打包
+### macOS 打包（arm64 + Intel 双版本）
 
-**推荐走脚本**（清旧产物 → 物化图标 → 打包，一步出 dmg）：
+**推荐走脚本**（清旧产物 → 物化图标 → 同时打两个架构）：
 
 ```bash
-../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh        # → dist/DesktopPet-<版本>-arm64.dmg
-../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh --open # 打完自动挂载
+../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh              # → arm64.dmg + x64.dmg
+../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh --arch x64   # 只打 Intel
+../skills/cute-pet-deploy/scripts/build-mac-electron-local.sh --open       # 打完自动挂载
 ```
+
+- 产物：`dist/DesktopPet-<版本>-arm64.dmg`、`dist/DesktopPet-<版本>-x64.dmg`（以及各自的 `-mac.zip`）
+- 发布时 manifest 用 `macFiles: { arm64: {...}, x64: {...} }` 分别记录；官网按访客 CPU 自动选，客户端按 `process.arch` 取
+- 老 manifest 没有 `macFiles` 时，客户端回落到单文件 `macFile`
+- 发布走通道 F：`../skills/cute-pet-deploy/scripts/deploy-mac-electron.sh`（自动双架构打包 → 签名 → 合并写 `macFiles` → 上传 → 回读校验；默认不动 Swift 通道，`--takeover` 才接管）
 
 手工跑 `npm run dist:mac` 时要带真实图标路径，否则 dmg 阶段会报
 `xattr.Set … .VolumeIcon.icns … no such file or directory`（`packaging/icon.icns` 是软链，electron-builder 不跟随）：
@@ -192,16 +198,16 @@ DesktopPetElectron/
 `src/main/heartbeat.js` 移植 mac 版 `HeartbeatService`：启动立即上报一次，之后每 1 分钟一次，POST `{serverBaseURL}/api/heartbeat`。
 
 - 上报体与 mac 版完全一致：`version / hostname / os / machine / petName / petState / deviceId`，服务端无需区分客户端类型。
-- `version` 形如 `electron0.0.1`（**Electron 版专用前缀**），与 mac 原生版的 `v1.0.031` 一眼区分，后台设备列表不会认错版本。
+- `version` 形如 `v0.0.1`，与 mac 原生版的 `v1.0.031` 同一形式（早期 Electron 包用 `electron` 前缀，比较时视为同一版本序列）。
 - `deviceId` 与 mac 原生版同源（macOS 读 `IOPlatformUUID`，Windows 读注册表 `MachineGuid`），**同一台机器两版共用宠物号**。
 - 响应里的 `petNo` 会写回 `pet-config.json`；失败只在「原因变化」时打一条日志，避免断网时刷屏。
-- **可观测性**：成功默认静默，但首报成功与「失败→恢复」各打一条 `[heartbeat] 上报成功（累计 N 次）`；`HEARTBEAT_DEBUG=1 npm start` 可打印每次收发（`→ POST v=electron0.0.1 …` / `← 200 137ms`）。设置面板「通用设置 → 心跳上报」实时显示 `正常 / 失败` 与「最近一次 N 秒前」，面板打开期间每 5s 刷新。
+- **可观测性**：成功默认静默，但首报成功与「失败→恢复」各打一条 `[heartbeat] 上报成功（累计 N 次）`；`HEARTBEAT_DEBUG=1 npm start` 可打印每次收发（`→ POST v=v0.0.1 …` / `← 200 137ms`）。设置面板「通用设置 → 心跳上报」实时显示 `正常 / 失败` 与「最近一次 N 秒前」，面板打开期间每 5s 刷新。
 - **卡死自愈**：若某次请求卡在网络栈上（`fetch`/`json` 挂住、abort 未触发）导致 `sending` 恒为 true，下一次 tick 发现超时超过 2 个周期会强制解锁重发并记一条 `上次上报卡住 Ns 未返回，已重置`，不会静默停摆。
 - 服务端地址取 `pet-config.json` 的 `serverBaseURL`，默认 `http://101.96.248.75`。
 
 > 排查「有没有心跳」不要只看日志（成功静默）：直接查服务端的设备列表 ——
-> `curl -s http://101.96.248.75/api/devices` 里找自己的 `deviceId`，看 `version` 是 `electron0.0.1` 还是 `v1.0.031`。
-> 同一台机器上两版共用 `deviceId`，**记录会被对方交替覆盖**（各自 60s 一次），采样一两次看到 `v1.0.031` 是 mac 原生版刚上报，不代表 Electron 版没报。
+> `curl -s http://101.96.248.75/api/devices` 里找自己的 `deviceId`，看 `version` 字段即可。
+> 同一台机器上两版共用 `deviceId`，**记录会被对方交替覆盖**（各自 60s 一次），且两版版本号都是 `v` 前缀，采样到旧版本号不代表 Electron 版没报。
 
 ## 设置面板
 
@@ -211,7 +217,7 @@ DesktopPetElectron/
 |----------|----------|------|
 | 🐱 宠物信息 | 可用 | 形象网格 5 格（专注/休闲/睡觉/抚摸点击即时切帧 + 躲藏只读展示）✅、每格可「直接上传」自定义小猫图（存本机，更新不丢）✅、「AI 生成所有状态图片」✅（需服务端激活码，一张照片逐状态各生成一张、整批扣 1 次配额，面板显示剩余次数）✅、「查看历史图片」窗 ✅（本机图与失败记录列表，应用/删除/重试）、宠物名称 ✅、宠物号展示 ✅ |
 | ⚙️ 通用设置 | 部分可用 | 开机自启 ✅、宠物大小 0.5x～2.0x ✅、版本号 + 检查更新 ✅、权限校验码解锁 ✅ |
-| 🔔 提醒设置 | 可用 | 喝水提醒 ✅（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）、每日天气提醒 ✅（需解锁，含时间/城市/预览）、主动搭话 ✅（开关 + 15/30/60 分钟预设，宠物头顶冒气泡） |
+| 🔔 提醒设置 | 可用 | 分两类：**① 弹窗提醒**——喝水（预设 15/30/45/60 + 自定义 1～120 + 测试提醒）/ 天气（需解锁，含时间/城市/预览）；**② 消息提醒**——主动搭话（开关 + 15/30/60 间隔 + 搭话内容可勾选：热点新闻 / 今日 Todo / 关心问候） |
 | 🖱️ 菜单设置 | 可用 | 勾选宠物右键菜单要展示的功能项（抚摸 / Todo / 躲起来 / 新闻 / 天气），写盘即生效，下次弹菜单就应用 |
 | 👫 好友消息 | 可用 | 宠物号展示 + 复制 ✅、按宠物号发好友申请 ✅、待处理申请同意/拒绝 ✅、好友列表（聊天 / 删除）✅、会话聊天窗 ✅；新申请与新留言由心跳下发自动弹卡 |
 
@@ -257,6 +263,67 @@ DesktopPetElectron/
 - 直接上传、恢复默认、历史切图全部不依赖激活码；只有 AI 生成与重试需要服务端激活码（本地快捷码 456 不绑码，拿不到配额）。
 - `/api/pet-images/*` 的业务失败走 HTTP 400/403/429/503 + `{code,msg}`（与 social 接口一律 200 不同），因此非 200 也要先解 `msg`，“生成次数已用完”这类服务端文案才能原样显示在面板上。
 
+### 好友聊天窗与已读
+
+- 只依赖 `history` / `send` / `read` 三个接口；**我方气泡**带「已读 / 未读」，对方气泡不带。
+- 已读由**接收方关卡时**上报：点 ✕、Cmd+W、退出应用都走 `win.on('close')` 这条统一出口；换好友的静默关窗不会误标（留给服务端重投）。
+- 窗口开着时每 10s（仅当前台）重拉一次历史，重新聚焦也立刻重拉 —— 对方确认后最多 10s 气泡自动变「已读」，不用关掉重开。
+- 本机乐观上屏的消息在历史回来时按「同发送方 + 同文本 + 2 分钟内」配对去重，不会显示成两条。
+
+## 从 Swift 原生版升级（本地数据迁移 · 临时代码）
+
+> `src/main/swift-migration.js` 是**过渡期临时代码**：等 Swift 存量用户迁完（或 version 通道发过几版）即可整文件删除，删除时同步去掉 `index.js` 里的 `require` 与 `app.whenReady` 首次调用。出问题可用 `PET_DISABLE_SWIFT_MIGRATION=1` 熔断。
+
+macOS 上老用户从 Swift 版换成 Electron 版时，`src/main/swift-migration.js` 会在**首次启动**把老数据搬过来：
+
+| 老位置（UserDefaults `com.desktoppetformacapp.app`） | 新位置（`pet-config.json` / `pet-todos.json`） |
+| --- | --- |
+| `settings.petName` / `drinkWaterInterval` / `catScale` | `petName` / `drinkWaterInterval` / `petScale` |
+| `settings.accessLevel` / `accessCode` | `accessLevel` / `accessCode`（同机同 deviceId，服务端复核仍有效） |
+| `settings.weatherReminder*` / `proactiveChat.*` / `todoReminder.repeatMinutes` | 同名配置项 |
+| `settings.myPetNo` / `shownFriendRequestIDs` | `petNo` / `shownFriendRequestIDs` |
+| `desktoppetformacapp.todos`（Data，Swift Date 是 2001 起秒数） | `pet-todos.json`（due 转 epoch 秒） |
+
+- 自定义形象图不用搬：两边共用 `~/Library/Application Support/DesktopPetForMacApp/CustomSprites`。
+- **只跑一次**：写完 `migratedFromSwift: true` 就不再探测；已有 Electron 配置（非空宠物名或已有 Todo）时只打标记、不覆盖。
+- 读的是 `~/Library/Preferences/com.desktoppetformacapp.app.plist`，用 `plutil -convert xml1` 解析（该 plist 含 `<data>`，转 JSON 会失败）。
+- 搬不过去的只有系统层：开机自启的登录项、Dock/Launchpad 图标缓存、TCC 授权——这些要用户重设一次。
+
+## 运营推送与消息红点
+
+**好友消息红点**：收到好友留言不再直接弹会话窗，而是在宠物右上角出红点（数字 = 未读条数），点红点才拉会话窗；从设置面板「好友消息」主动点开会话也会清掉红点。
+
+**服务端主动推送**（三件事都能由运营在后台触发，客户端下次心跳 ≤1 分钟收到）：
+
+| kind | 行为 | 必填 |
+| --- | --- | --- |
+| `update` | 触发一次「用户主动」更新检查（同托盘「检查更新」） | — |
+| `text` | 弹文字卡（可设 `durationMs` 自动关，0 = 手动关） | `text` |
+| `video` | 弹视频窗，播完自动关 | `url` |
+
+后台接口（需管理身份，`X-Session-Token` 或 `X-Admin-Token`）：
+
+```bash
+# 单发（deviceId）/ 广播（不传 deviceId）
+curl -X POST http://服务器/api/admin/push \
+  -H 'Content-Type: application/json' -H 'X-Admin-Token: 管理密码' \
+  -d '{"kind":"text","title":"通知","text":"今晚 8 点维护","durationMs":8000}'
+curl -X POST http://服务器/api/admin/push \
+  -H 'Content-Type: application/json' -H 'X-Admin-Token: 管理密码' \
+  -d '{"kind":"update"}'
+curl -X POST http://服务器/api/admin/push \
+  -H 'Content-Type: application/json' -H 'X-Admin-Token: 管理密码' \
+  -d '{"kind":"video","title":"宣传片","url":"https://example.com/a.mp4"}'
+
+curl http://服务器/api/admin/push/list -H 'X-Admin-Token: 管理密码'
+curl -X POST http://服务器/api/admin/push/delete -H 'Content-Type: application/json' \
+  -H 'X-Admin-Token: 管理密码' -d '{"id":"<指令 id>"}'
+```
+
+- 指令默认 24 小时过期（`expiresMins` 可改），随心跳**一次性**下发：同一设备只收一次，广播指令按设备各自去重。
+- 客户端按 `id` 再去重一次（`executedPushIds` 留最近 100 个），避免「收到但没执行完」时重复弹卡。
+- 测试钩子：`PET_TEST_BADGE=3 PET_TEST_BADGE_SHOT=/tmp/b.png`（验证红点）、`PET_TEST_PUSH_SHOT=/tmp/p.png`（验证推送卡）。
+
 ## 自动更新 / 检查更新
 
 `src/main/update-service.js` 移植 mac 版 `UpdateService`，服务端契约不变（`GET /api/app/latest` + `GET /download/<文件名>`）。
@@ -285,7 +352,7 @@ Electron 版**只认带平台前缀的字段**，避免把 mac 原生 Swift 版�
 
 平台字段缺失时客户端提示「服务端还没有发布该平台安装包」，不会回落到 `version`/`file`。服务端 `model.Release` 已同步支持这些字段（`omitempty`，旧客户端无感），**需要先部署新版 PetServer 再发 Electron 包**。
 
-> 版本号格式：Electron 版自身版本形如 `electron0.0.1`（取自 `package.json` 的 `version` 加 `electron` 前缀），mac 原生版是 `v1.0.031`。`winVersion`/`macVersion` 必须写成同样的 `electron` 前缀形式，并与包内 `package.json` 的 `version` 对应，否则会出现「装完还提示同一版本」的循环。比较时会自动剥掉 `electron`/`v` 前缀，两种前缀视为同一版本序列。
+> 版本号格式：Electron 版自身版本形如 `v0.0.1`（取自 `package.json` 的 `version` 加 `v` 前缀），与 mac 原生版同一形式。`winVersion`/`macVersion` 必须写成同样的 `v` 前缀形式，并与包内 `package.json` 的 `version` 对应，否则会出现「装完还提示同一版本」的循环。比较时会自动剥掉 `v`/`electron` 前缀（`electron` 是早期包的历史前缀），两种前缀视为同一版本序列。
 
 发布 Windows 包（与 mac 版同一把私钥 `~/.cute-pet-release/ed25519_private.pem`）。
 

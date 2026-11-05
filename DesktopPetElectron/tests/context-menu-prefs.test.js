@@ -24,9 +24,9 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const prefs = require(path.join(SRC, 'context-menu-prefs.js'));
-const { buildTemplate } = require(path.join(SRC, 'pet-context-menu.js'));
-const { SettingsService } = require(path.join(SRC, 'settings-service.js'));
+const prefs = require(path.join(SRC, 'pet', 'context-menu-prefs.js'));
+const { buildTemplate } = require(path.join(SRC, 'pet', 'pet-context-menu.js'));
+const { SettingsService } = require(path.join(SRC, 'settings', 'settings-service.js'));
 
 let failed = 0;
 function check(name, condition, extra) {

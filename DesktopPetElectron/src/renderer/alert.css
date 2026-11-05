@@ -1,0 +1,158 @@
+/* src/renderer/alert.css — 提示卡（宠物主题深色卡：头像 + 主句 + 说明块 + 按钮组） */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  box-sizing: border-box;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 保险：本卡一切换都不该出现滚动条（高度由渲染层量给主进程自适应） */
+::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+body {
+  /* 给卡片外阴影留边距；上下 padding 与 alert.js 里量高补偿的常量一致 */
+  padding: 18px;
+}
+
+/* 提示卡是「内容自然高度」布局：不能像提醒卡那样 flex 撑满视口，
+   否则量出来的永远是视口高，自适应就失效了 */
+.card {
+  box-sizing: border-box;
+  background:
+    radial-gradient(120% 90% at 85% 0%, rgba(102, 126, 234, 0.16), transparent 55%),
+    linear-gradient(165deg, #34364f 0%, #262838 55%, #1f2030 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: #f0f0f5;
+  padding: 16px 18px;
+  /* 整卡可拖动（透明无边框窗体），关闭与按钮单独放开 */
+  -webkit-app-region: drag;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.avatar {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.head-main {
+  flex: 1;
+  min-width: 0;
+  padding-top: 1px;
+}
+
+/* 眉题小标签：与正文重复时由 alert.js 隐藏 */
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #9aa6ff;
+  margin-bottom: 3px;
+}
+
+.eyebrow:empty { display: none; }
+
+.message {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #f4f5fb;
+  word-break: break-word;
+}
+
+.close {
+  flex-shrink: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: #8888a0;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.detail {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: #aeb3d0;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail:empty { display: none; }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  -webkit-app-region: no-drag;
+}
+
+.actions button {
+  min-width: 84px;
+  padding: 8px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #d9dcef;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  outline: none;
+  transition: filter 0.12s ease, background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+}
+
+.actions button:hover {
+  border-color: rgba(154, 166, 255, 0.55);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.actions button:active { transform: translateY(1px); }
+
+/* 默认键（回车触发项）走主按钮渐变 */
+.actions button.primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.35);
+}
+
+.actions button.primary:hover {
+  filter: brightness(1.08);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}

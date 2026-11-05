@@ -438,6 +438,15 @@ clearBtn.addEventListener('click', async () => {
   setHint('access-hint', '已清除权限，回到基础权限，高级功能已锁定', 'error');
 });
 
+// 微信号点击即复制：剪贴板写入走主进程（settings:copy-text），结果回填权限卡下方提示行
+$('copy-wechat').addEventListener('click', async () => {
+  const wechat = $('copy-wechat').textContent.trim();
+  const res = await api.copyText(wechat);
+  setHint('access-hint', res && res.ok
+    ? `已复制微信号「${wechat}」，添加后可获取校验码`
+    : (res && res.error) || '复制失败，请手动选中复制', res && res.ok ? 'ok' : 'error');
+});
+
 // 定时复核收回权限时主进程主动推一次；本地状态已一致则忽略（解锁链路 IPC 已回发）
 api.onAccessChanged((state) => {
   const next = Boolean(state && state.fullAccess);
@@ -459,13 +468,13 @@ function renderAccess() {
 }
 
 // ── 提醒设置：每日天气提醒（需解锁；天气接口按量付费）──────
+// 城市不再提供设置：默认按 IP 定位提醒当前城市（与 mac 版天气提醒同口径）
 const wrToggle = $('weather-rem-toggle');
 const wrTime = $('weather-rem-time');
-const wrCity = $('weather-rem-city');
 const wrPreview = $('weather-rem-preview');
 const wrDesc = $('weather-rem-desc');
 
-let weather = { enabled: false, hour: 8, minute: 0, city: '' };
+let weather = { enabled: false, hour: 8, minute: 0 };
 
 function fmtHourMinute(hour, minute) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -473,7 +482,7 @@ function fmtHourMinute(hour, minute) {
 
 /** 控件可用状态与描述文案（对齐 mac 版 refreshWeatherControls） */
 function renderWeatherAvailability() {
-  for (const el of [wrToggle, wrTime, wrCity, wrPreview]) el.disabled = !fullAccess;
+  for (const el of [wrToggle, wrTime, wrPreview]) el.disabled = !fullAccess;
   if (!fullAccess) {
     wrDesc.textContent = '需解锁全部功能后可用（天气接口按量付费）';
     wrDesc.classList.add('locked');
@@ -488,7 +497,6 @@ function renderWeatherAvailability() {
 function renderWeatherReminder() {
   wrToggle.setAttribute('aria-pressed', String(Boolean(weather.enabled)));
   wrTime.value = fmtHourMinute(weather.hour, weather.minute);
-  wrCity.value = weather.city || '';
   renderWeatherAvailability();
 }
 
@@ -518,8 +526,6 @@ wrTime.addEventListener('change', () => {
   setWeather({ hour: Number(m[1]), minute: Number(m[2]) });
 });
 
-wrCity.addEventListener('change', () => setWeather({ city: wrCity.value }));
-
 wrPreview.addEventListener('click', async () => {
   const res = await api.previewWeather();
   setHint('weather-rem-hint', (res && res.ok) ? '已推送今日天气，请看天气窗' : ((res && res.error) || '预览失败'), (res && res.ok) ? 'ok' : 'error');
@@ -531,10 +537,38 @@ const chatToggle = $('chat-toggle');
 const chatDesc = $('chat-desc');
 const chatPresetBox = $('chat-presets');
 
-const CHAT_DESC_ON = '宠物会适时冒泡，结合热搜与你的 Todo 打个招呼（勿扰/睡觉时不打扰）';
-const CHAT_DESC_OFF = '关闭后宠物不会主动搭话（喝水、天气提醒不受影响）';
+const CHAT_DESC_ON = '按勾选的内容找你聊天';
+const CHAT_DESC_OFF = '已关闭';
 
-let chatState = { enabled: true, minutes: 30, presets: [] };
+let chatState = { enabled: true, minutes: 30, presets: [], allTopics: [] };
+
+// 搭话内容勾选（消息提醒）：勾/取消直接写盘，至少留一项（全取消时主进程会拒绝并回滚）
+const chatTopicBox = $('chat-topics');
+
+function renderChatTopics() {
+  if (!chatTopicBox) return;
+  chatTopicBox.textContent = '';
+  for (const topic of chatState.allTopics || []) {
+    const label = document.createElement('label');
+    label.className = 'topic-check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = Boolean(topic.checked);
+    input.dataset.key = topic.key;
+    input.disabled = !chatState.enabled;
+    const text = document.createElement('span');
+    text.textContent = topic.label;
+    input.addEventListener('change', () => {
+      const picked = [...chatTopicBox.querySelectorAll('input')]
+        .filter((el) => el.checked)
+        .map((el) => el.dataset.key);
+      setProactiveChat({ topics: picked });
+    });
+    label.append(input, text);
+    if (!chatState.enabled) label.classList.add('disabled');
+    chatTopicBox.append(label);
+  }
+}
 
 /** 预设按钮只在初始化时建一次（预设不会运行期变），选中态/置灰态交给 render 刷 */
 function renderChatPresets() {
@@ -559,6 +593,7 @@ function renderChatControls() {
     btn.classList.toggle('selected', Number(btn.dataset.minutes) === chatState.minutes);
     btn.disabled = !chatState.enabled;
   }
+  renderChatTopics();
 }
 
 async function setProactiveChat(patch) {
@@ -566,9 +601,11 @@ async function setProactiveChat(patch) {
   if (res && res.ok) {
     chatState = res.chat || chatState;
     renderChatControls();
-    setHint('chat-hint', patch.intervalMinutes === undefined
-      ? (chatState.enabled ? '已开启主动搭话' : '已关闭主动搭话')
-      : `已设为每 ${chatState.minutes} 分钟搭话一次，已重新计时`, 'ok');
+    let msg;
+    if (patch.topics !== undefined) msg = '搭话内容已更新';
+    else if (patch.intervalMinutes !== undefined) msg = `每 ${chatState.minutes} 分钟一次`;
+    else msg = chatState.enabled ? '已开启' : '已关闭';
+    setHint('chat-hint', msg, 'ok');
     return;
   }
   if (res && res.chat) chatState = res.chat;
@@ -579,6 +616,16 @@ async function setProactiveChat(patch) {
 chatToggle.addEventListener('click', () => {
   setProactiveChat({ enabled: chatToggle.getAttribute('aria-pressed') !== 'true' });
 });
+
+// 立刻说一句：不等 15 分钟，用来确认搭话链路通不通
+const chatTestBtn = $('chat-test');
+if (chatTestBtn) {
+  chatTestBtn.addEventListener('click', async () => {
+    const res = await api.testChat();
+    setHint('chat-hint', (res && res.ok) ? '已让它说一句，看小猫头顶（没显示就看终端日志）' : ((res && res.error) || '触发失败'),
+      (res && res.ok) ? 'ok' : 'error');
+  });
+}
 
 // ── 菜单设置：右键菜单项展示开关（对齐 mac 版 fillMenuSettingsSection）──
 // 勾 / 取消直接写盘，下次弹出宠物右键菜单就应用（mac 版 contextMenuToggle 同节奏）
@@ -895,7 +942,7 @@ api.load().then((state) => {
   menuItems = (state.menu && state.menu.items) || [];
   renderMenuGrid();
 
-  // 提醒设置：主动搭话
+  // 提醒设置：消息提醒 → 主动搭话（开关 / 间隔 / 搭话内容）
   chatState = state.proactiveChat || chatState;
   renderChatPresets();
   renderChatControls();

@@ -83,7 +83,8 @@ say "打包架构          : $ARCH"
 say "远端后端          : $(remote_backend)"
 
 # ── 2. 解析版本号 ───────────────────────────────────────────
-# 纯数字版本（0.0.3）；manifest 里存 electron 前缀形式，包内 package.json 只写数字
+# 纯数字版本（1.1.001）；manifest 里加 v 前缀（也可用 CUTE_PET_ELECTRON_VERSION_PREFIX=electron 改回旧形式），
+# 包内 package.json 只写数字
 plain_version() {
   python3 - "$1" <<'PY'
 import re, sys
@@ -137,7 +138,9 @@ if [ "$SKIP_BUILD" = "1" ]; then
     fail "--skip-build 用的是 dist 里 ${PKG_PLAIN} 的包，不能声明成 $PLAIN（要发新版本请去掉 --skip-build 重新打包）"
   fi
 fi
-WIN_VERSION="electron$PLAIN"
+# manifest 里的版本前缀：默认 v（与 Swift 通道统一，客户端比较时会剥掉 v/electron 前缀）
+WIN_PREFIX="${CUTE_PET_ELECTRON_VERSION_PREFIX:-v}"
+WIN_VERSION="$WIN_PREFIX$PLAIN"
 if [ "$WIN_VERSION" = "$REMOTE_WIN_VER" ]; then
   fail "版本号 $WIN_VERSION 与服务器 Windows 版相同；同一版本号不要重复发布不同内容，请递增（如 $(next_version "$PLAIN")）"
 fi
@@ -189,8 +192,17 @@ STEM="DesktopPet Setup $PLAIN"
 if [ "$ARCH" = "arm64" ]; then STEM="$STEM-arm64"; fi
 SRC_EXE="$DIST_DIR/$STEM.exe"
 if [ ! -f "$SRC_EXE" ]; then
-  # 兜底：按名字模糊找 setup，绝不匹配 "DesktopPet <ver>.exe"（portable）
+  # 兜底 1：按名字模糊找 setup，绝不匹配 "DesktopPet <ver>.exe"（portable）
   SRC_EXE=$(find "$DIST_DIR" -maxdepth 1 -name "*Setup*${PLAIN}*.exe" | head -1)
+fi
+if [ -z "${SRC_EXE:-}" ] || [ ! -f "$SRC_EXE" ]; then
+  # 兜底 2：electron-builder 会把 1.1.001 规范化成 1.1.1，用规范化版本再找一次
+  NORM_VER=$(python3 -c "import sys;print('.'.join(str(int(p)) for p in sys.argv[1].split('.')))" "$PLAIN")
+  SRC_EXE=$(find "$DIST_DIR" -maxdepth 1 -name "*Setup*${NORM_VER}*.exe" | head -1)
+fi
+if [ -z "${SRC_EXE:-}" ] || [ ! -f "$SRC_EXE" ]; then
+  # 兜底 3：干净构建（清过旧产物）下 dist 里只应有一个 setup.exe
+  SRC_EXE=$(find "$DIST_DIR" -maxdepth 1 -name "*Setup*.exe" ! -name "*.blockmap" | head -1)
 fi
 [ -n "$SRC_EXE" ] && [ -f "$SRC_EXE" ] \
   || fail "未找到 NSIS 安装包（期望 $DIST_DIR/$STEM.exe）。若 dist 里只有「DesktopPet <版本>.exe」，那是便携版，不能用于自动更新"

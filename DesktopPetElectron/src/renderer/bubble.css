@@ -1,12 +1,15 @@
 /* src/renderer/bubble.css */
-/* 宠物对话气泡：配色取自 mac 版 SpeechBubbleView 的素材色（左上近白粉 → 右下暖粉，暖棕描边，深棕文字）
-   这里走的是 mac 版的「矢量模式」画法（无 SpeechBubble.png 时的分支），两端观感一致 */
+/* 宠物对话气泡：现代软萌卡片风——暖白渐变底 + 柔粉细描边 + 层次投影
+   尺寸契约不能动：窗口大小由渲染层按 offsetWidth/Height 量好回报（bubble.js），
+   尾巴几何保持盒下方溢出 13px（TAIL_HEIGHT=15 覆盖），body 四周 4px（SIDE_PAD=8 覆盖），
+   总宽 ≤ 240（主进程 MAX_WIDTH 钳制） */
 html, body {
   margin: 0;
   padding: 0;
   background: transparent;
-  /* 尾巴在气泡盒下方溢出，不能裁掉 */
-  overflow: visible;
+  /* 窗口尺寸由渲染层按「气泡盒 + 尾巴溢出量」量好，尾巴不会真出视口；
+     这里必须 hidden：visible 时内容稍超窗口就会在右边冒出滚动条 */
+  overflow: hidden;
   user-select: none;
 }
 
@@ -18,15 +21,19 @@ body {
 .bubble {
   position: relative;
   max-width: 232px;
-  padding: 20px 18px;
-  border: 2px solid #8b6e5c;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #fff7f5, #fae0dc);
-  box-shadow: 0 2px 8px rgba(90, 60, 40, 0.18);
-  color: #6b4f40;
+  padding: 14px 18px;
+  border: 1.5px solid rgba(244, 143, 163, 0.45);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fff3f5 100%);
+  box-shadow:
+    0 10px 24px rgba(233, 130, 150, 0.20),
+    0 2px 6px rgba(60, 30, 40, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  color: #57474d;
   font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.2px;
   text-align: center;
   word-break: break-word;
   transform-origin: 50% 100%;
@@ -36,7 +43,7 @@ body {
     bob 1.8s ease-in-out 0.3s infinite;
 }
 
-/* 尾巴：指向小猫头顶（外层三角形是描边，内层是同色填充） */
+/* 尾巴：指向小猫头顶（外层三角形是描边，内层是贴合盒底的填充色） */
 .bubble-tail {
   position: absolute;
   left: 50%;
@@ -46,7 +53,7 @@ body {
   height: 0;
   border-left: 9px solid transparent;
   border-right: 9px solid transparent;
-  border-top: 13px solid #8b6e5c;
+  border-top: 13px solid rgba(244, 143, 163, 0.45);
 }
 
 .bubble-tail::after {
@@ -58,7 +65,7 @@ body {
   height: 0;
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-top: 10px solid #fbe7e3;
+  border-top: 10px solid #fff3f5;
 }
 
 .bubble.leaving {

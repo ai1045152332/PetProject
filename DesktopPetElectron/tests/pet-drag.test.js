@@ -19,7 +19,7 @@ Module._load = function (request) {
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const { createDragController } = require(path.join(SRC, 'pet-window.js'));
+const { createDragController } = require(path.join(SRC, 'pet', 'pet-window.js'));
 
 let failed = 0;
 function check(name, condition) {

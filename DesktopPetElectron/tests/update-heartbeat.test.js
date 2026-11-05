@@ -32,14 +32,25 @@ Module._load = function (request) {
       shell: { openPath: async () => '', showItemInFolder: (p) => opened.push(p) },
     };
   }
+  // 更新链路的提示已从原生 dialog 换成自定义提示卡（alert-window）：
+  // 这里把它替换成「记下参数、默认点第二个按钮」的假实现，跑测试不用真开窗
+  if (request === './alert-window') {
+    return {
+      showAlert: async (opts) => {
+        dialogs.push(opts);
+        return 1;
+      },
+      getAlertWindow: () => null,
+    };
+  }
   return origLoad.apply(this, arguments);
 };
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const { isNewer, selectPackage, verifySignature, UpdateService } = require(path.join(SRC, 'update-service.js'));
+const { isNewer, selectPackage, verifySignature, UpdateService } = require(path.join(SRC, 'updates', 'update-service.js'));
 const APP_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
-const { HeartbeatService } = require(path.join(SRC, 'heartbeat.js'));
-const config = require(path.join(SRC, 'config-store.js'));
+const { HeartbeatService } = require(path.join(SRC, 'updates', 'heartbeat.js'));
+const config = require(path.join(SRC, 'core', 'config-store.js'));
 
 let failed = 0;
 function check(name, actual, expected) {
@@ -54,9 +65,9 @@ check('v1.0.031 == v1.0.031', isNewer('v1.0.031', 'v1.0.031'), false);
 check('0.0.10 > 0.0.2（数值比较，非字典序）', isNewer('0.0.10', '0.0.2'), true);
 check('v1.0.31 == v1.0.031（数值相等）', isNewer('v1.0.31', 'v1.0.031'), false);
 check('缺段补 0：v1.1 > v1.0.9', isNewer('v1.1', 'v1.0.9'), true);
-check('electron 前缀：electron0.0.2 > electron0.0.1', isNewer('electron0.0.2', 'electron0.0.1'), true);
-check('electron 前缀：electron0.0.1 == v0.0.1（前缀不影响序列）', isNewer('electron0.0.1', 'v0.0.1'), false);
-check('electron 前缀：electron0.0.10 > electron0.0.2', isNewer('electron0.0.10', 'electron0.0.2'), true);
+check('历史 electron 前缀兼容：electron0.0.2 > electron0.0.1', isNewer('electron0.0.2', 'electron0.0.1'), true);
+check('历史 electron 前缀兼容：electron0.0.1 == v0.0.1（前缀不影响序列）', isNewer('electron0.0.1', 'v0.0.1'), false);
+check('历史 electron 前缀兼容：electron0.0.10 > electron0.0.2', isNewer('electron0.0.10', 'electron0.0.2'), true);
 
 // ── 2. 平台选包：只认平台前缀字段，不回落到 mac 原生版字段 ──
 const prefix = process.platform === 'win32' ? 'win' : 'mac';
@@ -109,7 +120,7 @@ global.fetch = async (url, opts) => {
   check('Content-Type', captured.opts.headers['Content-Type'], 'application/json');
   check('字段集合', Object.keys(payload).sort(),
     ['deviceId', 'hostname', 'machine', 'os', 'petName', 'petState', 'version'].sort());
-  check('version 为 electron 前缀', payload.version, `electron${APP_VERSION}`);
+  check('version 为 v 前缀', payload.version, `v${APP_VERSION}`);
   check('petState 来自状态机', payload.petState, 'focus');
   check('petName 默认毛豆', payload.petName, '毛豆');
   check('machine 为 CPU 架构', payload.machine, process.arch);
@@ -175,7 +186,7 @@ global.fetch = async (url, opts) => {
   check('无本平台包时提示暂无可用更新', dialogs[0] && dialogs[0].title, '暂无可用更新');
 
   const sameVersion = {
-    [`${prefix}Version`]: 'electron0.0.1',
+    [`${prefix}Version`]: 'v0.0.1',
     [`${prefix}File`]: `DesktopPet${goodExt}`,
     [`${prefix}SHA256`]: 'x',
     [`${prefix}Signature`]: 'y',

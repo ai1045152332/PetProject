@@ -98,6 +98,8 @@ func New(
 	acmeDir string,
 	petImages *controller.PetImageController,
 	socialCtrl *controller.SocialController,
+	newsCtrl *controller.NewsController,
+	pushCtrl *controller.PushController,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/pet-images/", petImages.Handle)
@@ -108,6 +110,8 @@ func New(
 	mux.HandleFunc("/api/access/verify", accessCtrl.Verify)
 	mux.HandleFunc("/api/ping", pingCtrl.Ping)
 	mux.HandleFunc("/api/weather", weatherCtrl.Query)
+	// 热搜：服务端抓取 + TTL 缓存，客户端只读这里
+	mux.HandleFunc("/api/news", newsCtrl.Hot)
 	mux.HandleFunc("/api/admin/codes", adminCtrl.ListCodes)
 	mux.HandleFunc("/api/admin/codes/generate", adminCtrl.GenerateCodes)
 	mux.HandleFunc("/api/admin/codes/unbind", adminCtrl.UnbindCodes)
@@ -123,6 +127,9 @@ func New(
 	mux.HandleFunc("/api/admin/metrics", adminCtrl.ApiMetrics)
 	mux.HandleFunc("/api/admin/metrics/reset", adminCtrl.ResetApiMetrics)
 	// 宠物对话（需登录）：后台查看好友间的往来消息留痕，可清空
+	mux.HandleFunc("/api/admin/push", pushCtrl.Create)
+	mux.HandleFunc("/api/admin/push/list", pushCtrl.List)
+	mux.HandleFunc("/api/admin/push/delete", pushCtrl.Delete)
 	mux.HandleFunc("/api/admin/social/conversations", adminCtrl.SocialConversations)
 	mux.HandleFunc("/api/admin/social/conversations/clear", adminCtrl.ClearSocialConversations)
 	mux.HandleFunc("/api/admin/files/list", filesCtrl.List)

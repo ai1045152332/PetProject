@@ -11,8 +11,8 @@ const os = require('os');
 const path = require('path');
 
 const SRC = path.join(__dirname, '..', 'src', 'main');
-const { computeTrayParts, computeTrayTitle, METRIC_ICONS } = require(path.join(SRC, 'system-monitor.js'));
-const { MetricBarImage, layoutStrip, blitAlpha, glyphKey, bakeLuminanceToAlpha, CAT_SIZE_PT, CAT_GAP_PT, GLYPH_DY_PT, SYMBOL_DY_PT, SPACE_KEY } = require(path.join(SRC, 'metric-bar-image.js'));
+const { computeTrayParts, computeTrayTitle, METRIC_ICONS } = require(path.join(SRC, 'system', 'system-monitor.js'));
+const { MetricBarImage, layoutStrip, blitAlpha, glyphKey, bakeLuminanceToAlpha, CAT_SIZE_PT, CAT_GAP_PT, GLYPH_DY_PT, SYMBOL_DY_PT, SPACE_KEY } = require(path.join(SRC, 'system', 'metric-bar-image.js'));
 
 const TILES_DIR = path.join(__dirname, '..', 'assets', 'menu-icons');
 

@@ -7,14 +7,18 @@ set -euo pipefail
 # 只影响本机 dist/；要给 mac 用户升级走 deploy.sh（那是 Swift 原生版），Electron mac 通道目前只发 Windows。
 #
 # 用法:
-#   build-mac-electron-local.sh                 # 清旧 mac 产物 → 按 package.json 版本打包（当前架构）
-#   build-mac-electron-local.sh --version 0.0.5 # 先把 package.json 版本改成 0.0.5 再打包
+#   build-mac-electron-local.sh                 # 清旧 mac 产物 → 按 package.json 版本**同时打 arm64 + x64**
+#   build-mac-electron-local.sh --arch arm64    # 只打 Apple Silicon
+#   build-mac-electron-local.sh --arch x64      # 只打 Intel
+#   build-mac-electron-local.sh --arch universal # universal 单包（给 Swift 老用户迁移用，体积翻倍）
+#   build-mac-electron-local.sh --version 1.1.001  # 先把 package.json 版本改成 1.1.001 再打包
 #   build-mac-electron-local.sh --no-clean      # 保留旧产物（不推荐，容易拿错包）
 #   build-mac-electron-local.sh --dry-run       # 只预览将清理什么、将打哪个版本，不打包
 #   build-mac-electron-local.sh --open          # 打完后自动打开 dmg 挂载窗口
 #
-# 产物：DesktopPetElectron/dist/DesktopPet-<版本>-<arch>.dmg
+# 产物：DesktopPetElectron/dist/DesktopPet-<版本>-arm64.dmg / -x64.dmg
 #       DesktopPetElectron/dist/DesktopPet-<版本>-<arch>-mac.zip（自动更新包，本地验证用不到）
+# 两个架构分别出包（不是 universal 单包）：官网按访客 CPU 分流，客户端按 process.arch 取对应文件。
 
 SCRIPT_REAL=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0")
 SCRIPTS_DIR=$(dirname "$SCRIPT_REAL")
@@ -26,8 +30,10 @@ DO_CLEAN=1
 DRY_RUN=0
 DO_OPEN=0
 NEW_VERSION=""
+TARGET_ARCH="both"   # both / arm64 / x64
 while [ $# -gt 0 ]; do
   case "$1" in
+    --arch) shift; TARGET_ARCH="${1:-both}" ;;
     --no-clean) DO_CLEAN=0 ;;
     --dry-run) DRY_RUN=1 ;;
     --open) DO_OPEN=1 ;;
@@ -58,9 +64,13 @@ case "$ARCH" in
   x86_64) ARCH_LABEL="x64" ;;
   *) ARCH_LABEL="$ARCH" ;;
 esac
+case "$TARGET_ARCH" in
+  both|arm64|x64|universal) ;;
+  *) fail "未知架构：$TARGET_ARCH（可选 both / arm64 / x64 / universal）" ;;
+esac
 say "Electron 工程     : $ELECTRON_DIR"
 say "当前 package 版本 : $CUR_VERSION"
-say "本次打包版本      : $TARGET_VERSION（$ARCH_LABEL，本机架构）"
+say "本次打包版本      : $TARGET_VERSION（架构：$TARGET_ARCH；本机 $ARCH_LABEL）"
 
 if [ "$DRY_RUN" = "1" ]; then
   say ""
@@ -109,10 +119,46 @@ if [ -f "$ELECTRON_DIR/packaging/icon.icns" ]; then
   cp -L "$ELECTRON_DIR/packaging/icon.icns" "$ICON_REAL"
   say "   dmg 卷图标：物化软链 → $ICON_REAL"
 fi
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac -- -c.dmg.icon="$ICON_REAL" > "$LOG" 2>&1 \
+BUILD_ARGS=()
+case "$TARGET_ARCH" in
+  both) BUILD_ARGS=(--x64 --arm64) ;;
+  arm64) BUILD_ARGS=(--arm64) ;;
+  x64) BUILD_ARGS=(--x64) ;;
+  universal) BUILD_ARGS=(--universal) ;;
+esac
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac -- -c.dmg.icon="$ICON_REAL" "${BUILD_ARGS[@]}" > "$LOG" 2>&1 \
   || { rm -rf "$ICON_TMP_DIR"; tail -30 "$LOG"; fail "打包失败（日志 $LOG）"; }
 rm -rf "$ICON_TMP_DIR"
 say "   打包完成（日志 $LOG）"
+
+# 3.5 统一产物名：electron-builder 会把 1.1.001 规范化成 1.1.1，x64 的 dmg 还不带架构后缀。
+# 这里按「架构」重命名成 DesktopPet-<原样版本>-<arch>.dmg / -<arch>-mac.zip，后续发布脚本只认这套名字。
+python3 - "$DIST_DIR" "$TARGET_VERSION" <<'PY'
+import os, sys
+dist, ver = sys.argv[1], sys.argv[2]
+for name in sorted(os.listdir(dist)):
+    # productName 可能叫 "cute pet" / "DesktopPet"，统一按后缀识别，不依赖前缀
+    if name.endswith('.dmg'):
+        suffix = '.dmg'
+    elif name.endswith('-mac.zip'):
+        suffix = '-mac.zip'
+    else:
+        continue
+    if name.startswith('DesktopPet-') and name == f'DesktopPet-{ver}-arm64{suffix}':
+        continue
+    if '-universal' in name:
+        arch = 'universal'
+    elif '-arm64' in name:
+        arch = 'arm64'
+    elif '-x64' in name:
+        arch = 'x64'
+    else:
+        arch = 'x64'          # 单/双架构时 x64 的 dmg 默认不带 arch 后缀
+    target = f'DesktopPet-{ver}-{arch}{suffix}'
+    if name != target:
+        os.replace(os.path.join(dist, name), os.path.join(dist, target))
+        print(f'   renamed: {name} -> {target}')
+PY
 
 # 4. 汇总产物
 say ""

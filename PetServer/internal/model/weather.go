@@ -24,4 +24,9 @@ type WeatherResult struct {
 	TodayMin string          `json:"todayMin"`
 	Hourly   []WeatherHourly `json:"hourly"`
 	Daily    []WeatherDaily  `json:"daily"`
+
+	// 服务端 TTL 缓存元信息：Cached=本次命中缓存，UpdatedAt=数据抓取时间（UnixMilli），TTLSec=缓存时长（秒）
+	Cached    bool  `json:"cached,omitempty"`
+	UpdatedAt int64 `json:"updatedAt,omitempty"`
+	TTLSec    int64 `json:"ttlSec,omitempty"`
 }

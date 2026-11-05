@@ -186,6 +186,54 @@ body {
 .section-desc:has(#state-badge),
 #state-badge { color: var(--accent); }
 
+/* 提醒设置的两类分组标题：① 弹窗提醒 / ② 消息提醒 */
+.group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 18px 0 8px;
+}
+.group-head:first-of-type { margin-top: 4px; }
+
+.group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--label);
+}
+
+.group-desc {
+  font-size: 11px;
+  color: var(--label-tertiary);
+}
+
+/* 搭话内容勾选（消息提醒） */
+.topics-row { align-items: flex-start; }
+
+.topic-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  flex: 1;
+}
+
+.topic-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--label);
+  cursor: pointer;
+}
+
+.topic-check input {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.topic-check.disabled { opacity: 0.45; cursor: default; }
+
 /* ── 卡片 ─────────────────────────────────── */
 /* mac 版 makeSettingRow：white 0.04 底 + 圆角 10，无边框 */
 .card {
@@ -458,7 +506,7 @@ body {
   box-shadow: none;
 }
 
-/* 天气提醒：时间输入按文本宽度收缩，剩余给城市输入框 */
+/* 天气提醒：时间输入按文本宽度收缩，预览按钮靠 push-right 顶到行尾 */
 .weather-time {
   flex: 0 0 auto;
   width: 96px;
@@ -467,6 +515,19 @@ body {
 /* 需解锁提示：橙色警示（对齐 mac 版 systemOrange 描述文案） */
 .card-desc.locked {
   color: #e8a33d;
+}
+
+/* 权限：微信号加粗强调 + 点击复制（复制结果回填下方提示行） */
+.copyable {
+  -webkit-app-region: no-drag;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: text;
+}
+
+.copyable:hover {
+  text-decoration: underline;
 }
 
 .custom {

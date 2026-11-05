@@ -23,7 +23,7 @@ const SRC = path.join(__dirname, '..', 'src', 'main');
 // 轮询间隔在 mac 上被拉长到 10s（刻意），单测里按 Windows 分支跑才能观察轮询
 const ORIGINAL_PLATFORM = process.platform;
 Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-const { raisePet, startOnTopGuard } = require(path.join(SRC, 'pet-window.js'));
+const { raisePet, startOnTopGuard } = require(path.join(SRC, 'pet', 'pet-window.js'));
 
 let failed = 0;
 function check(name, condition) {

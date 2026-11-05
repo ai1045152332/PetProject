@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src http: https: file:" />
+  <title>通知</title>
+  <link rel="stylesheet" href="./reminder.css" />
+  <link rel="stylesheet" href="./push.css" />
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="header">
+      <span class="title" id="title">通知</span>
+      <span class="close" id="close">×</span>
+    </div>
+    <div class="body" id="body"></div>
+  </div>
+  <script src="./push.js"></script>
+</body>
+</html>

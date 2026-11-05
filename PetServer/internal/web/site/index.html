@@ -215,6 +215,7 @@
         <span id="verLabel">正在获取最新版本…</span>
         <span class="dot"></span><span>macOS 13.0+ / Windows 10/11</span>
         <span class="dot"></span><span id="sizeLabel">约 4.1 MB</span>
+        <span class="dot"></span><a href="#" id="archSwitch" style="color:inherit;text-decoration:underline;text-underline-offset:2px">正在识别你的 Mac…</a>
         <span class="dot" data-win hidden></span><span data-win hidden id="winMetaLabel"></span>
       </div>
     </div>
@@ -339,6 +340,50 @@
     // 兜底：接口不可用时，指向已发布的最新稳定版直链（没有 dmg 时退化为 zip）
     var FALLBACK = { version: "v1.0.031", file: "cute-pet-v1.0.031.dmg", size: 4346271 };
 
+    // ── 按 CPU 架构分流（macFiles.arm64 / macFiles.x64）──
+    // 默认 arm64；Chrome/Edge 可用 User-Agent Client Hints 探测到 Intel，探测不到时用户可点链接手动切换。
+    var MAC_ARCH = localStorage.getItem('macArchChoice') || 'arm64';
+    var ARCH_NAMES = { arm64: 'Apple Silicon 版', x64: 'Intel 版' };
+    var LAST_INFO = null;
+
+    function applyArchChoice(arch, remember) {
+      MAC_ARCH = arch === 'x64' ? 'x64' : 'arm64';
+      if (remember) localStorage.setItem('macArchChoice', MAC_ARCH);
+      if (LAST_INFO) applyRelease(LAST_INFO);
+    }
+
+    (function detectArch() {
+      if (localStorage.getItem('macArchChoice')) return;      // 用户手动选过就以用户为准
+      var uaData = navigator.userAgentData;
+      if (!uaData || !uaData.getHighEntropyValues) return;    // Safari 等拿不到，保持默认
+      uaData.getHighEntropyValues(['architecture']).then(function (v) {
+        if (v && v.architecture === 'x86') applyArchChoice('x64', false);
+      }).catch(function () {});
+    })();
+
+    function renderArchSwitch() {
+      var el = document.getElementById('archSwitch');
+      if (!el) return;
+      var files = LAST_INFO && LAST_INFO.macFiles;
+      if (!files || (!files.arm64 && !files.x64)) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      if (files.arm64 && files.x64) {
+        el.textContent = ARCH_NAMES[MAC_ARCH] + '（点此切换）';
+        el.style.textDecoration = 'underline';
+        el.style.cursor = 'pointer';
+        el.onclick = function (e) {
+          e.preventDefault();
+          applyArchChoice(MAC_ARCH === 'x64' ? 'arm64' : 'x64', true);
+        };
+        return;
+      }
+      // 只发了一个架构：如实告诉用户，别让人下到跑不起来的包
+      el.textContent = (files.arm64 ? ARCH_NAMES.arm64 : ARCH_NAMES.x64) + '（当前仅提供该架构）';
+      el.style.textDecoration = 'none';
+      el.style.cursor = 'default';
+      el.onclick = null;
+    }
+
     function fmtSize(bytes) {
       if (!bytes) return "";
       var mb = bytes / 1024 / 1024;
@@ -346,9 +391,13 @@
     }
 
     function applyRelease(info) {
-      // 优先给手动安装用 dmg，接口没下发 dmg 时退回 zip（自动更新包）
-      var file = info.dmgFile || info.file;
-      var size = info.dmgFile ? info.dmgSize : info.size;
+      LAST_INFO = info;
+      // 优先级：本机架构的 macFiles → Electron 单文件 macFile → Swift 的 dmg → 自动更新 zip
+      var archPkg = info.macFiles && info.macFiles[MAC_ARCH];
+      var file = archPkg ? archPkg.file
+        : (info.macFile || info.dmgFile || info.file);
+      var size = archPkg ? archPkg.size
+        : (info.macFile ? info.macSize : (info.dmgFile ? info.dmgSize : info.size));
       var url = API_BASE + "/download/" + encodeURIComponent(file);
       document.querySelectorAll("[data-download]").forEach(function (a) {
         a.setAttribute("href", url);
@@ -360,6 +409,7 @@
       if (sizeLabel && size) sizeLabel.textContent = fmtSize(size);
       var verBtn = document.getElementById("verBtn");
       if (verBtn) verBtn.textContent = info.version;
+      renderArchSwitch();
 
       // Windows 通道：服务端下发了 winFile 才显示按钮/文案，否则全部隐藏（不误导用户）
       var winNodes = document.querySelectorAll("[data-win]");
@@ -373,7 +423,7 @@
         winNodes.forEach(function (n) { n.removeAttribute("hidden"); });
         var winMeta = document.getElementById("winMetaLabel");
         if (winMeta) {
-          var wv = String(info.winVersion || "").replace(/^electron/i, "");
+          var wv = String(info.winVersion || "").replace(/^(electron|v)/i, "");
           winMeta.textContent = "Windows 版 " + wv + (info.winSize ? " · " + fmtSize(info.winSize) : "");
         }
       } else {
@@ -392,6 +442,7 @@
           applyRelease({
             version: j.data.version, file: j.data.file, size: j.data.size,
             dmgFile: j.data.dmgFile, dmgSize: j.data.dmgSize,
+            macFile: j.data.macFile, macSize: j.data.macSize, macFiles: j.data.macFiles,
             winVersion: j.data.winVersion, winFile: j.data.winFile, winSize: j.data.winSize
           });
         }

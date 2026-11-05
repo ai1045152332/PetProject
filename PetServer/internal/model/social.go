@@ -87,3 +87,10 @@ type SocialState struct {
 	Requests  map[string]*FriendRequest              `json:"requests"`  // 申请 ID → 待处理的加好友申请（同一发起方可对多人各有一条）
 	History   []PetConversationRecord                `json:"history"`   // 对话留痕（旧 → 新，有界）
 }
+
+// NewsItem 热搜榜单条目（服务端统一抓取 + 缓存后下发给各端）
+type NewsItem struct {
+	Rank  int    `json:"rank"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}

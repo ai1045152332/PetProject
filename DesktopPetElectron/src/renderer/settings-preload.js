@@ -35,8 +35,10 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   // 菜单设置：宠物右键菜单项展示开关（主进程写盘，下次弹菜单即应用）
   setMenuItem: (key, visible) => ipcRenderer.invoke('settings:set-menu-item', { key, visible }),
 
-  // 提醒设置：主动搭话开关与间隔（主进程收敛间隔并立即重挂周期定时器）
+  // 提醒设置：主动搭话开关、间隔与搭话内容（主进程校验并立即重挂周期定时器）
   setProactiveChat: (patch) => ipcRenderer.invoke('settings:set-proactive-chat', patch),
+  // 「说一句」：不等周期定时器，主进程立刻跑一轮搭话（chatNow → 头顶气泡）
+  testChat: () => ipcRenderer.invoke('settings:test-chat'),
 
   // 宠物信息：名称 / 形象
   setPetName: (name) => ipcRenderer.invoke('settings:set-pet-name', name),
@@ -69,6 +71,8 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   // 权限（校验码解锁）：解锁/清除都在主进程，面板只拿结果码回填提示
   unlockAccess: (code) => ipcRenderer.invoke('settings:unlock-access', code),
   clearAccess: () => ipcRenderer.invoke('settings:clear-access'),
+  // 通用复制：渲染层写不了系统剪贴板，统一走主进程（微信号等）
+  copyText: (text) => ipcRenderer.invoke('settings:copy-text', { text }),
   // 定时复核收回权限时主进程主动推一次（面板开着才能收到；下次打开走 load 兜底）
   onAccessChanged: (callback) => {
     ipcRenderer.on('settings:access-changed', (event, state) => callback(state));

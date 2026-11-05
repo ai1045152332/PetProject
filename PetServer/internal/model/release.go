@@ -33,4 +33,16 @@ type Release struct {
 	MacSignature string `json:"macSignature,omitempty"` // Ed25519 签名（base64）
 	MacNotes     string `json:"macNotes,omitempty"`     // 更新说明
 	MacSize      int64  `json:"macSize,omitempty"`      // 字节数
+
+	// MacFiles 按 CPU 架构分流的 Electron macOS 安装包（官网据此给 Intel / Apple Silicon 不同下载）
+	// 客户端也优先读自己架构那一项，读不到再回落到 MacFile（老 manifest 兼容）
+	MacFiles map[string]MacPackage `json:"macFiles,omitempty"`
+}
+
+// MacPackage 某一个架构的安装包信息
+type MacPackage struct {
+	File      string `json:"file"`                // 文件名（位于 dist 目录）
+	SHA256    string `json:"sha256"`              // SHA-256（hex）
+	Signature string `json:"signature,omitempty"` // Ed25519 签名（base64，签名对象为 sha256 hex）
+	Size      int64  `json:"size,omitempty"`      // 字节数
 }
